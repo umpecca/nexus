@@ -1,21 +1,9 @@
-# catchacodevibe
+# Nexus
 
-A repo for skillz.
+Nexus is an application for creating/editing Markdown files. The goal is to have an easy to use visual first editor with inline AI capability that can watch/show the differences when it is modified by Agents. It is useful for people working with Markdown writing technical documentation, business presentations, paperwork heavy bureaucracy nonsense, etc...
 
-Use as a GH template for your next project.
+## Tech Stack
 
-## Skillz
-
-- /aidlc-scaffold
-- /aidlc-iterate
-- /product-create
-- /architect-design
-- /project-plan
-- /develop-task
-- /develop-tasks
-
-## Updating 
-
-```
-uv run ./update-vibe.py "GH Key"
-```
+- native application based on web technologies using [Electron](https://www.electronjs.org/)
+- [react](https://react.dev/)
+- [mdxeditor](https://mdxeditor.dev/)
