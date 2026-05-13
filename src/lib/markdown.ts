@@ -1,12 +1,4 @@
-export const DEFAULT_MARKDOWN = `# Untitled
-
-Start writing in Nexus.
-
-## Notes
-
-- Your draft is saved locally while you write.
-- Use the editor toolbar to switch between rich text and Markdown source.
-`;
+export const DEFAULT_MARKDOWN = "";
 
 const STORAGE_KEY = "nexus:draft:v1";
 
@@ -53,4 +45,12 @@ export function createDefaultDraft(): DraftState {
     markdown: DEFAULT_MARKDOWN,
     filePath: undefined
   };
+}
+
+export function normalizeMarkdownForDirtyCheck(markdown: string) {
+  return markdown.replace(/\r\n?/g, "\n");
+}
+
+export function areMarkdownBuffersEquivalent(first: string, second: string) {
+  return normalizeMarkdownForDirtyCheck(first) === normalizeMarkdownForDirtyCheck(second);
 }

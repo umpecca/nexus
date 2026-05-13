@@ -1,0 +1,76 @@
+name: Build Desktop Executables
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            package_script: dist:win
+            artifact_name: nexus-windows
+            artifact_paths: |
+              release/*.exe
+              release/*.blockmap
+              release/*.yml
+          - name: macOS
+            os: macos-latest
+            package_script: dist:mac
+            artifact_name: nexus-macos
+            artifact_paths: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/*.yml
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Check Electron main process
+        run: node --check electron/main.cjs
+
+      - name: Check Electron preload
+        run: node --check electron/preload.cjs
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Build package
+        run: npm run ${{ matrix.package_script }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: 14
