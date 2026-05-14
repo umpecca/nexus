@@ -5,6 +5,8 @@ type NexusMenuAction =
   | "open"
   | "save"
   | "saveAs"
+  | "exportHtml"
+  | "exportPdf"
   | "refresh"
   | "comparePreviousVersion"
   | "settings"
@@ -26,6 +28,14 @@ type ExternalFileChangeEvent = {
   timestamp: number;
 };
 
+type SelectLocalImageResult =
+  | { canceled: true }
+  | { canceled: false; filePath: string; src: string };
+
+type SelectBase64ImageResult =
+  | { canceled: true }
+  | { canceled: false; filePath: string; mimeType: string; dataUrl: string };
+
 declare global {
   interface Window {
     nexus?: {
@@ -43,6 +53,11 @@ declare global {
       unwatchMarkdownFile(): Promise<void>;
       saveMarkdownFile(filePath: string, markdown: string): Promise<{ filePath: string }>;
       saveMarkdownFileAs(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
+      exportMarkdownAsHtml(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
+      exportMarkdownAsPdf(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
+      selectLocalImage(): Promise<SelectLocalImageResult>;
+      selectBase64Image(): Promise<SelectBase64ImageResult>;
+      resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
     };
   }

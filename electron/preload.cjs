@@ -51,6 +51,21 @@ contextBridge.exposeInMainWorld("nexus", {
   saveMarkdownFileAs(currentPath, markdown) {
     return ipcRenderer.invoke("file:saveAs", { currentPath, markdown });
   },
+  exportMarkdownAsHtml(currentPath, markdown) {
+    return ipcRenderer.invoke("file:export-html", { currentPath, markdown });
+  },
+  exportMarkdownAsPdf(currentPath, markdown) {
+    return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown });
+  },
+  selectLocalImage() {
+    return ipcRenderer.invoke("image:select-local");
+  },
+  selectBase64Image() {
+    return ipcRenderer.invoke("image:select-base64");
+  },
+  resolveImagePreview(documentPath, imageSource) {
+    return ipcRenderer.invoke("image:resolve-preview", { documentPath, imageSource });
+  },
   confirmSaveChanges() {
     return ipcRenderer.invoke("dialog:confirmSaveChanges");
   }

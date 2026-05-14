@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_043: Use Nexus PNG as the Electron app icon.
 - T_044: Add GitHub Actions desktop builds.
 - T_045: Add the Nexus ICO to Windows builds.
+- T_046: Add local, remote, and base64 image imports.
+- T_047: Resolve relative local image previews from the Markdown file folder.
+- T_048: Exit lists from empty list items with Enter.
+- T_049: Add HTML and PDF export from the File menu.
+- T_050: Replace the editor toolbar with an Office-inspired grouped toolbar.
 
 ### Changed
 
@@ -90,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed Nexus's Sandpack toolbar/plugin usage and added local `js nexus-run` code blocks that execute in a sandboxed worker with console output.
 - Added rich-text Mermaid diagram rendering for `mermaid` fenced code blocks, with source and diff modes preserving raw editable Markdown.
 - Added per-window external file watchers that prompt to reload changed files, surface dirty-buffer conflicts, and keep buffers open when watched files are moved or deleted.
-- Added a manual Refresh action in the editor toolbar and native Edit menu that reloads the current file from disk, prompting only when different disk content would replace unsaved edits.
+- Added a manual Refresh action in the native Edit menu that reloads the current file from disk, prompting only when different disk content would replace unsaved edits.
 - Added MDXEditor-backed diff review for dirty external-change conflicts and comparison against the previous saved version.
 - Preserved the current editor contents before externally changed files are reloaded so diff review can compare the previous in-memory version with the new disk version.
 - Fixed Electron window close cleanup so watcher teardown uses a captured webContents ID instead of reading from a destroyed window.
@@ -98,3 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Applied the local `nexus.png` asset as the Electron window icon and macOS Dock icon when available.
 - Added electron-builder package scripts and a GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts when changes land on `develop`.
 - Configured electron-builder to apply `nexus.ico` to Windows executable and installer artifacts.
+- Replaced the generic image toolbar insertion control with a shadcn-styled image import dialog for local file URLs, remote HTTP(S) URLs, and embedded base64 images.
+- Replaced the temporary Command Shelf toolbar with a custom Office-inspired grouped toolbar that keeps formatting, insert, and view mode commands visible together in labeled sections while leaving refresh in the native Edit menu.
+- Restored the lighter Office-inspired toolbar gray palette, added a subtle inner command-band border, aligned Nexus-owned toolbar buttons with MDXEditor's tooltip treatment, and raised toolbar dropdown layers above the sticky ribbon.
+- Refined the Office-inspired toolbar with a right-aligned mode group, centered Links & Media controls, white bordered paragraph dropdown controls, and thinner flush outer toolbar borders.
+- Fixed toolbar popup overlap by raising MDXEditor dropdown/tooltip portal layers and using transform-based bottom-side offsets below the ribbon.
+- Resolved relative local image paths against the opened Markdown file's folder for rich-text preview without rewriting the Markdown source.
+- Fixed list editing so pressing Enter on an empty list item exits the list instead of adding another blank list line.
+- Added File/Export as HTML and File/Export as PDF actions that render the current Markdown buffer through native save dialogs without changing document dirty state.

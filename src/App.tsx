@@ -26,6 +26,7 @@ import { createDefaultSettings, loadSettings, saveSettings } from "./lib/setting
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
+import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
 import SettingsDialog from "./components/settings/SettingsDialog";
@@ -170,6 +171,11 @@ function App() {
     "--editor-font-family": settings.fontFamily
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
+  const imagePreviewHandler = useMemo(() => {
+    return (imageSource: string) => {
+      return window.nexus?.resolveImagePreview(filePath, imageSource) ?? Promise.resolve(imageSource);
+    };
+  }, [filePath]);
 
   filePathRef.current = filePath;
 
@@ -435,6 +441,16 @@ function App() {
     return false;
   }
 
+  async function exportDocumentAsHtml() {
+    const currentMarkdown = getCurrentMarkdown();
+    await window.nexus?.exportMarkdownAsHtml(filePath, currentMarkdown);
+  }
+
+  async function exportDocumentAsPdf() {
+    const currentMarkdown = getCurrentMarkdown();
+    await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown);
+  }
+
   async function confirmDirtyBufferAction() {
     const currentMarkdown = getCurrentMarkdown();
     const currentIsDirty = hasUnsavedMarkdownChanges(currentMarkdown, lastSavedMarkdown);
@@ -670,6 +686,14 @@ function App() {
         void saveDocumentAs();
       }
 
+      if (action === "exportHtml") {
+        void exportDocumentAsHtml();
+      }
+
+      if (action === "exportPdf") {
+        void exportDocumentAsPdf();
+      }
+
       if (action === "refresh") {
         void refreshDocumentFromDisk();
       }
@@ -713,11 +737,12 @@ function App() {
                 plugins={[
                   headingsPlugin(),
                   listsPlugin(),
+                  listExitPlugin(),
                   quotePlugin(),
                   thematicBreakPlugin(),
                   linkPlugin(),
                   linkDialogPlugin(),
-                  imagePlugin(),
+                  imagePlugin({ imagePreviewHandler }),
                   tablePlugin(),
                   frontmatterPlugin(),
                   directivesPlugin({ directiveDescriptors: [AdmonitionDirectiveDescriptor] }),
@@ -754,10 +779,7 @@ function App() {
                     toolbarContents: () => (
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
-                        <ShadcnMdxToolbar
-                          canRefresh={Boolean(filePath)}
-                          onRefresh={() => void refreshDocumentFromDisk()}
-                        />
+                        <ShadcnMdxToolbar />
                       </>
                     ),
                     toolbarClassName: "nexus-editor-toolbar"

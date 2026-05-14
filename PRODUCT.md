@@ -35,7 +35,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native application/window icon loaded from the local `nexus.png` asset.
 - A Windows executable and installer icon loaded from the local `nexus.ico` asset.
 - A visual Markdown editor with a broad MDXEditor-backed toolbar enabled, including source mode and supported formatting, insert, and block controls.
-- A sticky shadcn-styled editor toolbar that remains available at the top of the editor without covering the editable document area.
+- A sticky Office-inspired grouped editor toolbar that remains available at the top of the editor without covering the editable document area.
 - Native Electron File menu actions for New, Open, Save, Save As, and Exit.
 - A native File/New Window action for opening multiple editor windows at the same time.
 - Operating-system file open handoff support for Markdown/text files launched from macOS Finder or Windows Explorer.
@@ -46,7 +46,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native Help menu with an About item that opens a shadcn-styled about dialog.
 - Per-OS-profile editor font preference stored locally.
 - A shadcn-styled editor right-click menu for Cut, Copy, and Paste.
+- A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
 - Local Markdown file open and save workflows through the Electron app menu.
+- HTML and PDF document export workflows through the Electron File menu.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
 - A clean blank untitled document on every app launch and in every new editor window.
 
@@ -58,7 +60,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Multi-user collaboration.
 - Cloud sync.
 - Full Git integration.
-- Rich presentation export formats.
+- Advanced presentation export formats beyond HTML and PDF.
 - Plugin marketplace or extension system.
 
 ### 2.5 Constraints & Assumptions
@@ -111,7 +113,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall display a Markdown editor as the primary workspace.
 - The system shall keep each editor window's current document content in that window's application state.
 - The system shall start each application launch with a blank untitled document and no current file path.
-- The system shall provide Electron app menu items for File/New Window, File/New, File/Open, File/Save, File/Save As, and File/Exit.
+- The system shall provide Electron app menu items for File/New Window, File/New, File/Open, File/Save, File/Save As, File/Export as HTML, File/Export as PDF, and File/Exit.
 - The system shall allow multiple editor windows to be open at the same time.
 - The system shall route document menu actions to the currently focused editor window.
 - The system shall open a blank untitled editor document when File/New Window is selected.
@@ -129,9 +131,19 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow the user to choose the editor font from the settings dialog.
 - The system shall store the selected editor font locally using a key scoped to the current OS profile name.
 - The system shall provide a shadcn-styled context menu inside the editor for Cut, Copy, and Paste.
+- The system shall allow the user to import local image files into the editor by choosing an image from the local file system.
+- The system shall store local image imports as local file URL sources in the Markdown image node.
+- The system shall allow the user to import remote images by entering an `http` or `https` URL.
+- The system shall allow the user to import embedded base64 images by choosing an image file to encode or by pasting a base64/data URL value.
+- The system shall render relative local image paths in rich text preview relative to the currently opened Markdown file's folder.
+- The system shall not rewrite relative image paths in the Markdown source when resolving them for preview.
 - The system shall allow opening Markdown files from the local file system through File/Open.
 - The system shall allow saving the current document through File/Save and File/Save As.
-- The system shall allow manually refreshing the current opened file from disk through the editor toolbar and Edit/Refresh.
+- The system shall allow exporting the current Markdown document to an HTML file through File/Export as HTML.
+- The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
+- The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
+- The system shall not change the current file path, saved baseline, or dirty state when exporting.
+- The system shall allow manually refreshing the current opened file from disk through Edit/Refresh.
 - The system shall silently reload the file from disk when manual refresh does not risk discarding unsaved edits.
 - The system shall prompt before manual refresh replaces unsaved editor content with different disk content.
 - The system shall clear the editor content and current file path when File/New completes.
@@ -142,6 +154,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall show the app name first in the application title, followed by the current document name and full file path when a file path is available.
 - The system shall prefix the document name with an asterisk in the application title when the current document has unsaved changes.
 - The system shall not mark a document dirty when the editor only normalizes line endings during non-edit interactions such as scrolling.
+- The system shall exit a list when the user presses Enter on an empty list item after creating a blank item.
 - The system shall watch the currently opened file in each editor window for external disk changes on macOS and Windows.
 - The system shall prompt the user to reload when a clean opened file changes outside the application.
 - The system shall show a conflict prompt when an opened file changes outside the application while the editor buffer has unsaved changes.
@@ -164,12 +177,14 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - Visual editing mode: primary editing mode using MDXEditor.
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through project-owned shadcn-styled controls, excluding undo/redo because those actions live in the native Edit menu, and including refresh, text formatting, lists, block type, links, images, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, and source/diff toggles where supported by enabled plugins.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned Office-inspired grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, and source/diff toggles where supported by enabled plugins.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
 - Local JavaScript runner blocks: support portable fenced code blocks using `js nexus-run` or `javascript nexus-run`, run them locally in a sandboxed browser worker, show console output/errors in the editor, and block network or nested worker APIs.
 - Toolbar placement: keep the MDXEditor toolbar sticky at the top of the editor frame and reserve the remaining frame height for the document editing area.
 - View switching: preserve the user's approximate scroll position when switching between rich text and source editor views.
+- List editing: pressing Enter on an empty bullet, numbered, or checklist item exits the list and creates a normal paragraph.
+- Export: HTML and PDF exports render from the current Markdown buffer and use native save dialogs without changing the active document.
 - The app shall not provide a separate custom visual/source tab bar.
 
 ### 3.5 Non-Functional / Experience Requirements
@@ -192,10 +207,13 @@ Markdown is effective for structured writing, but many users still need a calm e
 8. Use Settings/Preferences to choose the editor font for the current OS profile.
 9. Use Help/About to view application copyright information.
 10. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
-11. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
-12. Use Refresh from the toolbar or Edit menu to reload the current opened file from disk.
-13. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
-14. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
+11. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
+12. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
+13. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
+14. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
+15. Use Edit/Refresh to reload the current opened file from disk.
+16. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
+17. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
 
 ## 5. UI / Design Notes (Optional)
 
@@ -203,15 +221,16 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Do not show top-level New, Open, Save, or Save As buttons in the current version.
 - Keep document actions in the native Electron app menu.
 - Keep document actions scoped to the focused editor window so multiple open documents remain independent.
+- Keep HTML and PDF export actions in the native File menu near Save actions.
 - Keep undo and redo actions in the native Electron Edit menu rather than duplicating them in the editor toolbar.
-- Keep manual Refresh available from both the native Edit menu and the editor toolbar.
+- Keep manual Refresh available from the native Edit menu.
 - Keep common text editing actions available from the editor right-click menu without adding another top-level toolbar.
 - Keep editor appearance settings in a compact shadcn-styled dialog opened from the native Settings menu.
 - Keep application information in a compact shadcn-styled dialog opened from the native Help menu.
 - Keep the native application title aligned with the current document path.
 - Use compact shadcn-styled prompts for external file change and conflict decisions.
 - Keep diff review inside MDXEditor's existing diff mode instead of adding a separate review workspace.
-- Keep editor-specific controls inside the editor toolbar and preserve MDXEditor command behavior while using project-owned shadcn-styled toolbar composition.
+- Keep editor-specific controls inside a compact Office-inspired grouped toolbar with visible section labels, light gray desktop ribbon chrome, consistent tooltips, a right-aligned view mode group, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and transform-offset dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
 - Keep the toolbar visible while scrolling long documents without allowing it to overlap document content.
 - On Windows, show a subtle top separator on the editor toolbar so it visually matches the bottom separator below the native menu.
 - Avoid modal-first workflows for common actions.
@@ -223,6 +242,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Markdown syntax unsupported by the visual editor should remain accessible through source mode.
 - Switching between rich text and source mode should keep the document position aligned even when the two views have different rendered heights.
 - Saving without a current file path should prompt for a destination.
+- Exporting an untitled document should prompt for a destination using an Untitled default file name.
+- Exporting should not mark a clean document dirty or mark a dirty document clean.
 - File/New should cancel cleanly if the user chooses Cancel from the unsaved-change prompt.
 - File/Open should not show the unsaved-change prompt when the user cancels the native open-file dialog.
 - File/Open should cancel cleanly without replacing content if the user chooses Cancel from the unsaved-change prompt after selecting a file.
@@ -235,7 +256,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Deleted or moved watched files should leave the current editor buffer open for recovery or Save As.
 - Closing a window after external file reload activity should clean up watchers without showing a main-process JavaScript error.
 - Reloading after an external file change should leave the reloaded disk contents clean, without triggering a Save/Don't Save prompt on close unless the user edits afterward.
-- Refresh on an untitled document should be unavailable from the toolbar and should no-op if invoked from the menu.
+- Refresh on an untitled document should no-op if invoked from the menu.
 - Refresh should clear the dirty marker when the editor buffer already matches the file on disk.
 - Review Diff for an external dirty conflict should not overwrite the current editor buffer.
 - Reloading an externally changed file should keep the pre-reload editor contents available as the previous-version diff baseline.
