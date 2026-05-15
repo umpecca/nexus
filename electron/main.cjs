@@ -14,6 +14,7 @@ const pendingExternalFilePaths = [];
 let isQuitting = false;
 
 const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
+const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
 const fileWatchDebounceMs = 350;
 const internalWriteSuppressMs = 1500;
 
@@ -131,6 +132,13 @@ function escapeHtmlAttribute(value) {
     .replace(/>/g, "&gt;");
 }
 
+function escapeHtmlText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function getDocumentTitleForExport(currentPath) {
   if (typeof currentPath === "string" && currentPath.length > 0) {
     return path.basename(currentPath, path.extname(currentPath));
@@ -147,6 +155,121 @@ function getDefaultExportPath(currentPath, extension) {
   }
 
   return fileName;
+}
+
+function stripMarkdownFrontmatter(markdown) {
+  const source = String(markdown ?? "");
+  const frontmatterMatch = source.match(
+    /^(?:\uFEFF)?---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/
+  );
+
+  if (!frontmatterMatch) {
+    return source;
+  }
+
+  return source.slice(frontmatterMatch[0].length).replace(/^\r?\n/, "");
+}
+
+function getAdmonitionTitle(type, title) {
+  if (typeof title === "string" && title.trim().length > 0) {
+    return title.trim();
+  }
+
+  return `${type.slice(0, 1).toUpperCase()}${type.slice(1)}`;
+}
+
+function getAdmonitionClassName(type) {
+  return `nexus-export-admonition nexus-export-admonition-${type}`;
+}
+
+function isFenceBoundary(line) {
+  return /^ {0,3}(`{3,}|~{3,})/.test(line);
+}
+
+function getAdmonitionStart(line) {
+  const match = line.match(/^:::(note|tip|danger|info|caution)(?:[ \t]+(.+?))?[ \t]*$/);
+
+  if (!match || !admonitionTypes.has(match[1])) {
+    return null;
+  }
+
+  return {
+    type: match[1],
+    title: getAdmonitionTitle(match[1], match[2])
+  };
+}
+
+function isAdmonitionEnd(line) {
+  return /^:::[ \t]*$/.test(line);
+}
+
+async function renderMarkdownAdmonitions(markdown, parseMarkdown) {
+  const source = String(markdown ?? "");
+  const lines = source.split(/\r?\n/);
+  const output = [];
+  let index = 0;
+  let isInFence = false;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (isFenceBoundary(line)) {
+      isInFence = !isInFence;
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    if (isInFence) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const admonition = getAdmonitionStart(line);
+    if (!admonition) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const contentLines = [];
+    let endIndex = index + 1;
+    let foundEnd = false;
+
+    while (endIndex < lines.length) {
+      if (isAdmonitionEnd(lines[endIndex])) {
+        foundEnd = true;
+        break;
+      }
+
+      contentLines.push(lines[endIndex]);
+      endIndex += 1;
+    }
+
+    if (!foundEnd) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const contentHtml = await parseMarkdown(contentLines.join("\n"));
+    output.push(
+      [
+        "",
+        `<aside class="${getAdmonitionClassName(admonition.type)}">`,
+        `<div class="nexus-export-admonition-title">${escapeHtmlText(admonition.title)}</div>`,
+        `<div class="nexus-export-admonition-content">`,
+        contentHtml.trim(),
+        "</div>",
+        "</aside>",
+        ""
+      ].join("\n")
+    );
+    index = endIndex + 1;
+  }
+
+  return output.join("\n");
 }
 
 function buildExportHtmlDocument(title, bodyHtml) {
@@ -208,6 +331,48 @@ function buildExportHtmlDocument(title, bodyHtml) {
       padding-left: 1em;
     }
 
+    .nexus-export-admonition {
+      border: 1px solid #cbd5e1;
+      border-left-width: 5px;
+      border-radius: 8px;
+      background: #f8fafc;
+      margin: 1.2em 0;
+      padding: 0.85em 1em;
+    }
+
+    .nexus-export-admonition-title {
+      font-weight: 700;
+      margin-bottom: 0.45em;
+    }
+
+    .nexus-export-admonition-content > :last-child {
+      margin-bottom: 0;
+    }
+
+    .nexus-export-admonition-note {
+      border-left-color: #3b82f6;
+    }
+
+    .nexus-export-admonition-tip {
+      border-left-color: #16a34a;
+      background: #f0fdf4;
+    }
+
+    .nexus-export-admonition-info {
+      border-left-color: #0891b2;
+      background: #ecfeff;
+    }
+
+    .nexus-export-admonition-caution {
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .nexus-export-admonition-danger {
+      border-left-color: #dc2626;
+      background: #fff5f5;
+    }
+
     code {
       background: #f3f4f6;
       border-radius: 4px;
@@ -227,6 +392,45 @@ function buildExportHtmlDocument(title, bodyHtml) {
     pre code {
       background: transparent;
       padding: 0;
+    }
+
+    .nexus-export-mermaid {
+      margin: 1.4em 0;
+      max-width: 100%;
+      overflow-x: auto;
+      text-align: center;
+    }
+
+    .nexus-export-mermaid svg {
+      display: inline-block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .nexus-export-mermaid-source {
+      margin: 0;
+      text-align: left;
+    }
+
+    .nexus-export-mermaid-error {
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      background: #fff7f7;
+      color: #991b1b;
+      padding: 1em;
+      text-align: left;
+    }
+
+    .nexus-export-mermaid-error strong {
+      display: block;
+      margin-bottom: 0.5em;
+    }
+
+    .nexus-export-mermaid-error pre {
+      margin: 0;
+      border-color: #fecaca;
+      background: #fffafa;
+      white-space: pre-wrap;
     }
 
     table {
@@ -261,14 +465,147 @@ ${bodyHtml}
 </html>`;
 }
 
-async function renderMarkdownExportHtml(markdown, currentPath) {
+function getCodeTokenLanguage(token) {
+  return String(token?.lang ?? "")
+    .trim()
+    .split(/\s+/)[0]
+    .toLowerCase();
+}
+
+function isMermaidFence(language) {
+  return String(language ?? "").trim().toLowerCase() === "mermaid";
+}
+
+function hasExportMermaidPlaceholder(html) {
+  return typeof html === "string" && html.includes('<figure class="nexus-export-mermaid"');
+}
+
+function createExportWindow() {
+  return new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: false
+    }
+  });
+}
+
+async function loadExportHtml(exportWindow, html) {
+  await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+}
+
+async function renderExportMermaidDiagrams(webContents) {
+  const mermaidScriptUrl = pathToFileURL(require.resolve("mermaid/dist/mermaid.min.js")).href;
+
+  await webContents.executeJavaScript(
+    `
+      (async () => {
+        const diagrams = Array.from(document.querySelectorAll(".nexus-export-mermaid"));
+
+        if (diagrams.length === 0) {
+          return;
+        }
+
+        await new Promise((resolve, reject) => {
+          if (window.mermaid) {
+            resolve();
+            return;
+          }
+
+          const script = document.createElement("script");
+          script.src = ${JSON.stringify(mermaidScriptUrl)};
+          script.dataset.nexusExportMermaidScript = "true";
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Mermaid export renderer could not be loaded."));
+          document.head.appendChild(script);
+        });
+
+        window.mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default"
+        });
+
+        for (const [index, diagram] of diagrams.entries()) {
+          const source = diagram.querySelector(".nexus-export-mermaid-source")?.textContent ?? "";
+
+          if (!source.trim()) {
+            continue;
+          }
+
+          try {
+            const result = await window.mermaid.render(
+              \`nexus-export-mermaid-\${Date.now()}-\${index}\`,
+              source
+            );
+            diagram.classList.add("nexus-export-mermaid-rendered");
+            diagram.innerHTML = result.svg;
+          } catch (error) {
+            const title = document.createElement("strong");
+            const details = document.createElement("pre");
+            title.textContent = "Mermaid render error";
+            details.textContent = error instanceof Error ? error.message : String(error);
+            diagram.classList.add("nexus-export-mermaid-error");
+            diagram.replaceChildren(title, details);
+          }
+        }
+
+        document.querySelector("[data-nexus-export-mermaid-script]")?.remove();
+        await document.fonts?.ready;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      })();
+    `,
+    true
+  );
+}
+
+async function serializeRenderedExportHtml(webContents) {
+  const html = await webContents.executeJavaScript("document.documentElement.outerHTML", true);
+  return `<!doctype html>\n${html}`;
+}
+
+async function renderMermaidInExportHtml(html) {
+  if (!hasExportMermaidPlaceholder(html)) {
+    return html;
+  }
+
+  let exportWindow;
+
+  try {
+    exportWindow = createExportWindow();
+    await loadExportHtml(exportWindow, html);
+    await renderExportMermaidDiagrams(exportWindow.webContents);
+    return serializeRenderedExportHtml(exportWindow.webContents);
+  } finally {
+    if (exportWindow && !exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
+  }
+}
+
+async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
   const { Marked, Renderer } = await import("marked");
   const renderer = new Renderer();
+  const defaultCodeRenderer = renderer.code.bind(renderer);
 
   renderer.image = (token) => {
     const src = resolveImagePreviewSource(currentPath, token.href);
     const title = token.title ? ` title="${escapeHtmlAttribute(token.title)}"` : "";
     return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(token.text)}"${title}>`;
+  };
+
+  renderer.code = (token) => {
+    if (!isMermaidFence(getCodeTokenLanguage(token))) {
+      return defaultCodeRenderer(token);
+    }
+
+    return [
+      '<figure class="nexus-export-mermaid">',
+      `<pre class="nexus-export-mermaid-source">${escapeHtmlText(token.text)}</pre>`,
+      "</figure>"
+    ].join("");
   };
 
   const marked = new Marked({
@@ -277,7 +614,13 @@ async function renderMarkdownExportHtml(markdown, currentPath) {
     gfm: true,
     renderer
   });
-  const bodyHtml = await marked.parse(markdown ?? "");
+  const sourceMarkdown = options.excludeFrontmatter
+    ? stripMarkdownFrontmatter(markdown)
+    : markdown ?? "";
+  const markdownWithAdmonitions = await renderMarkdownAdmonitions(sourceMarkdown, (content) =>
+    marked.parse(content)
+  );
+  const bodyHtml = await marked.parse(markdownWithAdmonitions);
   return buildExportHtmlDocument(getDocumentTitleForExport(currentPath), bodyHtml);
 }
 
@@ -650,6 +993,10 @@ function buildMenu() {
           click: () => sendMenuAction("open")
         },
         {
+          label: "Load Demo Document",
+          click: () => sendMenuAction("loadDemo")
+        },
+        {
           label: "Save",
           accelerator: "CmdOrCtrl+S",
           click: () => sendMenuAction("save")
@@ -904,7 +1251,8 @@ ipcMain.handle("file:export-html", async (event, payload) => {
       return { canceled: true };
     }
 
-    await fs.writeFile(result.filePath, html, "utf8");
+    const renderedHtml = await renderMermaidInExportHtml(html);
+    await fs.writeFile(result.filePath, renderedHtml, "utf8");
     return { canceled: false, filePath: result.filePath };
   } catch (error) {
     await showExportError(event, "HTML", error);
@@ -917,7 +1265,9 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
   let exportWindow;
 
   try {
-    const html = await renderMarkdownExportHtml(markdown, currentPath);
+    const html = await renderMarkdownExportHtml(markdown, currentPath, {
+      excludeFrontmatter: true
+    });
     const result = await dialog.showSaveDialog({
       title: "Export PDF",
       defaultPath: getDefaultExportPath(currentPath, "pdf"),
@@ -928,17 +1278,9 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
       return { canceled: true };
     }
 
-    exportWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webSecurity: false
-      }
-    });
-
-    await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    exportWindow = createExportWindow();
+    await loadExportHtml(exportWindow, html);
+    await renderExportMermaidDiagrams(exportWindow.webContents);
     await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
     const pdf = await exportWindow.webContents.printToPDF({
       printBackground: true,

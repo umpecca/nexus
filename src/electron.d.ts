@@ -3,6 +3,7 @@ export {};
 type NexusMenuAction =
   | "new"
   | "open"
+  | "loadDemo"
   | "save"
   | "saveAs"
   | "exportHtml"

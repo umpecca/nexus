@@ -12,11 +12,11 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 
 - `package.json`: Project scripts, Electron package metadata, Windows icon packaging metadata, Markdown export dependency metadata, and runtime dependencies.
 - `.github/workflows/build-desktop.yml`: GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts on `develop` pushes and manual runs.
-- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, Settings, and Help menus, handles file dialogs and unsaved-change prompts, exports Markdown to HTML and PDF, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, and loads the built renderer.
+- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, Settings, and Help menus, handles file dialogs and unsaved-change prompts, exports Markdown to HTML and PDF with local image resolution and static Mermaid diagram rendering, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, and loads the built renderer.
 - `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs, image selection and preview-resolution APIs, external file change subscriptions, and the unsaved-change confirmation dialog.
 - `index.html`: Vite application entry point.
 - `src/main.tsx`: React bootstrap.
-- `src/App.tsx`: Primary app shell, document state, blank startup behavior, application title formatting, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, and diff baseline coordination.
+- `src/App.tsx`: Primary app shell, document state, blank startup behavior, initial empty-editor focus, application title formatting, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, and diff baseline coordination.
 - `src/components/about/AboutDialog.tsx`: Shadcn-styled About dialog opened from the Help menu.
 - `src/components/editor/EditorContextMenu.tsx`: Project-owned editor context menu that exposes Cut, Copy, and Paste using local shadcn-style primitives.
 - `src/components/editor/FileChangedDialog.tsx`: Shadcn-styled external file change and conflict prompt.
@@ -28,6 +28,7 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 - `src/styles.css`: Global application styling, including the edge-to-edge editor frame and sticky Office-inspired grouped toolbar layout with light gray ribbon chrome, right-aligned mode grouping, centered media controls, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and raised transform-offset dropdown and tooltip layers.
 - `src/lib/utils.ts`: Shared class name utility for shadcn-style components.
 - `src/lib/markdown.ts`: Markdown utilities, default document content, local storage helpers, and line-ending-normalized dirty comparison helpers.
+- `src/lib/demoDocument.ts`: Built-in Markdown feature showcase used by the File/Load Demo Document action for demos and export smoke tests.
 - `src/lib/settings.ts`: Local settings utilities, default editor font configuration, and OS-profile-scoped storage keys.
 - `scripts/run-electron.ps1`: Windows PowerShell runner that builds the app and launches it through the local Electron dependency.
 - `tasks/`: AI-DLC task documents.
@@ -62,36 +63,38 @@ Data flow:
 6. macOS Finder `open-file` events and Windows Explorer/Open With process arguments are normalized into file paths.
 7. OS-handed file paths create editor windows with pending initial file payloads.
 8. The renderer asks preload for its initial opened file and loads it into that window's independent document state.
-9. Electron document menu actions are forwarded to the focused renderer window through preload.
-10. The renderer requests open/save operations through Electron IPC, and the main process performs file dialogs and disk I/O for the window that made the request.
-11. For File/New, the focused renderer compares the current editor buffer against the last saved/opened buffer using a line-ending-normalized dirty check and asks the main process to show a Save, Don't Save, or Cancel prompt before clearing dirty content.
-12. For File/Open, the focused renderer first asks the main process to show the native open-file dialog; only after a file is selected does it compare the current buffer against the last saved/opened buffer using the same line-ending-normalized dirty check and ask whether to save, discard, or cancel before replacing dirty content.
-13. For File/Export as HTML and File/Export as PDF, the focused renderer sends its current Markdown buffer and current file path to Electron without changing saved state.
-14. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, writes HTML directly, or renders the HTML in a hidden BrowserWindow and prints it to PDF.
-15. Each renderer formats its own native window title from its current file path and dirty state, using the app name first and falling back to Untitled when no file path is active.
-16. Window close attempts are paused per window while that renderer decides whether dirty content should be saved, discarded, or kept open.
-17. Application quit requests walk through all open windows, prompting each dirty renderer before closing it; canceling any prompt stops the quit flow.
-18. The renderer resolves the close request back to the main process; accepted requests close the window and canceled requests leave the window running.
-19. The editor right-click menu restores the current editor selection and asks Electron to run standard Cut, Copy, or Paste against the focused web contents.
-20. Electron Edit menu roles route undo, redo, cut, copy, and paste commands to the currently focused editor control.
-21. The Settings menu opens a renderer dialog, and the renderer stores the selected editor font in localStorage using a key scoped to the OS profile name returned by Electron.
-22. The Help/About menu opens a renderer dialog with application copyright information.
-23. When MDXEditor switches between rich text and source views, the renderer captures the current editor scroll ratio and applies it to the newly active scroll container.
-24. The toolbar image import control opens a shadcn-styled dialog that either requests a local image file URL from Electron, accepts an HTTP(S) URL, or requests an Electron-read base64 data URL before publishing MDXEditor's `insertImage$` command.
-25. MDXEditor's image preview handler asks Electron to resolve non-URL local image sources. Absolute paths are converted to file URLs, relative paths are resolved from the current Markdown file's folder, and HTTP(S), data, blob, and existing file URLs pass through unchanged.
-26. A small root-editor Lexical command plugin handles Enter on empty list items that MDXEditor represents with empty child paragraphs, clears the empty item, and delegates to Lexical's normal list paragraph insertion behavior.
-27. Runnable JavaScript code blocks are represented as fenced `js nexus-run` or `javascript nexus-run` blocks, edited through CodeMirror, and executed locally in a temporary browser worker that reports console output and errors back to the renderer.
-28. Mermaid code blocks are represented as standard fenced `mermaid` blocks, rendered as non-editable SVG diagrams in rich text mode, and edited as raw Markdown in source or diff mode.
-29. When a renderer has a current file path, it asks preload to watch that path; the Electron main process owns one debounced `fs.watch` watcher per captured webContents ID.
-30. External file change events are sent back to the owning renderer, which prompts to reload clean buffers and shows a conflict prompt for dirty buffers.
-31. File saves suppress only that same window's watcher events, so another Nexus window editing the same file still sees the change as external.
-32. Manual Refresh from Edit/Refresh reads the current file through preload, reloads silently when safe, and uses the same conflict prompt when disk contents differ from dirty editor contents.
-33. Dirty external-change and manual-refresh conflicts keep the changed disk contents in renderer state so Review Diff can open MDXEditor's diff mode without replacing the current editor buffer.
-34. Successful saves move the prior saved Markdown into a previous-version baseline before updating the current saved baseline.
-35. Reloading an externally changed file preserves the current editor Markdown as the previous-version baseline before replacing the editor with disk contents.
-36. During programmatic document replacement, the renderer ignores stale MDXEditor change events from the replaced buffer so the new disk contents remain clean.
-37. Edit/Compare with Previous Version asks the focused renderer to use that previous-version baseline as MDXEditor's read-only diff side.
-38. When changes are pushed to `develop`, GitHub Actions installs dependencies, runs tests, checks Electron entry files, builds the renderer, packages Windows and macOS builds with electron-builder, applies `nexus.ico` to Windows executable artifacts, and uploads the generated installers/archives as workflow artifacts.
+9. When startup confirms there is no initial opened file and the document is still an empty untitled buffer, the renderer focuses MDXEditor at the root start once so the user can type immediately.
+10. Electron document menu actions are forwarded to the focused renderer window through preload.
+11. The renderer requests open/save operations through Electron IPC, and the main process performs file dialogs and disk I/O for the window that made the request.
+12. For File/New, the focused renderer compares the current editor buffer against the last saved/opened buffer using a line-ending-normalized dirty check and asks the main process to show a Save, Don't Save, or Cancel prompt before clearing dirty content.
+13. For File/Open, the focused renderer first asks the main process to show the native open-file dialog; only after a file is selected does it compare the current buffer against the last saved/opened buffer using the same line-ending-normalized dirty check and ask whether to save, discard, or cancel before replacing dirty content.
+14. For File/Load Demo Document, the focused renderer asks the same dirty-buffer confirmation helper before replacing the current buffer with the built-in feature showcase as a clean untitled document.
+15. For File/Export as HTML and File/Export as PDF, the focused renderer sends its current Markdown buffer and current file path to Electron without changing saved state.
+16. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, converts supported admonition directives into styled callout HTML, emits Mermaid placeholders for fenced `mermaid` code blocks, renders those placeholders to static SVG in a hidden BrowserWindow, writes rendered HTML, or strips leading YAML frontmatter before printing the rendered document to PDF.
+17. Each renderer formats its own native window title from its current file path and dirty state, using the app name first and falling back to Untitled when no file path is active.
+18. Window close attempts are paused per window while that renderer decides whether dirty content should be saved, discarded, or kept open.
+19. Application quit requests walk through all open windows, prompting each dirty renderer before closing it; canceling any prompt stops the quit flow.
+20. The renderer resolves the close request back to the main process; accepted requests close the window and canceled requests leave the window running.
+21. The editor right-click menu restores the current editor selection and asks Electron to run standard Cut, Copy, or Paste against the focused web contents.
+22. Electron Edit menu roles route undo, redo, cut, copy, and paste commands to the currently focused editor control.
+23. The Settings menu opens a renderer dialog, and the renderer stores the selected editor font in localStorage using a key scoped to the OS profile name returned by Electron.
+24. The Help/About menu opens a renderer dialog with application copyright information.
+25. When MDXEditor switches between rich text and source views, the renderer captures the current editor scroll ratio and applies it to the newly active scroll container.
+26. The toolbar image import control opens a shadcn-styled dialog that either requests a local image file URL from Electron, accepts an HTTP(S) URL, or requests an Electron-read base64 data URL before publishing MDXEditor's `insertImage$` command.
+27. MDXEditor's image preview handler asks Electron to resolve non-URL local image sources. Absolute paths are converted to file URLs, relative paths are resolved from the current Markdown file's folder, and HTTP(S), data, blob, and existing file URLs pass through unchanged.
+28. A small root-editor Lexical command plugin handles Enter on empty list items that MDXEditor represents with empty child paragraphs, clears the empty item, and delegates to Lexical's normal list paragraph insertion behavior.
+29. Runnable JavaScript code blocks are represented as fenced `js nexus-run` or `javascript nexus-run` blocks, edited through CodeMirror, and executed locally in a temporary browser worker that reports console output and errors back to the renderer.
+30. Mermaid code blocks are represented as standard fenced `mermaid` blocks, rendered as non-editable SVG diagrams in rich text mode, and edited as raw Markdown in source or diff mode.
+31. When a renderer has a current file path, it asks preload to watch that path; the Electron main process owns one debounced `fs.watch` watcher per captured webContents ID.
+32. External file change events are sent back to the owning renderer, which prompts to reload clean buffers and shows a conflict prompt for dirty buffers.
+33. File saves suppress only that same window's watcher events, so another Nexus window editing the same file still sees the change as external.
+34. Manual Refresh from Edit/Refresh reads the current file through preload, reloads silently when safe, and uses the same conflict prompt when disk contents differ from dirty editor contents.
+35. Dirty external-change and manual-refresh conflicts keep the changed disk contents in renderer state so Review Diff can open MDXEditor's diff mode without replacing the current editor buffer.
+36. Successful saves move the prior saved Markdown into a previous-version baseline before updating the current saved baseline.
+37. Reloading an externally changed file preserves the current editor Markdown as the previous-version baseline before replacing the editor with disk contents.
+38. During programmatic document replacement, the renderer ignores stale MDXEditor change events from the replaced buffer so the new disk contents remain clean.
+39. Edit/Compare with Previous Version asks the focused renderer to use that previous-version baseline as MDXEditor's read-only diff side.
+40. When changes are pushed to `develop`, GitHub Actions installs dependencies, runs tests, checks Electron entry files, builds the renderer, packages Windows and macOS builds with electron-builder, applies `nexus.ico` to Windows executable artifacts, and uploads the generated installers/archives as workflow artifacts.
 
 ## Technology Used
 
@@ -129,11 +132,21 @@ N/A. Nexus v1 is local-first and has no backend service.
 
 Name: Markdown Document Workflow
 
-Description: Keeps the current Markdown document, blank startup state, MDXEditor plugins, and project-owned toolbar configuration in one direct UI flow.
+Description: Keeps the current Markdown document, blank startup state, one-shot initial empty-editor focus, built-in demo document loading, MDXEditor plugins, and project-owned toolbar configuration in one direct UI flow.
 
 Technologies: React state, local storage, MDXEditor toolbar and feature plugins, project-owned Office-inspired grouped toolbar layout, shadcn-style UI primitives, Electron edit commands.
 
 Deployment: Runs independently inside each desktop app renderer window. Programmatic document loads track the outgoing and incoming Markdown briefly so stale editor `onChange` events from the outgoing buffer cannot mark the freshly loaded document dirty.
+
+#### Demo Document Workflow
+
+Name: Built-In Feature Demo
+
+Description: Provides a File menu action that replaces the current editor buffer with a built-in Markdown document covering frontmatter, formatted text, lists, task lists, links, a base64 image, tables, thematic breaks, Mermaid diagrams, runnable JavaScript, standard code blocks, and admonitions. The action reuses the existing dirty-buffer confirmation flow and loads the demo as a clean untitled document.
+
+Technologies: Electron menu action forwarding, React document state, MDXEditor-supported Markdown features.
+
+Deployment: Runs inside each renderer window with the static demo Markdown bundled in the renderer source.
 
 #### Multi-Window Workflow
 
@@ -179,9 +192,9 @@ Deployment: Runs in each desktop app renderer window with disk reads delegated t
 
 Name: HTML and PDF Export
 
-Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown and current file path through preload. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, writes HTML through a native save dialog, or loads that HTML into a hidden BrowserWindow and prints it to PDF.
+Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown and current file path through preload. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, converts supported admonition directives into callout HTML, turns fenced Mermaid blocks into export placeholders, renders those placeholders as static SVG diagrams in a hidden BrowserWindow using Mermaid's browser bundle, writes rendered HTML through a native save dialog, or strips leading YAML frontmatter metadata before printing the rendered document to PDF.
 
-Technologies: Electron menu action forwarding, preload export IPC, Marked, Electron `BrowserWindow.webContents.printToPDF`, Node file writes.
+Technologies: Electron menu action forwarding, preload export IPC, Marked, Mermaid browser bundle, Electron `BrowserWindow.webContents.printToPDF`, Node file writes.
 
 Deployment: Runs across each renderer window and the Electron main process. Exporting does not mutate the renderer's file path, saved baseline, or dirty state.
 
@@ -259,7 +272,7 @@ Deployment: Runs entirely in the desktop app renderer process.
 
 Name: Mermaid Diagram Blocks
 
-Description: Adds a custom MDXEditor code block descriptor for `mermaid` fenced blocks. Rich text mode renders diagrams through Mermaid with the default light theme and strict security mode, while invalid syntax displays a compact inline error. Source and diff modes remain raw Markdown editing views.
+Description: Adds a custom MDXEditor code block descriptor for `mermaid` fenced blocks. Rich text mode renders diagrams through Mermaid with the default light theme and strict security mode, while invalid syntax displays a compact inline error. HTML and PDF exports render the same standard Mermaid fences as static SVG diagrams. Source and diff modes remain raw Markdown editing views.
 
 Technologies: MDXEditor code block descriptors, Mermaid, React state.
 

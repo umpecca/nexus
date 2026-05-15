@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_048: Exit lists from empty list items with Enter.
 - T_049: Add HTML and PDF export from the File menu.
 - T_050: Replace the editor toolbar with an Office-inspired grouped toolbar.
+- T_051: Render Mermaid diagrams in HTML and PDF exports.
+- T_052: Add a built-in feature demo document.
+- T_053: Exclude frontmatter from PDF export.
+- T_054: Render admonitions correctly in exports.
+- T_055: Focus the initial empty editor on launch.
 
 ### Changed
 
@@ -111,3 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolved relative local image paths against the opened Markdown file's folder for rich-text preview without rewriting the Markdown source.
 - Fixed list editing so pressing Enter on an empty list item exits the list instead of adding another blank list line.
 - Added File/Export as HTML and File/Export as PDF actions that render the current Markdown buffer through native save dialogs without changing document dirty state.
+- Rendered fenced Mermaid diagrams as static SVG diagrams in HTML and PDF exports while preserving inline export errors for invalid diagram syntax.
+- Added File/Load Demo Document to load a clean untitled Markdown showcase covering frontmatter, formatted text, lists, links, base64 images, tables, Mermaid, runnable JavaScript, code blocks, and admonitions.
+- Excluded leading YAML frontmatter metadata from PDF export output while leaving HTML export behavior unchanged.
+- Rendered supported admonition directives as styled callout blocks in HTML and PDF exports instead of leaking directive markers as plain text.
+- Focused MDXEditor automatically when a window starts with an empty untitled document so users can type immediately.

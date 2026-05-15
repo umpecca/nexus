@@ -113,7 +113,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall display a Markdown editor as the primary workspace.
 - The system shall keep each editor window's current document content in that window's application state.
 - The system shall start each application launch with a blank untitled document and no current file path.
+- The system shall focus the editor automatically when a window starts with an empty untitled document.
 - The system shall provide Electron app menu items for File/New Window, File/New, File/Open, File/Save, File/Save As, File/Export as HTML, File/Export as PDF, and File/Exit.
+- The system shall provide an Electron File menu action that loads a built-in demo Markdown document showcasing supported editor and export features.
 - The system shall allow multiple editor windows to be open at the same time.
 - The system shall route document menu actions to the currently focused editor window.
 - The system shall open a blank untitled editor document when File/New Window is selected.
@@ -142,6 +144,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow exporting the current Markdown document to an HTML file through File/Export as HTML.
 - The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
 - The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
+- The system shall render fenced Mermaid diagrams as static SVG diagrams during HTML and PDF export.
+- The system shall render supported admonition directives as styled callout blocks during HTML and PDF export.
+- The system shall exclude leading YAML frontmatter metadata from PDF export output.
 - The system shall not change the current file path, saved baseline, or dirty state when exporting.
 - The system shall allow manually refreshing the current opened file from disk through Edit/Refresh.
 - The system shall silently reload the file from disk when manual refresh does not risk discarding unsaved edits.
@@ -149,6 +154,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall clear the editor content and current file path when File/New completes.
 - The system shall prompt the user to Save, Don't Save, or Cancel before File/New discards unsaved changes.
 - The system shall prompt the user to Save, Don't Save, or Cancel after File/Open selects a file and before it replaces unsaved changes.
+- The system shall prompt the user to Save, Don't Save, or Cancel before loading the built-in demo document over unsaved changes.
 - The system shall prompt the user to Save, Don't Save, or Cancel before closing any editor window with unsaved changes.
 - The system shall prompt for each dirty editor window when quitting the application with multiple windows open.
 - The system shall show the app name first in the application title, followed by the current document name and full file path when a file path is available.
@@ -184,7 +190,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Toolbar placement: keep the MDXEditor toolbar sticky at the top of the editor frame and reserve the remaining frame height for the document editing area.
 - View switching: preserve the user's approximate scroll position when switching between rich text and source editor views.
 - List editing: pressing Enter on an empty bullet, numbered, or checklist item exits the list and creates a normal paragraph.
-- Export: HTML and PDF exports render from the current Markdown buffer and use native save dialogs without changing the active document.
+- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callouts, omit leading YAML frontmatter from PDF output, and use native save dialogs without changing the active document.
 - The app shall not provide a separate custom visual/source tab bar.
 
 ### 3.5 Non-Functional / Experience Requirements
@@ -199,21 +205,23 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 1. Launch Nexus.
 2. Start from a blank untitled document.
-3. Edit visually, or switch to source mode through the editor toolbar.
-4. Use File/New Window to open another blank editor window when working with multiple documents.
-5. Open Markdown/text files from Finder or Explorer to launch them in Nexus editor windows.
-6. Use the Electron File menu to create, open, save, save a copy, or exit the application.
-7. Confirm the active document from the native application title.
-8. Use Settings/Preferences to choose the editor font for the current OS profile.
-9. Use Help/About to view application copyright information.
-10. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
-11. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
-12. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
-13. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
-14. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
-15. Use Edit/Refresh to reload the current opened file from disk.
-16. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
-17. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
+3. Begin typing immediately because the editor has focus.
+4. Edit visually, or switch to source mode through the editor toolbar.
+5. Use File/New Window to open another blank editor window when working with multiple documents.
+6. Open Markdown/text files from Finder or Explorer to launch them in Nexus editor windows.
+7. Use the Electron File menu to create, open, save, save a copy, or exit the application.
+8. Use File/Load Demo Document to replace the current buffer with a built-in feature showcase for testing or demos.
+9. Confirm the active document from the native application title.
+10. Use Settings/Preferences to choose the editor font for the current OS profile.
+11. Use Help/About to view application copyright information.
+12. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
+13. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
+14. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
+15. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
+16. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
+17. Use Edit/Refresh to reload the current opened file from disk.
+18. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
+19. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
 
 ## 5. UI / Design Notes (Optional)
 
@@ -222,6 +230,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep document actions in the native Electron app menu.
 - Keep document actions scoped to the focused editor window so multiple open documents remain independent.
 - Keep HTML and PDF export actions in the native File menu near Save actions.
+- Keep the built-in demo document action in the native File menu near Open, because it replaces the current editor buffer rather than editing content in place.
 - Keep undo and redo actions in the native Electron Edit menu rather than duplicating them in the editor toolbar.
 - Keep manual Refresh available from the native Edit menu.
 - Keep common text editing actions available from the editor right-click menu without adding another top-level toolbar.
@@ -238,6 +247,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 ## 6. Edge Cases
 
 - Empty documents should be editable.
+- Initial empty untitled documents should place the caret in the editor once startup confirms no file is being opened.
 - Browser storage can be unavailable or full; the app should continue editing in memory.
 - Markdown syntax unsupported by the visual editor should remain accessible through source mode.
 - Switching between rich text and source mode should keep the document position aligned even when the two views have different rendered heights.
@@ -247,6 +257,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - File/New should cancel cleanly if the user chooses Cancel from the unsaved-change prompt.
 - File/Open should not show the unsaved-change prompt when the user cancels the native open-file dialog.
 - File/Open should cancel cleanly without replacing content if the user chooses Cancel from the unsaved-change prompt after selecting a file.
+- Load Demo Document should cancel cleanly without replacing content if the user chooses Cancel from the unsaved-change prompt.
 - Closing one editor window should not close other open editor windows.
 - Quitting the app should continue prompting dirty editor windows until all are saved/discarded or the quit is canceled.
 - Closing the app or a window should cancel cleanly if the user chooses Cancel from the unsaved-change prompt.

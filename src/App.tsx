@@ -29,6 +29,7 @@ import FileChangedDialog from "./components/editor/FileChangedDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
+import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 
@@ -164,6 +165,8 @@ function App() {
   const activeScrollElementRef = useRef<HTMLElement | null>(null);
   const isApplyingScrollRef = useRef(false);
   const filePathRef = useRef(filePath);
+  const hasHandledInitialOpenFileRef = useRef(false);
+  const hasFocusedInitialEmptyEditorRef = useRef(false);
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
@@ -367,7 +370,7 @@ function App() {
 
   function loadDocument(
     nextMarkdown: string,
-    nextFilePath: string,
+    nextFilePath: string | undefined,
     options: { previousVersionMarkdown?: string } = {}
   ) {
     editorScrollSnapshotRef.current = { ratio: 0, top: 0 };
@@ -409,6 +412,27 @@ function App() {
 
   function getCurrentMarkdown() {
     return editorRef.current?.getMarkdown() ?? markdown;
+  }
+
+  function focusInitialEmptyEditor() {
+    if (hasFocusedInitialEmptyEditorRef.current) {
+      return;
+    }
+
+    hasFocusedInitialEmptyEditorRef.current = true;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (filePathRef.current || !areMarkdownBuffersEquivalent(getCurrentMarkdown(), "")) {
+          return;
+        }
+
+        editorRef.current?.focus(undefined, {
+          defaultSelection: "rootStart",
+          preventScroll: true
+        });
+      });
+    });
   }
 
   async function saveDocument(): Promise<boolean> {
@@ -484,6 +508,15 @@ function App() {
     }
 
     loadDocument(result.markdown, result.filePath);
+  }
+
+  async function loadDemoDocument() {
+    const canReplace = await confirmDirtyBufferAction();
+    if (!canReplace) {
+      return;
+    }
+
+    loadDocument(DEMO_DOCUMENT_MARKDOWN, undefined);
   }
 
   async function createNewDocument() {
@@ -661,8 +694,14 @@ function App() {
     }
 
     async function loadInitialOpenFile() {
+      if (hasHandledInitialOpenFileRef.current) {
+        return;
+      }
+
+      hasHandledInitialOpenFileRef.current = true;
       const result = await window.nexus?.getInitialOpenFile();
       if (!result || result.canceled) {
+        focusInitialEmptyEditor();
         return;
       }
 
@@ -676,6 +715,10 @@ function App() {
 
       if (action === "open") {
         void openDocument();
+      }
+
+      if (action === "loadDemo") {
+        void loadDemoDocument();
       }
 
       if (action === "save") {
