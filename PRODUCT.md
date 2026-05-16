@@ -45,10 +45,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native Settings menu action that opens a shadcn-styled settings dialog.
 - A native Help menu with an About item that opens a shadcn-styled about dialog.
 - Per-OS-profile editor font preference stored locally.
+- Per-OS-profile base font size preference stored locally.
+- Per-OS-profile paper/plain editor view preference stored locally.
+- Per-OS-profile paper size preference for Letter and A4 stored locally.
+- Per-OS-profile visual editor and PDF margin preferences stored locally.
 - A shadcn-styled editor right-click menu for Cut, Copy, and Paste.
 - A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
 - Local Markdown file open and save workflows through the Electron app menu.
 - HTML and PDF document export workflows through the Electron File menu.
+- A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
 - A clean blank untitled document on every app launch and in every new editor window.
 
@@ -131,7 +136,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall open a shadcn-styled about dialog from Help/About.
 - The about dialog shall show `About` in the title and `Copyright 2026 Vince` in the body.
 - The system shall allow the user to choose the editor font from the settings dialog.
+- The system shall allow the user to choose the base editor and export font size from the settings dialog.
+- The system shall allow the user to toggle paper view from the editor toolbar.
+- The system shall allow the user to choose Letter or A4 as the editor paper size from the settings dialog.
+- The system shall allow the user to adjust top, right, bottom, and left paper margins from the settings dialog.
 - The system shall store the selected editor font locally using a key scoped to the current OS profile name.
+- The system shall store the selected base font size locally using a key scoped to the current OS profile name.
+- The system shall store the selected paper/plain editor view locally using a key scoped to the current OS profile name.
+- The system shall store the selected paper size locally using a key scoped to the current OS profile name.
+- The system shall store the selected paper margins locally using a key scoped to the current OS profile name.
 - The system shall provide a shadcn-styled context menu inside the editor for Cut, Copy, and Paste.
 - The system shall allow the user to import local image files into the editor by choosing an image from the local file system.
 - The system shall store local image imports as local file URL sources in the Markdown image node.
@@ -143,6 +156,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow saving the current document through File/Save and File/Save As.
 - The system shall allow exporting the current Markdown document to an HTML file through File/Export as HTML.
 - The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
+- The system shall export HTML and PDF using the selected base font size.
+- The system shall export PDFs using the selected paper size.
+- The system shall export PDFs using the selected paper margins.
 - The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
 - The system shall render fenced Mermaid diagrams as static SVG diagrams during HTML and PDF export.
 - The system shall render supported admonition directives as styled callout blocks during HTML and PDF export.
@@ -183,14 +199,16 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - Visual editing mode: primary editing mode using MDXEditor.
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned Office-inspired grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, and source/diff toggles where supported by enabled plugins.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned Office-inspired grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, and source/diff toggles where supported by enabled plugins.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
 - Local JavaScript runner blocks: support portable fenced code blocks using `js nexus-run` or `javascript nexus-run`, run them locally in a sandboxed browser worker, show console output/errors in the editor, and block network or nested worker APIs.
 - Toolbar placement: keep the MDXEditor toolbar sticky at the top of the editor frame and reserve the remaining frame height for the document editing area.
 - View switching: preserve the user's approximate scroll position when switching between rich text and source editor views.
 - List editing: pressing Enter on an empty bullet, numbered, or checklist item exits the list and creates a normal paragraph.
-- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callouts, omit leading YAML frontmatter from PDF output, and use native save dialogs without changing the active document.
+- Paper view: rich-text editing can constrain the document body to the selected paper width with user-adjustable margins so element sizing better matches PDF output. This mode does not provide true Word-style pagination.
+- Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged.
+- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected base font size for rendered output, use the selected paper size and margins for PDF output, and use native save dialogs without changing the active document.
 - The app shall not provide a separate custom visual/source tab bar.
 
 ### 3.5 Non-Functional / Experience Requirements
@@ -212,7 +230,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 7. Use the Electron File menu to create, open, save, save a copy, or exit the application.
 8. Use File/Load Demo Document to replace the current buffer with a built-in feature showcase for testing or demos.
 9. Confirm the active document from the native application title.
-10. Use Settings/Preferences to choose the editor font for the current OS profile.
+10. Use Settings/Preferences to choose the editor font, base font size, paper size, and page margins for the current OS profile.
 11. Use Help/About to view application copyright information.
 12. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
 13. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
@@ -235,11 +253,13 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep manual Refresh available from the native Edit menu.
 - Keep common text editing actions available from the editor right-click menu without adding another top-level toolbar.
 - Keep editor appearance settings in a compact shadcn-styled dialog opened from the native Settings menu.
+- Keep base font size, paper size, and margin settings in the same compact settings dialog as editor appearance.
 - Keep application information in a compact shadcn-styled dialog opened from the native Help menu.
 - Keep the native application title aligned with the current document path.
 - Use compact shadcn-styled prompts for external file change and conflict decisions.
 - Keep diff review inside MDXEditor's existing diff mode instead of adding a separate review workspace.
 - Keep editor-specific controls inside a compact Office-inspired grouped toolbar with visible section labels, light gray desktop ribbon chrome, consistent tooltips, a right-aligned view mode group, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and transform-offset dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
+- Keep the paper/plain view toggle in the toolbar Modes group.
 - Keep the toolbar visible while scrolling long documents without allowing it to overlap document content.
 - On Windows, show a subtle top separator on the editor toolbar so it visually matches the bottom separator below the native menu.
 - Avoid modal-first workflows for common actions.
@@ -273,6 +293,10 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Reloading an externally changed file should keep the pre-reload editor contents available as the previous-version diff baseline.
 - Compare with Previous Version should remain unavailable as behavior when the document has not yet had a prior version baseline.
 - Settings storage can be unavailable or invalid; the app should keep using a default editor font.
+- Settings storage can be unavailable or invalid; the app should keep using a default 16px base font size.
+- Settings storage can be unavailable or invalid; the app should keep using paper view by default.
+- Settings storage can be unavailable or invalid; the app should keep using a default Letter paper size.
+- Settings storage can be unavailable or invalid; the app should keep using default one-inch page margins.
 
 ## 7. Future Iterations / Open Questions
 
@@ -281,6 +305,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Add top-level document action buttons only if the app later needs visible duplicates of the native File menu.
 - Add Git-backed diffs when a document belongs to a repository.
 - Add export targets for PDF, DOCX, or slide decks.
+- Add true paginated page breaks if print-layout editing becomes a core workflow.
 
 ## 8. Notes for LLM-Assisted Development (Optional)
 

@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_053: Exclude frontmatter from PDF export.
 - T_054: Render admonitions correctly in exports.
 - T_055: Focus the initial empty editor on launch.
+- T_056: Add paper-size editing and matching PDF export.
+- T_057: Add adjustable visual editor and PDF margins.
+- T_058: Add base font size settings for editing and export.
+- T_059: Add a saved paper/plain editor view toggle.
+- T_060: Align visual paper margins with first block spacing.
+- T_061: Render Markdown highlights in HTML and PDF exports.
 
 ### Changed
 
@@ -121,3 +127,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Excluded leading YAML frontmatter metadata from PDF export output while leaving HTML export behavior unchanged.
 - Rendered supported admonition directives as styled callout blocks in HTML and PDF exports instead of leaking directive markers as plain text.
 - Focused MDXEditor automatically when a window starts with an empty untitled document so users can type immediately.
+- Added Letter/A4 paper-size settings, centered the rich-text editor on a paper-width writing surface, and used the selected paper size for PDF export.
+- Added per-side page margin settings that update the rich-text paper surface and PDF export margins together.
+- Added a base font size setting that updates the editor, HTML export, and PDF export.
+- Added a toolbar paper/plain view toggle so rich-text editing can hide the paper sheet while keeping export settings intact.
+- Fixed visual paper margins so the first and last rendered Markdown blocks do not add extra apparent page padding.
+- Rendered `==highlighted text==` as highlighted text in HTML and PDF exports instead of leaking the Markdown source delimiters.

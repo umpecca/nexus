@@ -51,11 +51,11 @@ contextBridge.exposeInMainWorld("nexus", {
   saveMarkdownFileAs(currentPath, markdown) {
     return ipcRenderer.invoke("file:saveAs", { currentPath, markdown });
   },
-  exportMarkdownAsHtml(currentPath, markdown) {
-    return ipcRenderer.invoke("file:export-html", { currentPath, markdown });
+  exportMarkdownAsHtml(currentPath, markdown, options) {
+    return ipcRenderer.invoke("file:export-html", { currentPath, markdown, options });
   },
-  exportMarkdownAsPdf(currentPath, markdown) {
-    return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown });
+  exportMarkdownAsPdf(currentPath, markdown, options) {
+    return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown, options });
   },
   selectLocalImage() {
     return ipcRenderer.invoke("image:select-local");

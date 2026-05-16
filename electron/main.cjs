@@ -17,6 +17,13 @@ const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
 const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
 const fileWatchDebounceMs = 350;
 const internalWriteSuppressMs = 1500;
+const defaultExportFontSizePixels = 16;
+const minExportFontSizePixels = 12;
+const maxExportFontSizePixels = 24;
+const defaultPdfPageMarginInches = 1;
+const minPdfPageMarginInches = 0.25;
+const maxPdfPageMarginInches = 2;
+const pdfPageSizes = new Set(["Letter", "A4"]);
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -157,6 +164,48 @@ function getDefaultExportPath(currentPath, extension) {
   return fileName;
 }
 
+function getPdfPageSize(value) {
+  return pdfPageSizes.has(value) ? value : "Letter";
+}
+
+function getExportFontSize(value) {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= minExportFontSizePixels &&
+    value <= maxExportFontSizePixels
+  ) {
+    return value;
+  }
+
+  return defaultExportFontSizePixels;
+}
+
+function getPdfPageMargin(value) {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= minPdfPageMarginInches &&
+    value <= maxPdfPageMarginInches
+  ) {
+    return value;
+  }
+
+  return defaultPdfPageMarginInches;
+}
+
+function getPdfPageMargins(value) {
+  const margins = typeof value === "object" && value !== null ? value : {};
+
+  return {
+    marginType: "custom",
+    top: getPdfPageMargin(margins.top),
+    bottom: getPdfPageMargin(margins.bottom),
+    left: getPdfPageMargin(margins.left),
+    right: getPdfPageMargin(margins.right)
+  };
+}
+
 function stripMarkdownFrontmatter(markdown) {
   const source = String(markdown ?? "");
   const frontmatterMatch = source.match(
@@ -272,8 +321,9 @@ async function renderMarkdownAdmonitions(markdown, parseMarkdown) {
   return output.join("\n");
 }
 
-function buildExportHtmlDocument(title, bodyHtml) {
+function buildExportHtmlDocument(title, bodyHtml, options = {}) {
   const escapedTitle = escapeHtmlAttribute(title);
+  const fontSizePixels = getExportFontSize(options.fontSizePixels);
 
   return `<!doctype html>
 <html lang="en">
@@ -300,7 +350,7 @@ function buildExportHtmlDocument(title, bodyHtml) {
       margin: 0 auto;
       padding: 48px 40px;
       line-height: 1.6;
-      font-size: 16px;
+      font-size: ${fontSizePixels}px;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -318,6 +368,13 @@ function buildExportHtmlDocument(title, bodyHtml) {
 
     a {
       color: #075985;
+    }
+
+    mark {
+      background: #fef08a;
+      border-radius: 2px;
+      color: inherit;
+      padding: 0 0.12em;
     }
 
     img {
@@ -480,6 +537,32 @@ function hasExportMermaidPlaceholder(html) {
   return typeof html === "string" && html.includes('<figure class="nexus-export-mermaid"');
 }
 
+function createMarkedHighlightExtension() {
+  return {
+    name: "highlight",
+    level: "inline",
+    start(source) {
+      return source.match(/==/)?.index;
+    },
+    tokenizer(source) {
+      const match = /^==(?![=])(?=\S)([\s\S]*?\S)==(?!=)/.exec(source);
+      if (!match) {
+        return undefined;
+      }
+
+      return {
+        type: "highlight",
+        raw: match[0],
+        text: match[1],
+        tokens: this.lexer.inlineTokens(match[1])
+      };
+    },
+    renderer(token) {
+      return `<mark>${this.parser.parseInline(token.tokens)}</mark>`;
+    }
+  };
+}
+
 function createExportWindow() {
   return new BrowserWindow({
     show: false,
@@ -611,6 +694,7 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
   const marked = new Marked({
     async: true,
     breaks: false,
+    extensions: [createMarkedHighlightExtension()],
     gfm: true,
     renderer
   });
@@ -621,7 +705,9 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
     marked.parse(content)
   );
   const bodyHtml = await marked.parse(markdownWithAdmonitions);
-  return buildExportHtmlDocument(getDocumentTitleForExport(currentPath), bodyHtml);
+  return buildExportHtmlDocument(getDocumentTitleForExport(currentPath), bodyHtml, {
+    fontSizePixels: options.fontSizePixels
+  });
 }
 
 async function showExportError(event, format, error) {
@@ -1237,10 +1323,12 @@ ipcMain.handle("file:saveAs", async (event, payload) => {
 });
 
 ipcMain.handle("file:export-html", async (event, payload) => {
-  const { currentPath, markdown } = payload ?? {};
+  const { currentPath, markdown, options } = payload ?? {};
 
   try {
-    const html = await renderMarkdownExportHtml(markdown, currentPath);
+    const html = await renderMarkdownExportHtml(markdown, currentPath, {
+      fontSizePixels: options?.fontSizePixels
+    });
     const result = await dialog.showSaveDialog({
       title: "Export HTML",
       defaultPath: getDefaultExportPath(currentPath, "html"),
@@ -1261,12 +1349,15 @@ ipcMain.handle("file:export-html", async (event, payload) => {
 });
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
-  const { currentPath, markdown } = payload ?? {};
+  const { currentPath, markdown, options } = payload ?? {};
+  const pageSize = getPdfPageSize(options?.pageSize);
+  const pageMargins = getPdfPageMargins(options?.pageMargins);
   let exportWindow;
 
   try {
     const html = await renderMarkdownExportHtml(markdown, currentPath, {
-      excludeFrontmatter: true
+      excludeFrontmatter: true,
+      fontSizePixels: options?.fontSizePixels
     });
     const result = await dialog.showSaveDialog({
       title: "Export PDF",
@@ -1283,8 +1374,9 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
     await renderExportMermaidDiagrams(exportWindow.webContents);
     await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
     const pdf = await exportWindow.webContents.printToPDF({
+      margins: pageMargins,
       printBackground: true,
-      pageSize: "A4"
+      pageSize
     });
 
     await fs.writeFile(result.filePath, pdf);

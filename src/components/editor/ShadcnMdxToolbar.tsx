@@ -46,17 +46,23 @@ function whenInAdmonition(editorInFocus: EditorInFocus | null) {
 function RibbonGroup({
   children,
   className,
+  hideLeftBorder = false,
+  hideRightBorder = true,
   label,
   wide = false
 }: {
   children: React.ReactNode;
   className?: string;
+  hideLeftBorder?: boolean;
+  hideRightBorder?: boolean;
   label: string;
   wide?: boolean;
 }) {
   const classNames = [
     "nexus-office-ribbon-group",
     wide ? "nexus-office-ribbon-group-wide" : "",
+    hideLeftBorder ? "nexus-office-ribbon-group-no-left-border" : "",
+    hideRightBorder ? "nexus-office-ribbon-group-no-right-border" : "",
     className ?? ""
   ]
     .filter(Boolean)
@@ -150,6 +156,31 @@ function EditorModeControls() {
   );
 }
 
+function PaperViewToggle({
+  enabled,
+  onChange
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <TooltipWrap title="Paper view">
+      <Button
+        aria-label={enabled ? "Hide paper view" : "Show paper view"}
+        aria-pressed={enabled}
+        className="nexus-office-mode-button"
+        onClick={() => onChange(!enabled)}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <FileText aria-hidden="true" />
+        <span className="nexus-office-mode-label">Paper</span>
+      </Button>
+    </TooltipWrap>
+  );
+}
+
 function RichTextRibbonCommands() {
   return (
     <>
@@ -200,7 +231,7 @@ function RichTextRibbonCommands() {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup label="Blocks" wide>
+      <RibbonGroup label="Blocks" wide hideRightBorder>
         <RibbonRow>
           <InsertTable />
           <InsertThematicBreak />
@@ -224,10 +255,19 @@ function RichTextRibbonCommands() {
   );
 }
 
-function ViewRibbonCommands() {
+function ViewRibbonCommands({
+  onPaperViewChange,
+  paperViewEnabled
+}: {
+  onPaperViewChange: (enabled: boolean) => void;
+  paperViewEnabled: boolean;
+}) {
   return (
-    <RibbonGroup className="nexus-office-ribbon-group-modes" label="Modes" wide>
-      <EditorModeControls />
+    <RibbonGroup className="nexus-office-ribbon-group-modes" label="Modes" wide hideLeftBorder hideRightBorder>
+      <div className="nexus-office-mode-controls">
+        <EditorModeControls />
+        <PaperViewToggle enabled={paperViewEnabled} onChange={onPaperViewChange} />
+      </div>
     </RibbonGroup>
   );
 }
@@ -246,7 +286,13 @@ function ModeStatePanel({ currentMode }: { currentMode: ViewMode }) {
   );
 }
 
-function ShadcnMdxToolbar() {
+function ShadcnMdxToolbar({
+  onPaperViewChange,
+  paperViewEnabled
+}: {
+  onPaperViewChange: (enabled: boolean) => void;
+  paperViewEnabled: boolean;
+}) {
   const [currentMode] = useCellValues(viewMode$);
   const isRichText = currentMode === "rich-text";
 
@@ -259,7 +305,10 @@ function ShadcnMdxToolbar() {
           ) : (
             <ModeStatePanel currentMode={currentMode} />
           )}
-          <ViewRibbonCommands />
+          <ViewRibbonCommands
+            onPaperViewChange={onPaperViewChange}
+            paperViewEnabled={paperViewEnabled}
+          />
         </div>
       </div>
     </div>

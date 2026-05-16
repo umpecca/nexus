@@ -23,6 +23,20 @@ type SaveMarkdownResult =
   | { canceled?: false; filePath: string };
 
 type ConfirmSaveChangesResult = "save" | "discard" | "cancel";
+type ExportMarkdownPageMargins = {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+};
+type ExportMarkdownHtmlOptions = {
+  fontSizePixels?: number;
+};
+type ExportMarkdownPdfOptions = {
+  fontSizePixels?: number;
+  pageSize?: "Letter" | "A4";
+  pageMargins?: ExportMarkdownPageMargins;
+};
 type ExternalFileChangeEvent = {
   filePath: string;
   kind: "changed" | "missing";
@@ -54,8 +68,16 @@ declare global {
       unwatchMarkdownFile(): Promise<void>;
       saveMarkdownFile(filePath: string, markdown: string): Promise<{ filePath: string }>;
       saveMarkdownFileAs(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
-      exportMarkdownAsHtml(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
-      exportMarkdownAsPdf(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
+      exportMarkdownAsHtml(
+        currentPath: string | undefined,
+        markdown: string,
+        options?: ExportMarkdownHtmlOptions
+      ): Promise<SaveMarkdownResult>;
+      exportMarkdownAsPdf(
+        currentPath: string | undefined,
+        markdown: string,
+        options?: ExportMarkdownPdfOptions
+      ): Promise<SaveMarkdownResult>;
       selectLocalImage(): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;

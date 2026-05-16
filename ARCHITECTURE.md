@@ -12,24 +12,24 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 
 - `package.json`: Project scripts, Electron package metadata, Windows icon packaging metadata, Markdown export dependency metadata, and runtime dependencies.
 - `.github/workflows/build-desktop.yml`: GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts on `develop` pushes and manual runs.
-- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, Settings, and Help menus, handles file dialogs and unsaved-change prompts, exports Markdown to HTML and PDF with local image resolution and static Mermaid diagram rendering, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, and loads the built renderer.
-- `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs, image selection and preview-resolution APIs, external file change subscriptions, and the unsaved-change confirmation dialog.
+- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, Settings, and Help menus, handles file dialogs and unsaved-change prompts, exports Markdown to HTML and paper-sized PDF with local image resolution, selected base font size, selected margins, and static Mermaid diagram rendering, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, and loads the built renderer.
+- `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs, paper-size and margin PDF export options, image selection and preview-resolution APIs, external file change subscriptions, and the unsaved-change confirmation dialog.
 - `index.html`: Vite application entry point.
 - `src/main.tsx`: React bootstrap.
-- `src/App.tsx`: Primary app shell, document state, blank startup behavior, initial empty-editor focus, application title formatting, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, and diff baseline coordination.
+- `src/App.tsx`: Primary app shell, document state, blank startup behavior, initial empty-editor focus, application title formatting, font, paper-size, margin, and paper/plain editor view state, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, and diff baseline coordination.
 - `src/components/about/AboutDialog.tsx`: Shadcn-styled About dialog opened from the Help menu.
 - `src/components/editor/EditorContextMenu.tsx`: Project-owned editor context menu that exposes Cut, Copy, and Paste using local shadcn-style primitives.
 - `src/components/editor/FileChangedDialog.tsx`: Shadcn-styled external file change and conflict prompt.
 - `src/components/editor/InsertImageImport.tsx`: Shadcn-styled image import dialog and toolbar button for local file URL, remote HTTP(S), and embedded base64 image insertion.
 - `src/components/editor/ListExitPlugin.ts`: Small MDXEditor/Lexical plugin that restores normal desktop list exit behavior when Enter is pressed on an empty list item.
 - `src/components/editor/ShadcnMdxToolbar.tsx`: Project-owned Office-inspired grouped toolbar composition that keeps MDXEditor's broad command set visible in labeled sections, applies consistent tooltips to Nexus-owned controls, and leaves undo, redo, refresh, and document actions in native menus.
-- `src/components/settings/SettingsDialog.tsx`: Shadcn-styled settings dialog for editor appearance preferences.
+- `src/components/settings/SettingsDialog.tsx`: Shadcn-styled settings dialog for editor appearance, base font size, paper-size, and margin preferences.
 - `src/components/ui/`: Local shadcn-style UI primitives used by project-owned controls.
-- `src/styles.css`: Global application styling, including the edge-to-edge editor frame and sticky Office-inspired grouped toolbar layout with light gray ribbon chrome, right-aligned mode grouping, centered media controls, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and raised transform-offset dropdown and tooltip layers.
+- `src/styles.css`: Global application styling, including the toggleable paper/plain rich-text editing surface, edge-to-edge editor frame, and sticky Office-inspired grouped toolbar layout with light gray ribbon chrome, right-aligned mode grouping, centered media controls, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and raised transform-offset dropdown and tooltip layers.
 - `src/lib/utils.ts`: Shared class name utility for shadcn-style components.
 - `src/lib/markdown.ts`: Markdown utilities, default document content, local storage helpers, and line-ending-normalized dirty comparison helpers.
 - `src/lib/demoDocument.ts`: Built-in Markdown feature showcase used by the File/Load Demo Document action for demos and export smoke tests.
-- `src/lib/settings.ts`: Local settings utilities, default editor font configuration, and OS-profile-scoped storage keys.
+- `src/lib/settings.ts`: Local settings utilities, default editor font, base font size, paper/plain view, paper-size, margin configuration, and OS-profile-scoped storage keys.
 - `scripts/run-electron.ps1`: Windows PowerShell runner that builds the app and launches it through the local Electron dependency.
 - `tasks/`: AI-DLC task documents.
 - `PRODUCT.md`: Product scope and behavioral requirements.
@@ -69,15 +69,15 @@ Data flow:
 12. For File/New, the focused renderer compares the current editor buffer against the last saved/opened buffer using a line-ending-normalized dirty check and asks the main process to show a Save, Don't Save, or Cancel prompt before clearing dirty content.
 13. For File/Open, the focused renderer first asks the main process to show the native open-file dialog; only after a file is selected does it compare the current buffer against the last saved/opened buffer using the same line-ending-normalized dirty check and ask whether to save, discard, or cancel before replacing dirty content.
 14. For File/Load Demo Document, the focused renderer asks the same dirty-buffer confirmation helper before replacing the current buffer with the built-in feature showcase as a clean untitled document.
-15. For File/Export as HTML and File/Export as PDF, the focused renderer sends its current Markdown buffer and current file path to Electron without changing saved state.
-16. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, converts supported admonition directives into styled callout HTML, emits Mermaid placeholders for fenced `mermaid` code blocks, renders those placeholders to static SVG in a hidden BrowserWindow, writes rendered HTML, or strips leading YAML frontmatter before printing the rendered document to PDF.
+15. For File/Export as HTML and File/Export as PDF, the focused renderer sends its current Markdown buffer, current file path, and selected base font size to Electron without changing saved state. PDF export also sends the selected Letter or A4 paper size and page margins.
+16. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, converts supported admonition directives into styled callout HTML, emits Mermaid placeholders for fenced `mermaid` code blocks, renders those placeholders to static SVG in a hidden BrowserWindow, writes rendered HTML with the selected base font size, or strips leading YAML frontmatter before printing the rendered document to PDF with the selected paper size and margins.
 17. Each renderer formats its own native window title from its current file path and dirty state, using the app name first and falling back to Untitled when no file path is active.
 18. Window close attempts are paused per window while that renderer decides whether dirty content should be saved, discarded, or kept open.
 19. Application quit requests walk through all open windows, prompting each dirty renderer before closing it; canceling any prompt stops the quit flow.
 20. The renderer resolves the close request back to the main process; accepted requests close the window and canceled requests leave the window running.
 21. The editor right-click menu restores the current editor selection and asks Electron to run standard Cut, Copy, or Paste against the focused web contents.
 22. Electron Edit menu roles route undo, redo, cut, copy, and paste commands to the currently focused editor control.
-23. The Settings menu opens a renderer dialog, and the renderer stores the selected editor font in localStorage using a key scoped to the OS profile name returned by Electron.
+23. The Settings menu opens a renderer dialog, and the renderer stores the selected editor font, base font size, paper/plain view, paper size, and page margins in localStorage using a key scoped to the OS profile name returned by Electron.
 24. The Help/About menu opens a renderer dialog with application copyright information.
 25. When MDXEditor switches between rich text and source views, the renderer captures the current editor scroll ratio and applies it to the newly active scroll container.
 26. The toolbar image import control opens a shadcn-styled dialog that either requests a local image file URL from Electron, accepts an HTTP(S) URL, or requests an Electron-read base64 data URL before publishing MDXEditor's `insertImage$` command.
@@ -192,7 +192,7 @@ Deployment: Runs in each desktop app renderer window with disk reads delegated t
 
 Name: HTML and PDF Export
 
-Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown and current file path through preload. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, converts supported admonition directives into callout HTML, turns fenced Mermaid blocks into export placeholders, renders those placeholders as static SVG diagrams in a hidden BrowserWindow using Mermaid's browser bundle, writes rendered HTML through a native save dialog, or strips leading YAML frontmatter metadata before printing the rendered document to PDF.
+Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown, current file path, and selected base font size through preload. PDF export also sends the selected Letter or A4 paper size and page margins. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, converts supported admonition directives into callout HTML, turns fenced Mermaid blocks into export placeholders, renders those placeholders as static SVG diagrams in a hidden BrowserWindow using Mermaid's browser bundle, writes rendered HTML through a native save dialog, or strips leading YAML frontmatter metadata before printing the rendered document to PDF with the selected base font size, paper size, and margins.
 
 Technologies: Electron menu action forwarding, preload export IPC, Marked, Mermaid browser bundle, Electron `BrowserWindow.webContents.printToPDF`, Node file writes.
 
@@ -242,7 +242,7 @@ Deployment: Runs across the renderer app shell and Electron preload/main process
 
 Name: Profile-Scoped Editor Settings
 
-Description: Opens a shadcn-styled modal from the native Settings menu, lets the user choose an editor font, applies it to rich-text and source editing surfaces, and persists the choice in localStorage under a key that includes the current OS profile name.
+Description: Opens a shadcn-styled modal from the native Settings menu, lets the user choose an editor font, base font size, Letter or A4 paper size, and per-side page margins, applies the font and font size to rich-text and source editing surfaces, applies the paper size and margins to the rich-text paper view, and persists the choices in localStorage under a key that includes the current OS profile name. The toolbar persists the same settings store when the user toggles between paper and plain rich-text views.
 
 Technologies: React state, Radix Dialog, local storage, Electron IPC for profile-name lookup.
 
@@ -282,7 +282,7 @@ Deployment: Runs inside the desktop app renderer.
 
 Name: Sticky Office-Inspired Grouped Toolbar Editor Frame
 
-Description: Uses CSS to keep the custom Office-inspired grouped MDXEditor toolbar at the top of an edge-to-edge editor frame while the rich-text/source editing region owns the remaining scrollable space. The toolbar keeps rich-text command groups visible together, uses light gray ribbon chrome inspired by the reference, floats the view mode group to the right, centers compact media controls within their group, applies white bordered paragraph dropdown controls, keeps only subtle horizontal command-band borders at the app edges, and keeps toolbar dropdown, select, tooltip, and popover surfaces layered above and transform-offset below the sticky toolbar. On Windows, the renderer adds a platform-specific shell class so the toolbar can draw a subtle top separator beneath the native menu. The app shell observes MDXEditor's active rich/source scroll container and keeps the scroll ratio synchronized when switching editor views.
+Description: Uses CSS to keep the custom Office-inspired grouped MDXEditor toolbar at the top of an edge-to-edge editor frame while the rich-text/source editing region owns the remaining scrollable space. Rich-text mode can center the editable Markdown body on a white paper sheet sized from profile settings, with user-adjustable base font size, user-adjustable margins, and constrained media/table/code content, or switch to a plain words-first flow without the sheet, shadow, fixed page width, fixed height, or page margins. The toolbar keeps rich-text command groups visible together, uses light gray ribbon chrome inspired by the reference, floats the view mode group to the right, centers compact media controls within their group, applies white bordered paragraph dropdown controls, keeps only subtle horizontal command-band borders at the app edges, and keeps toolbar dropdown, select, tooltip, and popover surfaces layered above and transform-offset below the sticky toolbar. On Windows, the renderer adds a platform-specific shell class so the toolbar can draw a subtle top separator beneath the native menu. The app shell observes MDXEditor's active rich/source scroll container and keeps the scroll ratio synchronized when switching editor views.
 
 Technologies: CSS flex layout, sticky positioning, project-owned Office-inspired grouped toolbar layout, MDXEditor class hooks, DOM scroll observers.
 
@@ -296,7 +296,7 @@ Name: Nexus Draft Storage
 
 Type: Browser local storage.
 
-Purpose: Stores transient draft state as a convenience, and stores profile-scoped editor settings such as font preference.
+Purpose: Stores transient draft state as a convenience, and stores profile-scoped editor settings such as font, base font size, paper/plain view, paper-size, and margin preferences.
 
 Key Schemas/Collections: `nexus:draft:v1`, `nexus:settings:v1:{profileName}`.
 

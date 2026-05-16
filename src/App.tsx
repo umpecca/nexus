@@ -22,7 +22,7 @@ import {
 } from "@mdxeditor/editor";
 import { usePublisher } from "@mdxeditor/gurx";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
-import { createDefaultSettings, loadSettings, saveSettings } from "./lib/settings";
+import { createDefaultSettings, getEditorPageSizeOption, loadSettings, saveSettings } from "./lib/settings";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
@@ -170,8 +170,19 @@ function App() {
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
+  const editorSurfaceClassName = settings.paperViewEnabled
+    ? "editor-surface editor-surface-paper"
+    : "editor-surface editor-surface-plain";
+  const pageSizeOption = getEditorPageSizeOption(settings.pageSize);
   const editorStyle = {
-    "--editor-font-family": settings.fontFamily
+    "--editor-font-family": settings.fontFamily,
+    "--editor-font-size": `${settings.fontSizePixels}px`,
+    "--editor-page-width": `${pageSizeOption.widthInches}in`,
+    "--editor-page-height": `${pageSizeOption.heightInches}in`,
+    "--editor-page-margin-top": `${settings.pageMargins.top}in`,
+    "--editor-page-margin-right": `${settings.pageMargins.right}in`,
+    "--editor-page-margin-bottom": `${settings.pageMargins.bottom}in`,
+    "--editor-page-margin-left": `${settings.pageMargins.left}in`
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
   const imagePreviewHandler = useMemo(() => {
@@ -467,12 +478,18 @@ function App() {
 
   async function exportDocumentAsHtml() {
     const currentMarkdown = getCurrentMarkdown();
-    await window.nexus?.exportMarkdownAsHtml(filePath, currentMarkdown);
+    await window.nexus?.exportMarkdownAsHtml(filePath, currentMarkdown, {
+      fontSizePixels: settings.fontSizePixels
+    });
   }
 
   async function exportDocumentAsPdf() {
     const currentMarkdown = getCurrentMarkdown();
-    await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown);
+    await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown, {
+      fontSizePixels: settings.fontSizePixels,
+      pageSize: settings.pageSize,
+      pageMargins: settings.pageMargins
+    });
   }
 
   async function confirmDirtyBufferAction() {
@@ -770,7 +787,7 @@ function App() {
     <main className={appShellClassName}>
       <section className="workspace">
         <div className="editor-column">
-          <div className="editor-surface" ref={editorSurfaceRef} style={editorStyle}>
+          <div className={editorSurfaceClassName} ref={editorSurfaceRef} style={editorStyle}>
             <EditorContextMenu>
               <MDXEditor
                 ref={editorRef}
@@ -822,7 +839,12 @@ function App() {
                     toolbarContents: () => (
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
-                        <ShadcnMdxToolbar />
+                        <ShadcnMdxToolbar
+                          onPaperViewChange={(paperViewEnabled) =>
+                            setSettings((current) => ({ ...current, paperViewEnabled }))
+                          }
+                          paperViewEnabled={settings.paperViewEnabled}
+                        />
                       </>
                     ),
                     toolbarClassName: "nexus-editor-toolbar"
@@ -848,9 +870,19 @@ function App() {
       ) : null}
       <SettingsDialog
         fontFamily={settings.fontFamily}
+        fontSizePixels={settings.fontSizePixels}
         onFontFamilyChange={(fontFamily) => setSettings((current) => ({ ...current, fontFamily }))}
+        onFontSizePixelsChange={(fontSizePixels) =>
+          setSettings((current) => ({ ...current, fontSizePixels }))
+        }
+        onPageMarginsChange={(pageMargins) =>
+          setSettings((current) => ({ ...current, pageMargins }))
+        }
+        onPageSizeChange={(pageSize) => setSettings((current) => ({ ...current, pageSize }))}
         onOpenChange={setSettingsOpen}
         open={settingsOpen}
+        pageMargins={settings.pageMargins}
+        pageSize={settings.pageSize}
         profileName={profileName}
       />
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
