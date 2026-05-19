@@ -170,9 +170,15 @@ function App() {
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
-  const editorSurfaceClassName = settings.paperViewEnabled
-    ? "editor-surface editor-surface-paper"
-    : "editor-surface editor-surface-plain";
+  const editorSurfaceClassName = [
+    "editor-surface",
+    settings.paperViewEnabled ? "editor-surface-paper" : "editor-surface-plain",
+    !settings.paperViewEnabled && settings.responsiveContentWrappingEnabled
+      ? "editor-surface-responsive-wrap"
+      : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
   const pageSizeOption = getEditorPageSizeOption(settings.pageSize);
   const editorStyle = {
     "--editor-font-family": settings.fontFamily,
@@ -843,7 +849,16 @@ function App() {
                           onPaperViewChange={(paperViewEnabled) =>
                             setSettings((current) => ({ ...current, paperViewEnabled }))
                           }
+                          onResponsiveContentWrappingChange={(responsiveContentWrappingEnabled) =>
+                            setSettings((current) => ({
+                              ...current,
+                              responsiveContentWrappingEnabled
+                            }))
+                          }
                           paperViewEnabled={settings.paperViewEnabled}
+                          responsiveContentWrappingEnabled={
+                            settings.responsiveContentWrappingEnabled
+                          }
                         />
                       </>
                     ),

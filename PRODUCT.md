@@ -35,7 +35,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native application/window icon loaded from the local `nexus.png` asset.
 - A Windows executable and installer icon loaded from the local `nexus.ico` asset.
 - A visual Markdown editor with a broad MDXEditor-backed toolbar enabled, including source mode and supported formatting, insert, and block controls.
-- A sticky Office-inspired grouped editor toolbar that remains available at the top of the editor without covering the editable document area.
+- A sticky white shadcn-styled editor toolbar organized into unlabeled button groups, with full rich-text controls in the toolbar row and compact view controls floating over source and diff editing modes.
 - Native Electron File menu actions for New, Open, Save, Save As, and Exit.
 - A native File/New Window action for opening multiple editor windows at the same time.
 - Operating-system file open handoff support for Markdown/text files launched from macOS Finder or Windows Explorer.
@@ -47,13 +47,14 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Per-OS-profile editor font preference stored locally.
 - Per-OS-profile base font size preference stored locally.
 - Per-OS-profile paper/plain editor view preference stored locally.
+- Per-OS-profile plain-view responsive content wrapping preference stored locally.
 - Per-OS-profile paper size preference for Letter and A4 stored locally.
 - Per-OS-profile visual editor and PDF margin preferences stored locally.
 - A shadcn-styled editor right-click menu for Cut, Copy, and Paste.
 - A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
 - Local Markdown file open and save workflows through the Electron app menu.
 - HTML and PDF document export workflows through the Electron File menu.
-- A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout.
+- A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout with optional responsive content wrapping.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
 - A clean blank untitled document on every app launch and in every new editor window.
 
@@ -143,6 +144,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall store the selected editor font locally using a key scoped to the current OS profile name.
 - The system shall store the selected base font size locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper/plain editor view locally using a key scoped to the current OS profile name.
+- The system shall allow the user to turn responsive content wrapping on or off while using the plain rich-text editor view.
+- The system shall store the selected plain-view responsive content wrapping preference locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper size locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper margins locally using a key scoped to the current OS profile name.
 - The system shall provide a shadcn-styled context menu inside the editor for Cut, Copy, and Paste.
@@ -199,15 +202,16 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - Visual editing mode: primary editing mode using MDXEditor.
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned Office-inspired grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, and source/diff toggles where supported by enabled plugins.
-- Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
+- Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only and the editor background kept white like the other editing modes.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
 - Local JavaScript runner blocks: support portable fenced code blocks using `js nexus-run` or `javascript nexus-run`, run them locally in a sandboxed browser worker, show console output/errors in the editor, and block network or nested worker APIs.
-- Toolbar placement: keep the MDXEditor toolbar sticky at the top of the editor frame and reserve the remaining frame height for the document editing area.
+- Toolbar placement: keep the MDXEditor rich-text toolbar sticky at the top of the editor frame with a subtle gray bottom border matching the toolbar group borders, and float the right-side view controls over source and diff modes so those modes can use the full editor height.
 - View switching: preserve the user's approximate scroll position when switching between rich text and source editor views.
 - List editing: pressing Enter on an empty bullet, numbered, or checklist item exits the list and creates a normal paragraph.
-- Paper view: rich-text editing can constrain the document body to the selected paper width with user-adjustable margins so element sizing better matches PDF output. This mode does not provide true Word-style pagination.
-- Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged.
+- Paper view: rich-text editing can constrain the document body to the selected paper width with user-adjustable margins on a white editor background so element sizing better matches PDF output. This mode does not provide true Word-style pagination.
+- Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged; the user can toggle whether plain view wraps to the full application width or to a centered readable column without adding page-level horizontal scrolling.
+- Editable page background: rich-text, source, diff, and plain-view editor backgrounds match the toolbar background color for visual continuity.
 - Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected base font size for rendered output, use the selected paper size and margins for PDF output, and use native save dialogs without changing the active document.
 - The app shall not provide a separate custom visual/source tab bar.
 
@@ -258,9 +262,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep the native application title aligned with the current document path.
 - Use compact shadcn-styled prompts for external file change and conflict decisions.
 - Keep diff review inside MDXEditor's existing diff mode instead of adding a separate review workspace.
-- Keep editor-specific controls inside a compact Office-inspired grouped toolbar with visible section labels, light gray desktop ribbon chrome, consistent tooltips, a right-aligned view mode group, white bordered paragraph dropdown controls, subtle horizontal command-band separation, and transform-offset dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
-- Keep the paper/plain view toggle in the toolbar Modes group.
-- Keep the toolbar visible while scrolling long documents without allowing it to overlap document content.
+- Keep editor-specific controls inside a compact white shadcn-styled grouped toolbar with unlabeled button groups, consistent tooltips, a right-aligned view mode group, white bordered paragraph dropdown controls, and transform-offset dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
+- Keep the paper/plain view toggle and plain-view responsive wrapping toggle in the toolbar Modes group.
+- Keep the rich-text toolbar visible while scrolling long documents without allowing it to overlap document content; in source and diff modes, let the compact right-side view controls intentionally overlap the editor content at the top-right.
 - On Windows, show a subtle top separator on the editor toolbar so it visually matches the bottom separator below the native menu.
 - Avoid modal-first workflows for common actions.
 

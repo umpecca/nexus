@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_059: Add a saved paper/plain editor view toggle.
 - T_060: Align visual paper margins with first block spacing.
 - T_061: Render Markdown highlights in HTML and PDF exports.
+- T_062: Replace the Office-inspired editor toolbar with white shadcn button groups.
+- T_063: Add a plain-view responsive content wrapping toggle.
+- T_064: Match the editable page background to the toolbar background.
+- T_065: Float the view controls over source and diff modes.
+- T_066: Make the paper-view editor background white.
+- T_067: Add a gray bottom border to the rich-text toolbar.
+- T_068: Make the diff editor background white.
 
 ### Changed
 

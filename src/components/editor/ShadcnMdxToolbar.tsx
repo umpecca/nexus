@@ -18,13 +18,15 @@ import {
   viewMode$
 } from "@mdxeditor/editor";
 import type { EditorInFocus, ViewMode } from "@mdxeditor/editor";
-import { Code2, FileText, GitCompareArrows } from "lucide-react";
+import { Code2, FileText, GitCompareArrows, WrapText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import InsertImageImport from "./InsertImageImport";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
 import InsertMermaidDiagram from "./InsertMermaidDiagram";
 import { Button } from "../ui/button";
+import { ButtonGroup } from "../ui/button-group";
+import { Separator } from "../ui/separator";
 
 type DirectiveNode = {
   getType: () => string;
@@ -43,52 +45,43 @@ function whenInAdmonition(editorInFocus: EditorInFocus | null) {
   );
 }
 
-function RibbonGroup({
+function ToolbarButtonGroup({
+  "aria-label": ariaLabel,
   children,
   className,
-  hideLeftBorder = false,
-  hideRightBorder = true,
-  label,
   wide = false
 }: {
+  "aria-label": string;
   children: React.ReactNode;
   className?: string;
-  hideLeftBorder?: boolean;
-  hideRightBorder?: boolean;
-  label: string;
   wide?: boolean;
 }) {
   const classNames = [
-    "nexus-office-ribbon-group",
-    wide ? "nexus-office-ribbon-group-wide" : "",
-    hideLeftBorder ? "nexus-office-ribbon-group-no-left-border" : "",
-    hideRightBorder ? "nexus-office-ribbon-group-no-right-border" : "",
+    "nexus-shadcn-toolbar-group",
+    wide ? "nexus-shadcn-toolbar-group-wide" : "",
     className ?? ""
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <section className={classNames}>
-      <div className="nexus-office-ribbon-group-controls">
-        {children}
-      </div>
-      <span className="nexus-office-ribbon-group-label">{label}</span>
-    </section>
+    <ButtonGroup aria-label={ariaLabel} className={classNames}>
+      {children}
+    </ButtonGroup>
   );
 }
 
-function RibbonRow({ children }: { children: React.ReactNode }) {
+function ToolbarRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="nexus-office-ribbon-row">
+    <div className="nexus-shadcn-toolbar-row">
       {children}
     </div>
   );
 }
 
-function RibbonStack({ children }: { children: React.ReactNode }) {
+function ToolbarStack({ children }: { children: React.ReactNode }) {
   return (
-    <div className="nexus-office-ribbon-stack">
+    <div className="nexus-shadcn-toolbar-stack">
       {children}
     </div>
   );
@@ -116,10 +109,9 @@ function EditorModeButton({
         size="sm"
         type="button"
         variant="ghost"
-        className="nexus-office-mode-button"
+        className="nexus-shadcn-toolbar-mode-button"
       >
         <Icon aria-hidden="true" />
-        <span className="nexus-office-mode-label">{label}</span>
       </Button>
     </TooltipWrap>
   );
@@ -130,7 +122,7 @@ function EditorModeControls() {
   const setViewMode = usePublisher(viewMode$);
 
   return (
-    <div className="nexus-office-mode-switch" role="group" aria-label="Editor view mode">
+    <ButtonGroup className="nexus-shadcn-toolbar-mode-switch" aria-label="Editor view mode">
       <EditorModeButton
         currentMode={currentMode}
         icon={FileText}
@@ -152,7 +144,7 @@ function EditorModeControls() {
         mode="source"
         onSelect={setViewMode}
       />
-    </div>
+    </ButtonGroup>
   );
 }
 
@@ -168,14 +160,40 @@ function PaperViewToggle({
       <Button
         aria-label={enabled ? "Hide paper view" : "Show paper view"}
         aria-pressed={enabled}
-        className="nexus-office-mode-button"
+        className="nexus-shadcn-toolbar-mode-button"
         onClick={() => onChange(!enabled)}
-        size="sm"
+        size="icon"
         type="button"
         variant="ghost"
       >
         <FileText aria-hidden="true" />
-        <span className="nexus-office-mode-label">Paper</span>
+      </Button>
+    </TooltipWrap>
+  );
+}
+
+function ResponsiveWrapToggle({
+  disabled,
+  enabled,
+  onChange
+}: {
+  disabled: boolean;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <TooltipWrap title="Responsive wrapping">
+      <Button
+        aria-label={enabled ? "Use readable content width" : "Use application width wrapping"}
+        aria-pressed={enabled}
+        className="nexus-shadcn-toolbar-mode-button"
+        disabled={disabled}
+        onClick={() => onChange(!enabled)}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <WrapText aria-hidden="true" />
       </Button>
     </TooltipWrap>
   );
@@ -184,19 +202,18 @@ function PaperViewToggle({
 function RichTextRibbonCommands() {
   return (
     <>
-      <RibbonGroup label="Font" wide>
-        <RibbonRow>
+      <ToolbarButtonGroup aria-label="Text formatting" wide>
+        <ToolbarRow>
           <BoldItalicUnderlineToggles />
           <CodeToggle />
           <HighlightToggle />
-        </RibbonRow>
-        <RibbonRow>
+          <Separator orientation="vertical" />
           <StrikeThroughSupSubToggles />
-        </RibbonRow>
-      </RibbonGroup>
+        </ToolbarRow>
+      </ToolbarButtonGroup>
 
-      <RibbonGroup label="Paragraph">
-        <RibbonStack>
+      <ToolbarButtonGroup aria-label="Paragraph formatting">
+        <ToolbarStack>
           <ListsToggle />
           <ConditionalContents
             options={[
@@ -221,23 +238,22 @@ function RichTextRibbonCommands() {
               }
             ]}
           />
-        </RibbonStack>
-      </RibbonGroup>
+        </ToolbarStack>
+      </ToolbarButtonGroup>
 
-      <RibbonGroup className="nexus-office-ribbon-group-centered" label="Links & Media" wide>
-        <RibbonRow>
+      <ToolbarButtonGroup aria-label="Links and media" wide>
+        <ToolbarRow>
           <CreateLink />
           <InsertImageImport />
-        </RibbonRow>
-      </RibbonGroup>
+        </ToolbarRow>
+      </ToolbarButtonGroup>
 
-      <RibbonGroup label="Blocks" wide hideRightBorder>
-        <RibbonRow>
+      <ToolbarButtonGroup aria-label="Insert blocks" wide>
+        <ToolbarRow>
           <InsertTable />
           <InsertThematicBreak />
           <InsertCodeBlock />
-        </RibbonRow>
-        <RibbonRow>
+          <Separator orientation="vertical" />
           <InsertMermaidDiagram />
           <InsertLocalJavaScriptRunner />
           <ConditionalContents
@@ -249,67 +265,70 @@ function RichTextRibbonCommands() {
             ]}
           />
           <InsertFrontmatter />
-        </RibbonRow>
-      </RibbonGroup>
+        </ToolbarRow>
+      </ToolbarButtonGroup>
     </>
   );
 }
 
 function ViewRibbonCommands({
   onPaperViewChange,
-  paperViewEnabled
+  onResponsiveContentWrappingChange,
+  paperViewEnabled,
+  responsiveContentWrappingEnabled
 }: {
   onPaperViewChange: (enabled: boolean) => void;
+  onResponsiveContentWrappingChange: (enabled: boolean) => void;
   paperViewEnabled: boolean;
+  responsiveContentWrappingEnabled: boolean;
 }) {
   return (
-    <RibbonGroup className="nexus-office-ribbon-group-modes" label="Modes" wide hideLeftBorder hideRightBorder>
-      <div className="nexus-office-mode-controls">
+    <ToolbarButtonGroup className="nexus-shadcn-toolbar-group-modes" aria-label="View controls" wide>
+      <div className="nexus-shadcn-toolbar-mode-controls">
         <EditorModeControls />
+        <Separator orientation="vertical" />
         <PaperViewToggle enabled={paperViewEnabled} onChange={onPaperViewChange} />
+        <ResponsiveWrapToggle
+          disabled={paperViewEnabled}
+          enabled={responsiveContentWrappingEnabled}
+          onChange={onResponsiveContentWrappingChange}
+        />
       </div>
-    </RibbonGroup>
-  );
-}
-
-function ModeStatePanel({ currentMode }: { currentMode: ViewMode }) {
-  return (
-    <div className="nexus-office-ribbon-state">
-      <span className="nexus-office-ribbon-state-kicker">View mode</span>
-      <span className="nexus-office-ribbon-state-label">
-        {currentMode === "diff" ? "Reviewing differences" : "Editing Markdown source"}
-      </span>
-      <span className="nexus-office-ribbon-state-note">
-        Use View to return to rich text before editing formatting or insert commands.
-      </span>
-    </div>
+    </ToolbarButtonGroup>
   );
 }
 
 function ShadcnMdxToolbar({
   onPaperViewChange,
-  paperViewEnabled
+  onResponsiveContentWrappingChange,
+  paperViewEnabled,
+  responsiveContentWrappingEnabled
 }: {
   onPaperViewChange: (enabled: boolean) => void;
+  onResponsiveContentWrappingChange: (enabled: boolean) => void;
   paperViewEnabled: boolean;
+  responsiveContentWrappingEnabled: boolean;
 }) {
   const [currentMode] = useCellValues(viewMode$);
   const isRichText = currentMode === "rich-text";
+  const toolbarClassName = [
+    "nexus-shadcn-toolbar",
+    `nexus-shadcn-toolbar-${currentMode}-mode`,
+    isRichText ? "" : "nexus-shadcn-toolbar-floating"
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className="nexus-office-ribbon">
-      <div className="nexus-office-ribbon-body">
-        <div className="nexus-office-ribbon-scroll">
-          {isRichText ? (
-            <RichTextRibbonCommands />
-          ) : (
-            <ModeStatePanel currentMode={currentMode} />
-          )}
-          <ViewRibbonCommands
-            onPaperViewChange={onPaperViewChange}
-            paperViewEnabled={paperViewEnabled}
-          />
-        </div>
+    <div className={toolbarClassName}>
+      <div className="nexus-shadcn-toolbar-scroll">
+        {isRichText ? <RichTextRibbonCommands /> : null}
+        <ViewRibbonCommands
+          onPaperViewChange={onPaperViewChange}
+          onResponsiveContentWrappingChange={onResponsiveContentWrappingChange}
+          paperViewEnabled={paperViewEnabled}
+          responsiveContentWrappingEnabled={responsiveContentWrappingEnabled}
+        />
       </div>
     </div>
   );

@@ -12,7 +12,7 @@
   --line: #ded8cc;
   --accent: #0b6b61;
   --accent-strong: #09564e;
-  --toolbar: #f8faf9;
+  --toolbar: #ffffff;
   --toolbar-hover: #eef5f3;
   --toolbar-active: #deece9;
   --toolbar-shadow: rgba(32, 33, 36, 0.08);
@@ -156,7 +156,7 @@ button:hover {
 }
 
 .editor-surface {
-  background: #ebe6dc;
+  background: var(--toolbar);
   border: 0;
   border-radius: 0;
   display: flex;
@@ -170,6 +170,7 @@ button:hover {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  position: relative;
   width: 100%;
 }
 
@@ -467,7 +468,7 @@ button:hover {
 
 .editor-surface .mdxeditor-toolbar {
   background: var(--toolbar);
-  border-bottom: 0;
+  border-bottom: 1px solid var(--line);
   border-radius: 0;
   flex-wrap: wrap;
   flex: 0 0 auto;
@@ -483,248 +484,197 @@ button:hover {
 
 .nexus-editor-toolbar {
   border-radius: 0;
-  box-shadow: 0 1px 0 var(--toolbar-shadow);
+  box-shadow: none;
   gap: 0;
   min-height: 64px;
   padding: 0;
 }
 
-.nexus-office-ribbon {
-  background: linear-gradient(180deg, #b7b8bb 0%, #c9cace 42%, #d8d9dc 100%);
-  color: #1e2329;
-  display: flex;
-  flex-direction: column;
+.editor-surface .mdxeditor-toolbar:has(.nexus-shadcn-toolbar-floating) {
+  background: transparent;
+  border-bottom: 0;
+  min-height: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  width: auto;
+  z-index: 40;
+}
+
+.nexus-shadcn-toolbar {
+  background: #ffffff;
+  border-bottom: 0;
+  color: var(--ink);
   flex: 1;
   min-width: 0;
   overflow: visible;
   width: 100%;
 }
 
-.nexus-office-ribbon-body {
-  background:
-    linear-gradient(180deg, #f5f6f8 0%, #eceef2 48%, #d8d9dc 100%);
-  border-block: 1px solid #b1b4ba;
-  border-inline: 0;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.68),
-    inset 0 -1px 0 rgba(143, 146, 152, 0.42);
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: visible;
-  padding: 0.24rem 0.32rem 0.18rem;
-}
-
-.nexus-office-ribbon-scroll {
-  align-items: stretch;
+.nexus-shadcn-toolbar-scroll {
+  align-items: center;
   display: flex;
-  gap: 0;
+  gap: 0.5rem;
+  min-height: 3rem;
   min-width: 0;
   overflow-x: auto;
   overflow-y: visible;
+  padding: 0.38rem 0.5rem;
   scrollbar-color: rgba(32, 33, 36, 0.24) transparent;
   scrollbar-width: thin;
 }
 
-.nexus-office-ribbon-group {
-  align-items: stretch;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(194, 196, 200, 0.16));
-  border-left: 1px solid rgba(255, 255, 255, 0.76);
-  border-right: 1px solid #c2c4c8;
-  display: grid;
+.nexus-shadcn-toolbar-floating {
+  background: transparent;
   flex: 0 0 auto;
-  grid-template-rows: 1fr auto;
-  min-height: 3.35rem;
-  min-width: 6.4rem;
-  padding: 0.18rem 0.34rem 0.12rem;
+  pointer-events: none;
+  width: auto;
 }
 
-.nexus-office-ribbon-group:first-child {
-  border-left-color: transparent;
+.nexus-shadcn-toolbar-floating .nexus-shadcn-toolbar-scroll {
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+  pointer-events: none;
 }
 
-.nexus-office-ribbon-group-wide {
-  min-width: 9.2rem;
+.nexus-shadcn-toolbar-floating .nexus-shadcn-toolbar-group-modes {
+  box-shadow: 0 8px 22px rgba(32, 33, 36, 0.12);
+  margin-left: 0;
+  pointer-events: auto;
 }
 
-.nexus-office-ribbon-group-no-right-border {
-  border-right-color: transparent;
+.nexus-button-group,
+.nexus-shadcn-toolbar-group {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.15rem;
+  min-height: 2.25rem;
+  padding: 0.18rem;
 }
 
-.nexus-office-ribbon-group-no-left-border {
-  border-left-color: transparent;
+.nexus-shadcn-toolbar-group-wide {
+  min-width: 0;
 }
 
-.nexus-office-ribbon-group-centered .nexus-office-ribbon-group-controls {
-  justify-items: center;
-}
-
-.nexus-office-ribbon-group-centered .nexus-office-ribbon-row {
-  justify-content: center;
-  width: 100%;
-}
-
-.nexus-office-ribbon-group-modes {
+.nexus-shadcn-toolbar-group-modes {
   margin-left: auto;
 }
 
-.nexus-office-ribbon-group-controls {
-  align-content: center;
+.nexus-shadcn-toolbar-row,
+.nexus-shadcn-toolbar-stack {
   align-items: center;
-  display: grid;
-  gap: 0.08rem;
-  justify-items: start;
+  display: inline-flex;
+  gap: 0.12rem;
 }
 
-.nexus-office-ribbon-row,
-.nexus-office-ribbon-stack {
-  align-items: center;
-  display: flex;
-  gap: 0.08rem;
+.nexus-shadcn-toolbar-stack {
+  flex-direction: row;
 }
 
-.nexus-office-ribbon-stack {
-  flex-direction: column;
-  justify-content: center;
+.nexus-shadcn-toolbar .nexus-separator-vertical {
+  height: 1.2rem;
+  margin-inline: 0.12rem;
 }
 
-.nexus-office-ribbon-group-label {
-  color: #62666d;
-  font-size: 0.66rem;
-  line-height: 1.2;
-  padding-top: 0.08rem;
-  text-align: center;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-
-.nexus-office-ribbon-state {
-  align-self: stretch;
-  background: linear-gradient(180deg, #f5f6f8, #d8d9dc);
-  border-left: 3px solid #8f9298;
-  border-right: 1px solid #c2c4c8;
-  display: grid;
-  flex: 0 0 18rem;
-  gap: 0.1rem;
-  justify-content: center;
-  padding: 0.32rem 0.8rem;
-}
-
-.nexus-office-ribbon-state-kicker {
-  color: #62666d;
-  font-size: 0.66rem;
-  text-transform: uppercase;
-}
-
-.nexus-office-ribbon-state-label {
-  color: #202124;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.nexus-office-ribbon-state-note {
-  color: #62666d;
-  font-size: 0.72rem;
-  line-height: 1.25;
-}
-
-.nexus-office-ribbon [data-toolbar-item],
-.nexus-office-ribbon button[aria-label],
-.nexus-office-ribbon [role="button"] {
+.nexus-shadcn-toolbar [data-toolbar-item],
+.nexus-shadcn-toolbar button[aria-label],
+.nexus-shadcn-toolbar [role="button"] {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
-  color: #202124;
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--ink);
   display: inline-flex;
-  height: 24px;
+  height: 30px;
   justify-content: center;
-  min-height: 24px;
-  min-width: 24px;
-  padding: 0.2rem;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0.35rem;
   transition:
     background 120ms ease,
     border-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    box-shadow 120ms ease;
 }
 
-.nexus-office-ribbon [data-toolbar-item]:hover,
-.nexus-office-ribbon button[aria-label]:hover,
-.nexus-office-ribbon [role="button"]:hover {
-  background: linear-gradient(180deg, #fff4b8, #ffd95a);
-  border-color: #bd9b2d;
+.nexus-shadcn-toolbar [data-toolbar-item]:hover,
+.nexus-shadcn-toolbar button[aria-label]:hover,
+.nexus-shadcn-toolbar [role="button"]:hover {
+  background: var(--toolbar-hover);
+  border-color: transparent;
 }
 
-.nexus-office-ribbon [data-toolbar-item][data-state="on"],
-.nexus-office-ribbon [data-toolbar-item][aria-pressed="true"],
-.nexus-office-ribbon button[aria-pressed="true"] {
-  background: linear-gradient(180deg, #fff0a5, #ffd95a);
-  border-color: #a98416;
-  color: #202124;
+.nexus-shadcn-toolbar [data-toolbar-item][data-state="on"],
+.nexus-shadcn-toolbar [data-toolbar-item][aria-pressed="true"],
+.nexus-shadcn-toolbar button[aria-pressed="true"] {
+  background: var(--toolbar-active);
+  border-color: rgba(11, 107, 97, 0.24);
+  color: var(--accent-strong);
 }
 
-.nexus-office-ribbon [data-toolbar-item]:focus-visible,
-.nexus-office-ribbon button[aria-label]:focus-visible,
-.nexus-office-ribbon [role="button"]:focus-visible {
-  outline: 2px solid rgba(47, 99, 183, 0.36);
+.nexus-shadcn-toolbar [data-toolbar-item]:focus-visible,
+.nexus-shadcn-toolbar button[aria-label]:focus-visible,
+.nexus-shadcn-toolbar [role="button"]:focus-visible {
+  outline: 2px solid rgba(11, 107, 97, 0.26);
   outline-offset: 2px;
 }
 
-.nexus-office-ribbon [data-toolbar-item][disabled],
-.nexus-office-ribbon button[disabled] {
+.nexus-shadcn-toolbar [data-toolbar-item][disabled],
+.nexus-shadcn-toolbar button[disabled] {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.nexus-office-ribbon [data-toolbar-item] svg,
-.nexus-office-ribbon button[aria-label] svg {
+.nexus-shadcn-toolbar [data-toolbar-item] svg,
+.nexus-shadcn-toolbar button[aria-label] svg {
   height: 15px;
   width: 15px;
 }
 
-.nexus-office-ribbon [data-toolbar-item][aria-label="Block type"],
-.nexus-office-ribbon [data-toolbar-item][aria-label="Code block language"] {
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"],
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"] {
   background: #ffffff;
-  border-color: #aeb1b8;
+  border-color: var(--line);
   gap: 0.25rem;
   min-width: 7.1rem;
   padding-inline: 0.45rem;
 }
 
-.nexus-office-ribbon [data-toolbar-item][aria-label="Block type"]:hover,
-.nexus-office-ribbon [data-toolbar-item][aria-label="Code block language"]:hover,
-.nexus-office-ribbon [data-toolbar-item][aria-label="Block type"][data-state="open"],
-.nexus-office-ribbon [data-toolbar-item][aria-label="Code block language"][data-state="open"] {
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"]:hover,
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"]:hover,
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"][data-state="open"],
+.nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"][data-state="open"] {
   background: #ffffff;
-  border-color: #8f9298;
+  border-color: var(--accent);
 }
 
-.nexus-office-mode-switch {
-  background: rgba(245, 246, 248, 0.72);
-  border: 1px solid #c2c4c8;
-  border-radius: 2px;
+.nexus-shadcn-toolbar-mode-switch {
+  background: #ffffff;
+  border: 0;
+  gap: 0.12rem;
+  min-height: auto;
+  padding: 0;
+}
+
+.nexus-shadcn-toolbar-mode-controls {
+  align-items: center;
   display: inline-flex;
-  padding: 0.1rem;
+  gap: 0.12rem;
 }
 
-.nexus-office-mode-controls {
-  display: inline-flex;
-  gap: 0.35rem;
-}
-
-.nexus-office-ribbon .nexus-office-mode-button {
-  border-radius: 2px;
-  gap: 0.25rem;
-  min-width: 0;
-  padding-inline: 0.42rem;
-}
-
-.nexus-office-ribbon .nexus-office-mode-button[aria-pressed="true"] {
-  background: linear-gradient(180deg, #fff0a5, #ffd95a);
-  border-color: #a98416;
-  color: #202124;
-}
-
-.nexus-office-mode-label {
-  font-size: 0.72rem;
+.nexus-shadcn-toolbar .nexus-shadcn-toolbar-mode-button {
+  height: 30px;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0;
+  width: 30px;
 }
 
 .mdxeditor-select-content {
@@ -795,6 +745,7 @@ button:hover {
 }
 
 .editor-surface .mdxeditor-diff-source-wrapper {
+  background: var(--toolbar);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -803,7 +754,7 @@ button:hover {
 }
 
 .editor-surface .mdxeditor-rich-text-editor {
-  background: #ebe6dc;
+  background: var(--toolbar);
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -812,6 +763,7 @@ button:hover {
 
 .editor-surface .mdxeditor-source-editor,
 .editor-surface .mdxeditor-diff-editor {
+  background: var(--toolbar);
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -819,11 +771,19 @@ button:hover {
 
 .editor-surface .mdxeditor-source-editor .cm-editor,
 .editor-surface .mdxeditor-diff-editor .cm-editor {
+  background: var(--toolbar);
   height: 100%;
 }
 
+.editor-surface .mdxeditor-source-editor .cm-scroller,
+.editor-surface .mdxeditor-source-editor .cm-gutters,
+.editor-surface .mdxeditor-diff-editor .cm-scroller,
+.editor-surface .mdxeditor-diff-editor .cm-gutters {
+  background: var(--toolbar);
+}
+
 .editor-surface .mdxeditor-root-contenteditable {
-  background: #ffffff;
+  background: var(--toolbar);
   box-shadow:
     0 0 0 1px rgba(32, 33, 36, 0.12),
     0 18px 44px rgba(32, 33, 36, 0.16);
@@ -868,12 +828,13 @@ button:hover {
 }
 
 .editor-surface-plain .mdxeditor-rich-text-editor {
-  background: var(--paper);
+  background: var(--toolbar);
+  overflow-x: hidden;
   padding: 0;
 }
 
 .editor-surface-plain .mdxeditor-root-contenteditable {
-  background: transparent;
+  background: var(--toolbar);
   box-shadow: none;
   margin: 0 auto;
   min-height: 100%;
@@ -883,6 +844,17 @@ button:hover {
 
 .editor-surface-plain .markdown-body {
   min-height: 100%;
+  overflow-wrap: anywhere;
+}
+
+.editor-surface-plain.editor-surface-responsive-wrap .mdxeditor-root-contenteditable {
+  margin: 0;
+  width: 100%;
+}
+
+.editor-surface-plain.editor-surface-responsive-wrap .markdown-body {
+  white-space: normal;
+  width: 100%;
 }
 
 .markdown-body img {

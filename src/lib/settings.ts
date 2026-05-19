@@ -41,6 +41,7 @@ export type UserSettings = {
   fontFamily: EditorFontFamily;
   fontSizePixels: number;
   paperViewEnabled: boolean;
+  responsiveContentWrappingEnabled: boolean;
   pageSize: EditorPageSize;
   pageMargins: EditorPageMargins;
 };
@@ -87,6 +88,10 @@ function sanitizePaperViewEnabled(value: unknown) {
   return typeof value === "boolean" ? value : true;
 }
 
+function sanitizeResponsiveContentWrappingEnabled(value: unknown) {
+  return typeof value === "boolean" ? value : true;
+}
+
 export function createDefaultPageMargins(): EditorPageMargins {
   return {
     top: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
@@ -125,6 +130,7 @@ export function createDefaultSettings(): UserSettings {
     fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
     fontSizePixels: DEFAULT_EDITOR_FONT_SIZE_PIXELS,
     paperViewEnabled: true,
+    responsiveContentWrappingEnabled: true,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageMargins: createDefaultPageMargins()
   };
@@ -148,6 +154,9 @@ export function loadSettings(profileName: string): UserSettings {
         : DEFAULT_EDITOR_FONT_FAMILY,
       fontSizePixels: sanitizeEditorFontSize(parsed.fontSizePixels),
       paperViewEnabled: sanitizePaperViewEnabled(parsed.paperViewEnabled),
+      responsiveContentWrappingEnabled: sanitizeResponsiveContentWrappingEnabled(
+        parsed.responsiveContentWrappingEnabled
+      ),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageMargins: sanitizeEditorPageMargins(parsed.pageMargins)
     };

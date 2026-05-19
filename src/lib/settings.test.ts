@@ -46,6 +46,7 @@ describe("settings helpers", () => {
       fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
       fontSizePixels: DEFAULT_EDITOR_FONT_SIZE_PIXELS,
       paperViewEnabled: true,
+      responsiveContentWrappingEnabled: true,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageMargins: {
         top: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
@@ -75,6 +76,7 @@ describe("settings helpers", () => {
       fontFamily: "Georgia, \"Times New Roman\", serif",
       fontSizePixels: 16,
       paperViewEnabled: true,
+      responsiveContentWrappingEnabled: true,
       pageSize: "Letter",
       pageMargins: {
         top: 1,
@@ -132,6 +134,34 @@ describe("settings helpers", () => {
     });
 
     expect(loadSettings("default").paperViewEnabled).toBe(true);
+  });
+
+  it("loads a saved disabled responsive content wrapping setting", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        fontSizePixels: 16,
+        paperViewEnabled: false,
+        responsiveContentWrappingEnabled: false,
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").responsiveContentWrappingEnabled).toBe(false);
+  });
+
+  it("falls back to responsive content wrapping enabled when stored setting is invalid", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        fontSizePixels: 16,
+        paperViewEnabled: false,
+        responsiveContentWrappingEnabled: "nope",
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").responsiveContentWrappingEnabled).toBe(true);
   });
 
   it("falls back to the default font size when stored font size is invalid", () => {
@@ -207,6 +237,7 @@ describe("settings helpers", () => {
       fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
       fontSizePixels: 18,
       paperViewEnabled: false,
+      responsiveContentWrappingEnabled: false,
       pageSize: "A4",
       pageMargins: {
         top: 0.5,
@@ -222,6 +253,7 @@ describe("settings helpers", () => {
         fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
         fontSizePixels: 18,
         paperViewEnabled: false,
+        responsiveContentWrappingEnabled: false,
         pageSize: "A4",
         pageMargins: {
           top: 0.5,
