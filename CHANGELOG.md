@@ -77,6 +77,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_066: Make the paper-view editor background white.
 - T_067: Add a gray bottom border to the rich-text toolbar.
 - T_068: Make the diff editor background white.
+- T_069: Align export typography and PDF margin units with editor settings.
+- T_070: Show units for numeric settings values and keep PDF margins in inches.
+- T_071: Add bundled web font choices for editor and exports.
+- T_072: Add a saved light, dark, and system-following app theme.
+- T_073: Add a packaged macOS app bundle icon.
+- T_074: Improve dark theme contrast and editor caret visibility.
+- T_075: Add settings reset to defaults.
+- T_076: Add portrait and landscape paper orientation for editor preview and PDF export.
+- T_077: Add a toolbar paper orientation toggle.
+- T_078: Add PDF print preview from the File menu.
+- T_079: Wait for PDF preview paint before printing.
+- T_080: Route PDF paper settings through CSS page sizing.
+- T_081: Add resilient PDF print fallbacks for preview generation.
+- T_082: Add profile-scoped paragraph spacing settings.
+- T_083: Harden PDF preview generation against hidden-window print failures.
+- T_084: Add a text-first fallback PDF renderer.
+- T_085: Remove PDF print preview.
+- T_086: Add editor spell checking.
+- T_087: Fix spellcheck context menu timing.
+- T_088: Use native spellcheck context menu.
+
+### Fixed
+
+- Superseded the renderer-fetched spellcheck context menu path after it still failed to show suggestions consistently in the desktop app.
+- Replaced the Electron desktop editor's renderer-owned context menu with a native Electron context menu so spelling suggestions appear directly from Electron's misspelled-word event.
 
 ### Changed
 
@@ -140,3 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a toolbar paper/plain view toggle so rich-text editing can hide the paper sheet while keeping export settings intact.
 - Fixed visual paper margins so the first and last rendered Markdown blocks do not add extra apparent page padding.
 - Rendered `==highlighted text==` as highlighted text in HTML and PDF exports instead of leaking the Markdown source delimiters.
+- Corrected PDF fallback margin units and added an off-screen final print attempt for preview/export generation.
+- Added a built-in text-first PDF fallback for environments where Electron's native PDF printer fails.
+- Removed the File/Print Preview menu action, preview dialog, and preview-only IPC.
+- Added native spell checking to the editor, with inline misspelling underlines, suggestions in the editor right-click menu, and Add to dictionary support.

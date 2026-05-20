@@ -61,25 +61,29 @@ function restoreSelection(savedSelection: SavedSelection | null) {
 function EditorContextMenu({ children }: EditorContextMenuProps) {
   const savedSelectionRef = useRef<SavedSelection | null>(null);
 
+  if (window.nexus) {
+    return (
+      <div className="editor-context-menu-region" spellCheck>
+        {children}
+      </div>
+    );
+  }
+
   function handleContextMenu() {
     savedSelectionRef.current = saveCurrentSelection();
   }
 
   function handleEditCommand(command: EditCommand) {
     restoreSelection(savedSelectionRef.current);
-
-    if (window.nexus) {
-      void window.nexus.runEditCommand(command);
-      return;
-    }
-
     document.execCommand(command);
   }
 
   return (
     <ContextMenu modal={false}>
       <ContextMenuTrigger asChild onContextMenu={handleContextMenu}>
-        <div className="editor-context-menu-region">{children}</div>
+        <div className="editor-context-menu-region" spellCheck>
+          {children}
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => handleEditCommand("cut")}>

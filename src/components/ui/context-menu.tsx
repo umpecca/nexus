@@ -33,6 +33,19 @@ const ContextMenuItem = React.forwardRef<
 
 ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName;
 
+const ContextMenuSeparator = React.forwardRef<
+  React.ElementRef<typeof ContextMenuPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <ContextMenuPrimitive.Separator
+    ref={ref}
+    className={cn("nexus-context-menu-separator", className)}
+    {...props}
+  />
+));
+
+ContextMenuSeparator.displayName = ContextMenuPrimitive.Separator.displayName;
+
 const ContextMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
   <span className={cn("nexus-context-menu-shortcut", className)} {...props} />
 );
@@ -43,6 +56,7 @@ export {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger
 };

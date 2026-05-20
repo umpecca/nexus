@@ -4,9 +4,16 @@ import {
   DEFAULT_EDITOR_FONT_FAMILY,
   DEFAULT_EDITOR_FONT_SIZE_PIXELS,
   DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
+  DEFAULT_EDITOR_PAGE_ORIENTATION,
   DEFAULT_EDITOR_PAGE_SIZE,
+  DEFAULT_EDITOR_PARAGRAPH_SPACING_PIXELS,
+  DEFAULT_EDITOR_THEME_PREFERENCE,
+  EDITOR_FONT_OPTIONS,
+  EDITOR_PAGE_ORIENTATION_OPTIONS,
+  EDITOR_THEME_OPTIONS,
   getSettingsStorageKey,
   loadSettings,
+  resetSettings,
   saveSettings
 } from "./settings";
 
@@ -45,9 +52,12 @@ describe("settings helpers", () => {
     expect(createDefaultSettings()).toEqual({
       fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
       fontSizePixels: DEFAULT_EDITOR_FONT_SIZE_PIXELS,
+      paragraphSpacingPixels: DEFAULT_EDITOR_PARAGRAPH_SPACING_PIXELS,
+      themePreference: DEFAULT_EDITOR_THEME_PREFERENCE,
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
+      pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
       pageMargins: {
         top: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
         right: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
@@ -75,9 +85,12 @@ describe("settings helpers", () => {
     expect(loadSettings("default")).toEqual({
       fontFamily: "Georgia, \"Times New Roman\", serif",
       fontSizePixels: 16,
+      paragraphSpacingPixels: 16,
+      themePreference: "system",
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
       pageSize: "Letter",
+      pageOrientation: "portrait",
       pageMargins: {
         top: 1,
         right: 1,
@@ -85,6 +98,61 @@ describe("settings helpers", () => {
         left: 1
       }
     });
+  });
+
+  it("loads saved bundled web font settings", () => {
+    const fontValues = [
+      "Roboto, Arial, sans-serif",
+      "Merriweather, Georgia, serif",
+      '"JetBrains Mono", "Courier New", monospace'
+    ];
+
+    expect(EDITOR_FONT_OPTIONS.map((option) => option.value)).toEqual(
+      expect.arrayContaining(fontValues)
+    );
+
+    fontValues.forEach((fontFamily, index) => {
+      installLocalStorage({
+        [getSettingsStorageKey("default")]: JSON.stringify({
+          fontFamily,
+          pageSize: "Letter"
+        })
+      });
+
+      expect(loadSettings("default").fontFamily).toBe(fontValues[index]);
+    });
+  });
+
+  it("loads valid saved theme preferences", () => {
+    expect(EDITOR_THEME_OPTIONS.map((option) => option.value)).toEqual([
+      "system",
+      "light",
+      "dark"
+    ]);
+
+    EDITOR_THEME_OPTIONS.forEach((option) => {
+      installLocalStorage({
+        [getSettingsStorageKey("default")]: JSON.stringify({
+          fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+          themePreference: option.value,
+          pageSize: "Letter"
+        })
+      });
+
+      expect(loadSettings("default").themePreference).toBe(option.value);
+    });
+  });
+
+  it("falls back to system when stored theme preference is invalid", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        themePreference: "sepia",
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").themePreference).toBe(DEFAULT_EDITOR_THEME_PREFERENCE);
   });
 
   it("loads a valid saved page size", () => {
@@ -98,6 +166,25 @@ describe("settings helpers", () => {
     expect(loadSettings("default").pageSize).toBe("A4");
   });
 
+  it("loads valid saved page orientations", () => {
+    expect(EDITOR_PAGE_ORIENTATION_OPTIONS.map((option) => option.value)).toEqual([
+      "portrait",
+      "landscape"
+    ]);
+
+    EDITOR_PAGE_ORIENTATION_OPTIONS.forEach((option) => {
+      installLocalStorage({
+        [getSettingsStorageKey("default")]: JSON.stringify({
+          fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+          pageSize: "Letter",
+          pageOrientation: option.value
+        })
+      });
+
+      expect(loadSettings("default").pageOrientation).toBe(option.value);
+    });
+  });
+
   it("loads a valid saved font size", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
@@ -108,6 +195,18 @@ describe("settings helpers", () => {
     });
 
     expect(loadSettings("default").fontSizePixels).toBe(18);
+  });
+
+  it("loads a valid saved paragraph spacing", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        paragraphSpacingPixels: 20,
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").paragraphSpacingPixels).toBe(20);
   });
 
   it("loads a saved disabled paper view setting", () => {
@@ -176,6 +275,20 @@ describe("settings helpers", () => {
     expect(loadSettings("default").fontSizePixels).toBe(DEFAULT_EDITOR_FONT_SIZE_PIXELS);
   });
 
+  it("falls back to the default paragraph spacing when stored spacing is invalid", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        paragraphSpacingPixels: 48,
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").paragraphSpacingPixels).toBe(
+      DEFAULT_EDITOR_PARAGRAPH_SPACING_PIXELS
+    );
+  });
+
   it("falls back to Letter when stored page size is invalid", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
@@ -185,6 +298,18 @@ describe("settings helpers", () => {
     });
 
     expect(loadSettings("default").pageSize).toBe("Letter");
+  });
+
+  it("falls back to portrait when stored page orientation is invalid", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        pageOrientation: "sideways"
+      })
+    });
+
+    expect(loadSettings("default").pageOrientation).toBe("portrait");
   });
 
   it("loads valid saved page margins", () => {
@@ -236,9 +361,12 @@ describe("settings helpers", () => {
     saveSettings("default", {
       fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
       fontSizePixels: 18,
+      paragraphSpacingPixels: 20,
+      themePreference: "dark",
       paperViewEnabled: false,
       responsiveContentWrappingEnabled: false,
       pageSize: "A4",
+      pageOrientation: "landscape",
       pageMargins: {
         top: 0.5,
         right: 0.75,
@@ -252,9 +380,12 @@ describe("settings helpers", () => {
       JSON.stringify({
         fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
         fontSizePixels: 18,
+        paragraphSpacingPixels: 20,
+        themePreference: "dark",
         paperViewEnabled: false,
         responsiveContentWrappingEnabled: false,
         pageSize: "A4",
+        pageOrientation: "landscape",
         pageMargins: {
           top: 0.5,
           right: 0.75,
@@ -263,5 +394,21 @@ describe("settings helpers", () => {
         }
       })
     );
+  });
+
+  it("resets settings storage for the selected profile", () => {
+    const storage = installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        fontSizePixels: 18,
+        themePreference: "dark",
+        pageSize: "A4"
+      })
+    });
+
+    resetSettings("default");
+
+    expect(storage.removeItem).toHaveBeenCalledWith(getSettingsStorageKey("default"));
+    expect(loadSettings("default")).toEqual(createDefaultSettings());
   });
 });

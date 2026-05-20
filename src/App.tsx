@@ -22,7 +22,14 @@ import {
 } from "@mdxeditor/editor";
 import { usePublisher } from "@mdxeditor/gurx";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
-import { createDefaultSettings, getEditorPageSizeOption, loadSettings, saveSettings } from "./lib/settings";
+import {
+  createDefaultSettings,
+  getEditorPageSizeOption,
+  loadSettings,
+  resetSettings,
+  saveSettings
+} from "./lib/settings";
+import type { EditorThemePreference } from "./lib/settings";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
@@ -59,6 +66,8 @@ type ProgrammaticMarkdownChange = {
   staleMarkdown: string;
   targetMarkdown: string;
 };
+
+type ResolvedTheme = "light" | "dark";
 
 function getDocumentName(filePath: string) {
   const parts = filePath.split(/[\\/]/);
@@ -145,6 +154,14 @@ function applyScrollSnapshot(element: HTMLElement, snapshot: ScrollSnapshot) {
   element.scrollTop = maxScrollTop > 0 ? snapshot.ratio * maxScrollTop : snapshot.top;
 }
 
+function resolveThemePreference(themePreference: EditorThemePreference): ResolvedTheme {
+  if (themePreference === "light" || themePreference === "dark") {
+    return themePreference;
+  }
+
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 function App() {
   const initialDraft = useMemo(createDefaultDraft, []);
   const [markdown, setMarkdown] = useState(initialDraft.markdown);
@@ -155,6 +172,9 @@ function App() {
   const [pendingDiffViewRequest, setPendingDiffViewRequest] = useState(0);
   const [profileName, setProfileName] = useState("default");
   const [settings, setSettings] = useState(createDefaultSettings);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveThemePreference(createDefaultSettings().themePreference)
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
@@ -180,15 +200,24 @@ function App() {
     .filter(Boolean)
     .join(" ");
   const pageSizeOption = getEditorPageSizeOption(settings.pageSize);
+  const editorPageWidthInches =
+    settings.pageOrientation === "landscape"
+      ? pageSizeOption.heightInches
+      : pageSizeOption.widthInches;
+  const editorPageHeightInches =
+    settings.pageOrientation === "landscape"
+      ? pageSizeOption.widthInches
+      : pageSizeOption.heightInches;
   const editorStyle = {
     "--editor-font-family": settings.fontFamily,
     "--editor-font-size": `${settings.fontSizePixels}px`,
-    "--editor-page-width": `${pageSizeOption.widthInches}in`,
-    "--editor-page-height": `${pageSizeOption.heightInches}in`,
+    "--editor-page-width": `${editorPageWidthInches}in`,
+    "--editor-page-height": `${editorPageHeightInches}in`,
     "--editor-page-margin-top": `${settings.pageMargins.top}in`,
     "--editor-page-margin-right": `${settings.pageMargins.right}in`,
     "--editor-page-margin-bottom": `${settings.pageMargins.bottom}in`,
-    "--editor-page-margin-left": `${settings.pageMargins.left}in`
+    "--editor-page-margin-left": `${settings.pageMargins.left}in`,
+    "--editor-paragraph-spacing": `${settings.paragraphSpacingPixels}px`
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
   const imagePreviewHandler = useMemo(() => {
@@ -234,6 +263,35 @@ function App() {
   useEffect(() => {
     saveSettings(profileName, settings);
   }, [profileName, settings]);
+
+  useEffect(() => {
+    const updateResolvedTheme = () => {
+      setResolvedTheme(resolveThemePreference(settings.themePreference));
+    };
+
+    updateResolvedTheme();
+
+    if (settings.themePreference !== "system" || !window.matchMedia) {
+      return;
+    }
+
+    const colorSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    colorSchemeQuery.addEventListener("change", updateResolvedTheme);
+
+    return () => {
+      colorSchemeQuery.removeEventListener("change", updateResolvedTheme);
+    };
+  }, [settings.themePreference]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.style.colorScheme = resolvedTheme;
+
+    return () => {
+      delete document.documentElement.dataset.theme;
+      document.documentElement.style.colorScheme = "";
+    };
+  }, [resolvedTheme]);
 
   useEffect(() => {
     document.title = formatWindowTitle(
@@ -485,17 +543,26 @@ function App() {
   async function exportDocumentAsHtml() {
     const currentMarkdown = getCurrentMarkdown();
     await window.nexus?.exportMarkdownAsHtml(filePath, currentMarkdown, {
-      fontSizePixels: settings.fontSizePixels
+      fontFamily: settings.fontFamily,
+      fontSizePixels: settings.fontSizePixels,
+      paragraphSpacingPixels: settings.paragraphSpacingPixels
     });
   }
 
   async function exportDocumentAsPdf() {
     const currentMarkdown = getCurrentMarkdown();
-    await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown, {
+    await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown, getPdfExportOptions());
+  }
+
+  function getPdfExportOptions() {
+    return {
+      fontFamily: settings.fontFamily,
       fontSizePixels: settings.fontSizePixels,
+      paragraphSpacingPixels: settings.paragraphSpacingPixels,
       pageSize: settings.pageSize,
+      pageOrientation: settings.pageOrientation,
       pageMargins: settings.pageMargins
-    });
+    };
   }
 
   async function confirmDirtyBufferAction() {
@@ -787,10 +854,10 @@ function App() {
       removeMenuActionListener();
       removeCloseRequestListener();
     };
-  }, [filePath, lastSavedMarkdown, markdown, previousVersionMarkdown]);
+  }, [filePath, lastSavedMarkdown, markdown, previousVersionMarkdown, settings]);
 
   return (
-    <main className={appShellClassName}>
+    <main className={appShellClassName} data-theme={resolvedTheme}>
       <section className="workspace">
         <div className="editor-column">
           <div className={editorSurfaceClassName} ref={editorSurfaceRef} style={editorStyle}>
@@ -846,6 +913,9 @@ function App() {
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
                         <ShadcnMdxToolbar
+                          onPageOrientationChange={(pageOrientation) =>
+                            setSettings((current) => ({ ...current, pageOrientation }))
+                          }
                           onPaperViewChange={(paperViewEnabled) =>
                             setSettings((current) => ({ ...current, paperViewEnabled }))
                           }
@@ -855,6 +925,7 @@ function App() {
                               responsiveContentWrappingEnabled
                             }))
                           }
+                          pageOrientation={settings.pageOrientation}
                           paperViewEnabled={settings.paperViewEnabled}
                           responsiveContentWrappingEnabled={
                             settings.responsiveContentWrappingEnabled
@@ -893,12 +964,28 @@ function App() {
         onPageMarginsChange={(pageMargins) =>
           setSettings((current) => ({ ...current, pageMargins }))
         }
+        onPageOrientationChange={(pageOrientation) =>
+          setSettings((current) => ({ ...current, pageOrientation }))
+        }
         onPageSizeChange={(pageSize) => setSettings((current) => ({ ...current, pageSize }))}
+        onParagraphSpacingPixelsChange={(paragraphSpacingPixels) =>
+          setSettings((current) => ({ ...current, paragraphSpacingPixels }))
+        }
+        onResetSettings={() => {
+          resetSettings(profileName);
+          setSettings(createDefaultSettings());
+        }}
+        onThemePreferenceChange={(themePreference) =>
+          setSettings((current) => ({ ...current, themePreference }))
+        }
         onOpenChange={setSettingsOpen}
         open={settingsOpen}
         pageMargins={settings.pageMargins}
+        pageOrientation={settings.pageOrientation}
         pageSize={settings.pageSize}
+        paragraphSpacingPixels={settings.paragraphSpacingPixels}
         profileName={profileName}
+        themePreference={settings.themePreference}
       />
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
     </main>

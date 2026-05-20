@@ -18,7 +18,14 @@ import {
   viewMode$
 } from "@mdxeditor/editor";
 import type { EditorInFocus, ViewMode } from "@mdxeditor/editor";
-import { Code2, FileText, GitCompareArrows, WrapText } from "lucide-react";
+import {
+  Code2,
+  FileText,
+  GitCompareArrows,
+  RectangleHorizontal,
+  RectangleVertical,
+  WrapText
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import InsertImageImport from "./InsertImageImport";
@@ -27,6 +34,7 @@ import InsertMermaidDiagram from "./InsertMermaidDiagram";
 import { Button } from "../ui/button";
 import { ButtonGroup } from "../ui/button-group";
 import { Separator } from "../ui/separator";
+import type { EditorPageOrientation } from "../../lib/settings";
 
 type DirectiveNode = {
   getType: () => string;
@@ -172,6 +180,37 @@ function PaperViewToggle({
   );
 }
 
+function PageOrientationToggle({
+  onChange,
+  orientation
+}: {
+  onChange: (orientation: EditorPageOrientation) => void;
+  orientation: EditorPageOrientation;
+}) {
+  const isLandscape = orientation === "landscape";
+  const Icon = isLandscape ? RectangleHorizontal : RectangleVertical;
+
+  return (
+    <TooltipWrap title="Page orientation">
+      <Button
+        aria-label={
+          isLandscape
+            ? "Switch to portrait orientation"
+            : "Switch to landscape orientation"
+        }
+        aria-pressed={isLandscape}
+        className="nexus-shadcn-toolbar-mode-button"
+        onClick={() => onChange(isLandscape ? "portrait" : "landscape")}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <Icon aria-hidden="true" />
+      </Button>
+    </TooltipWrap>
+  );
+}
+
 function ResponsiveWrapToggle({
   disabled,
   enabled,
@@ -272,13 +311,17 @@ function RichTextRibbonCommands() {
 }
 
 function ViewRibbonCommands({
+  onPageOrientationChange,
   onPaperViewChange,
   onResponsiveContentWrappingChange,
+  pageOrientation,
   paperViewEnabled,
   responsiveContentWrappingEnabled
 }: {
+  onPageOrientationChange: (orientation: EditorPageOrientation) => void;
   onPaperViewChange: (enabled: boolean) => void;
   onResponsiveContentWrappingChange: (enabled: boolean) => void;
+  pageOrientation: EditorPageOrientation;
   paperViewEnabled: boolean;
   responsiveContentWrappingEnabled: boolean;
 }) {
@@ -288,6 +331,10 @@ function ViewRibbonCommands({
         <EditorModeControls />
         <Separator orientation="vertical" />
         <PaperViewToggle enabled={paperViewEnabled} onChange={onPaperViewChange} />
+        <PageOrientationToggle
+          onChange={onPageOrientationChange}
+          orientation={pageOrientation}
+        />
         <ResponsiveWrapToggle
           disabled={paperViewEnabled}
           enabled={responsiveContentWrappingEnabled}
@@ -299,13 +346,17 @@ function ViewRibbonCommands({
 }
 
 function ShadcnMdxToolbar({
+  onPageOrientationChange,
   onPaperViewChange,
   onResponsiveContentWrappingChange,
+  pageOrientation,
   paperViewEnabled,
   responsiveContentWrappingEnabled
 }: {
+  onPageOrientationChange: (orientation: EditorPageOrientation) => void;
   onPaperViewChange: (enabled: boolean) => void;
   onResponsiveContentWrappingChange: (enabled: boolean) => void;
+  pageOrientation: EditorPageOrientation;
   paperViewEnabled: boolean;
   responsiveContentWrappingEnabled: boolean;
 }) {
@@ -324,8 +375,10 @@ function ShadcnMdxToolbar({
       <div className="nexus-shadcn-toolbar-scroll">
         {isRichText ? <RichTextRibbonCommands /> : null}
         <ViewRibbonCommands
+          onPageOrientationChange={onPageOrientationChange}
           onPaperViewChange={onPaperViewChange}
           onResponsiveContentWrappingChange={onResponsiveContentWrappingChange}
+          pageOrientation={pageOrientation}
           paperViewEnabled={paperViewEnabled}
           responsiveContentWrappingEnabled={responsiveContentWrappingEnabled}
         />

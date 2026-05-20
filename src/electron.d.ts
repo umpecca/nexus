@@ -30,11 +30,16 @@ type ExportMarkdownPageMargins = {
   left?: number;
 };
 type ExportMarkdownHtmlOptions = {
+  fontFamily?: string;
   fontSizePixels?: number;
+  paragraphSpacingPixels?: number;
 };
 type ExportMarkdownPdfOptions = {
+  fontFamily?: string;
   fontSizePixels?: number;
+  paragraphSpacingPixels?: number;
   pageSize?: "Letter" | "A4";
+  pageOrientation?: "portrait" | "landscape";
   pageMargins?: ExportMarkdownPageMargins;
 };
 type ExternalFileChangeEvent = {

@@ -10,15 +10,80 @@
   --muted: #66716f;
   --paper: #fffdfa;
   --line: #ded8cc;
-  --accent: #0b6b61;
-  --accent-strong: #09564e;
+  --accent: #67b7ff;
+  --accent-strong: #a9d8ff;
+  --app-bg: #ebe6dc;
+  --surface: #ffffff;
+  --surface-muted: #f8faf9;
   --toolbar: #ffffff;
-  --toolbar-hover: #eef5f3;
-  --toolbar-active: #deece9;
+  --toolbar-hover: #edf7ff;
+  --toolbar-active: #d8ecff;
   --toolbar-shadow: rgba(32, 33, 36, 0.08);
+  --focus-ring: rgba(103, 183, 255, 0.28);
+  --focus-ring-strong: rgba(103, 183, 255, 0.36);
+  --selected-border: rgba(103, 183, 255, 0.4);
+  --on-accent: #07131f;
+  --danger: #a23b3b;
+  --danger-bg: #fff7f6;
+  --warning: #9a6400;
+  --tooltip-bg: #202124;
+  --tooltip-color: #ffffff;
+  --option-highlight: #eef2f7;
+  --scrollbar-thumb: rgba(32, 33, 36, 0.24);
+  --editor-caret: #202124;
+  --editor-selection: rgba(103, 183, 255, 0.28);
+  --editor-active-line: rgba(103, 183, 255, 0.08);
+  --toolbar-icon: #202124;
+  --toolbar-icon-active: #0f5f9e;
+  --paper-shadow: 0 0 0 1px rgba(32, 33, 36, 0.12), 0 18px 44px rgba(32, 33, 36, 0.16);
+  --floating-shadow: 0 8px 22px rgba(32, 33, 36, 0.12);
+  --dialog-shadow: 0 24px 60px rgba(32, 33, 36, 0.22);
+  --popup-shadow: 0 12px 32px rgba(32, 33, 36, 0.16);
+  --context-shadow: 0 14px 32px rgba(32, 33, 36, 0.18);
+  --overlay: rgba(32, 33, 36, 0.36);
   --nexus-toolbar-popup-clearance: 1.9rem;
   --nexus-toolbar-tooltip-clearance: 1.15rem;
   --radius: 0.5rem;
+}
+
+:root[data-theme="dark"] {
+  color: #eceff3;
+  background: #111315;
+  --ink: #eceff3;
+  --muted: #a8b0ba;
+  --paper: #1d2024;
+  --line: #3a3f45;
+  --accent: #67b7ff;
+  --accent-strong: #a9d8ff;
+  --app-bg: #111315;
+  --surface: #202327;
+  --surface-muted: #24282d;
+  --toolbar: #181b1f;
+  --toolbar-hover: #252a30;
+  --toolbar-active: #123654;
+  --toolbar-shadow: rgba(0, 0, 0, 0.36);
+  --focus-ring: rgba(103, 183, 255, 0.28);
+  --focus-ring-strong: rgba(103, 183, 255, 0.36);
+  --selected-border: rgba(103, 183, 255, 0.4);
+  --on-accent: #07131f;
+  --danger: #ff9f96;
+  --danger-bg: #3b2020;
+  --warning: #f3bf67;
+  --tooltip-bg: #e7ecea;
+  --tooltip-color: #101614;
+  --option-highlight: #2d3640;
+  --scrollbar-thumb: rgba(231, 236, 234, 0.26);
+  --editor-caret: #ffffff;
+  --editor-selection: rgba(103, 183, 255, 0.28);
+  --editor-active-line: rgba(103, 183, 255, 0.08);
+  --toolbar-icon: #e3e8ee;
+  --toolbar-icon-active: #c8e5ff;
+  --paper-shadow: 0 0 0 1px rgba(231, 236, 234, 0.08), 0 18px 44px rgba(0, 0, 0, 0.34);
+  --floating-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+  --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --popup-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  --context-shadow: 0 14px 32px rgba(0, 0, 0, 0.44);
+  --overlay: rgba(0, 0, 0, 0.54);
 }
 
 * {
@@ -29,7 +94,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #ebe6dc;
+  background: var(--app-bg);
 }
 
 button,
@@ -40,7 +105,7 @@ textarea {
 
 button {
   align-items: center;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--ink);
@@ -72,14 +137,14 @@ button:hover {
 }
 
 .nexus-button:focus-visible {
-  outline: 2px solid rgba(11, 107, 97, 0.28);
+  outline: 2px solid var(--focus-ring-strong);
   outline-offset: 2px;
 }
 
 .nexus-button-default {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .nexus-button-default:hover {
@@ -98,7 +163,7 @@ button:hover {
 }
 
 .nexus-button-outline {
-  background: #ffffff;
+  background: var(--surface);
   border-color: var(--line);
 }
 
@@ -186,7 +251,7 @@ button:hover {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
-  box-shadow: 0 14px 32px rgba(32, 33, 36, 0.18);
+  box-shadow: var(--context-shadow);
   min-width: 11rem;
   padding: 0.25rem;
   z-index: 120;
@@ -217,13 +282,19 @@ button:hover {
   pointer-events: none;
 }
 
+.nexus-context-menu-separator {
+  height: 1px;
+  margin: 0.25rem -0.25rem;
+  background: var(--line);
+}
+
 .nexus-context-menu-shortcut {
   color: var(--muted);
   font-size: 0.78rem;
 }
 
 .nexus-dialog-overlay {
-  background: rgba(32, 33, 36, 0.36);
+  background: var(--overlay);
   inset: 0;
   position: fixed;
   z-index: 140;
@@ -233,7 +304,7 @@ button:hover {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 24px 60px rgba(32, 33, 36, 0.22);
+  box-shadow: var(--dialog-shadow);
   display: grid;
   gap: 1rem;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -277,7 +348,7 @@ button:hover {
 }
 
 .nexus-dialog-path {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   color: var(--muted);
@@ -345,7 +416,7 @@ button:hover {
   background:
     linear-gradient(45deg, transparent 50%, var(--muted) 50%) calc(100% - 16px) 50% / 5px 5px no-repeat,
     linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 11px) 50% / 5px 5px no-repeat,
-    #ffffff;
+    var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   color: var(--ink);
@@ -355,7 +426,7 @@ button:hover {
 
 .nexus-settings-select:focus-visible {
   border-color: var(--accent);
-  outline: 2px solid rgba(11, 107, 97, 0.22);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -373,22 +444,36 @@ button:hover {
 }
 
 .nexus-settings-input {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   color: var(--ink);
   min-height: 38px;
   padding: 0.45rem 0.65rem;
+  width: 100%;
+}
+
+.nexus-settings-input-with-unit {
+  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.nexus-settings-unit {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .nexus-settings-input:focus-visible {
   border-color: var(--accent);
-  outline: 2px solid rgba(11, 107, 97, 0.22);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .nexus-settings-preview {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   color: var(--ink);
@@ -404,6 +489,51 @@ button:hover {
   line-height: 1.35;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.nexus-settings-footer {
+  justify-content: space-between;
+}
+
+.nexus-print-preview-dialog {
+  height: min(88vh, 56rem);
+  max-height: calc(100vh - 2rem);
+  width: min(70rem, calc(100vw - 2rem));
+}
+
+.nexus-print-preview-body {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nexus-print-preview-frame {
+  background: #fff;
+  border: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.nexus-print-preview-status {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.92rem;
+  justify-self: center;
+  line-height: 1.4;
+  max-width: 32rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.nexus-print-preview-error {
+  color: var(--danger);
+}
+
+.nexus-print-preview-footer {
+  align-items: center;
 }
 
 .nexus-image-import-form {
@@ -435,7 +565,7 @@ button:hover {
 
 .nexus-image-import-input,
 .nexus-image-import-textarea {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   color: var(--ink);
@@ -455,12 +585,12 @@ button:hover {
 .nexus-image-import-input:focus-visible,
 .nexus-image-import-textarea:focus-visible {
   border-color: var(--accent);
-  outline: 2px solid rgba(11, 107, 97, 0.22);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .nexus-image-import-error {
-  color: #a23b3b;
+  color: var(--danger);
   font-size: 0.86rem;
   line-height: 1.4;
   margin: 0;
@@ -504,7 +634,7 @@ button:hover {
 }
 
 .nexus-shadcn-toolbar {
-  background: #ffffff;
+  background: var(--toolbar);
   border-bottom: 0;
   color: var(--ink);
   flex: 1;
@@ -522,7 +652,7 @@ button:hover {
   overflow-x: auto;
   overflow-y: visible;
   padding: 0.38rem 0.5rem;
-  scrollbar-color: rgba(32, 33, 36, 0.24) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
 }
 
@@ -541,7 +671,7 @@ button:hover {
 }
 
 .nexus-shadcn-toolbar-floating .nexus-shadcn-toolbar-group-modes {
-  box-shadow: 0 8px 22px rgba(32, 33, 36, 0.12);
+  box-shadow: var(--floating-shadow);
   margin-left: 0;
   pointer-events: auto;
 }
@@ -549,7 +679,7 @@ button:hover {
 .nexus-button-group,
 .nexus-shadcn-toolbar-group {
   align-items: center;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   display: inline-flex;
@@ -590,7 +720,7 @@ button:hover {
   background: transparent;
   border: 1px solid transparent;
   border-radius: calc(var(--radius) - 3px);
-  color: var(--ink);
+  color: var(--toolbar-icon);
   display: inline-flex;
   height: 30px;
   justify-content: center;
@@ -615,14 +745,14 @@ button:hover {
 .nexus-shadcn-toolbar [data-toolbar-item][aria-pressed="true"],
 .nexus-shadcn-toolbar button[aria-pressed="true"] {
   background: var(--toolbar-active);
-  border-color: rgba(11, 107, 97, 0.24);
-  color: var(--accent-strong);
+  border-color: var(--selected-border);
+  color: var(--toolbar-icon-active);
 }
 
 .nexus-shadcn-toolbar [data-toolbar-item]:focus-visible,
 .nexus-shadcn-toolbar button[aria-label]:focus-visible,
 .nexus-shadcn-toolbar [role="button"]:focus-visible {
-  outline: 2px solid rgba(11, 107, 97, 0.26);
+  outline: 2px solid var(--focus-ring-strong);
   outline-offset: 2px;
 }
 
@@ -634,13 +764,25 @@ button:hover {
 
 .nexus-shadcn-toolbar [data-toolbar-item] svg,
 .nexus-shadcn-toolbar button[aria-label] svg {
+  color: currentColor;
   height: 15px;
+  stroke: currentColor;
   width: 15px;
+}
+
+.nexus-shadcn-toolbar [data-toolbar-item] svg :where(path, circle, line, polyline, polygon, rect),
+.nexus-shadcn-toolbar button[aria-label] svg :where(path, circle, line, polyline, polygon, rect) {
+  stroke: currentColor;
+}
+
+.nexus-shadcn-toolbar [data-toolbar-item] svg :where(path, circle, polygon, rect)[fill]:not([fill="none"]),
+.nexus-shadcn-toolbar button[aria-label] svg :where(path, circle, polygon, rect)[fill]:not([fill="none"]) {
+  fill: currentColor;
 }
 
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"],
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"] {
-  background: #ffffff;
+  background: var(--surface);
   border-color: var(--line);
   gap: 0.25rem;
   min-width: 7.1rem;
@@ -651,12 +793,12 @@ button:hover {
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"]:hover,
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"][data-state="open"],
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"][data-state="open"] {
-  background: #ffffff;
+  background: var(--surface);
   border-color: var(--accent);
 }
 
 .nexus-shadcn-toolbar-mode-switch {
-  background: #ffffff;
+  background: var(--surface);
   border: 0;
   gap: 0.12rem;
   min-height: auto;
@@ -678,14 +820,26 @@ button:hover {
 }
 
 .mdxeditor-select-content {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 12px 32px rgba(32, 33, 36, 0.16);
+  box-shadow: var(--popup-shadow);
   overflow: hidden;
   padding: 0.25rem;
   position: relative;
   z-index: 1200 !important;
+}
+
+.mdxeditor-popup-container {
+  z-index: 1200 !important;
+}
+
+.mdxeditor-popup-container [data-radix-popper-content-wrapper] {
+  z-index: 1200 !important;
+}
+
+.mdxeditor-popup-container [data-radix-popper-content-wrapper]:has([class*="_tooltipContent_"]) {
+  z-index: 1210 !important;
 }
 
 .editor-surface [data-radix-popper-content-wrapper] {
@@ -717,17 +871,19 @@ button:hover {
   transform: translateY(var(--nexus-toolbar-popup-clearance));
 }
 
-.editor-surface [class*="_tooltipContent_"] {
-  background: #202124;
-  border: 1px solid #202124;
-  box-shadow: 0 8px 18px rgba(32, 33, 36, 0.22);
-  color: #ffffff;
+.editor-surface [class*="_tooltipContent_"],
+.mdxeditor-popup-container [class*="_tooltipContent_"] {
+  background: var(--tooltip-bg);
+  border: 1px solid var(--tooltip-bg);
+  box-shadow: var(--floating-shadow);
+  color: var(--tooltip-color);
   font-size: 0.76rem;
   line-height: 1.2;
   z-index: 1210 !important;
 }
 
-.editor-surface [class*="_tooltipContent_"][data-side="bottom"] {
+.editor-surface [class*="_tooltipContent_"][data-side="bottom"],
+.mdxeditor-popup-container [class*="_tooltipContent_"][data-side="bottom"] {
   transform: translateY(var(--nexus-toolbar-tooltip-clearance));
 }
 
@@ -740,7 +896,7 @@ button:hover {
 }
 
 .mdxeditor-select-content [role="option"][data-highlighted] {
-  background: #eef2f7;
+  background: var(--option-highlight);
   outline: none;
 }
 
@@ -772,6 +928,8 @@ button:hover {
 .editor-surface .mdxeditor-source-editor .cm-editor,
 .editor-surface .mdxeditor-diff-editor .cm-editor {
   background: var(--toolbar);
+  caret-color: var(--editor-caret);
+  color: var(--ink);
   height: 100%;
 }
 
@@ -782,11 +940,36 @@ button:hover {
   background: var(--toolbar);
 }
 
+.editor-surface .cm-content {
+  caret-color: var(--editor-caret);
+  color: var(--ink);
+}
+
+.editor-surface .cm-cursor,
+.editor-surface .cm-dropCursor {
+  border-left-color: var(--editor-caret);
+}
+
+.editor-surface .cm-selectionBackground,
+.editor-surface .cm-focused .cm-selectionBackground,
+.editor-surface .cm-content ::selection,
+.editor-surface .markdown-body ::selection {
+  background: var(--editor-selection);
+}
+
+.editor-surface .cm-activeLine,
+.editor-surface .cm-activeLineGutter {
+  background: var(--editor-active-line);
+}
+
+.editor-surface .cm-gutters {
+  color: var(--muted);
+}
+
 .editor-surface .mdxeditor-root-contenteditable {
   background: var(--toolbar);
-  box-shadow:
-    0 0 0 1px rgba(32, 33, 36, 0.12),
-    0 18px 44px rgba(32, 33, 36, 0.16);
+  box-shadow: var(--paper-shadow);
+  caret-color: var(--editor-caret);
   color: var(--ink);
   margin: 0 auto;
   min-height: var(--editor-page-height);
@@ -819,6 +1002,14 @@ button:hover {
 }
 
 .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p {
+  margin-bottom: var(--editor-paragraph-spacing, 16px);
+}
+
+.markdown-body > p:last-child {
   margin-bottom: 0;
 }
 
@@ -888,7 +1079,7 @@ button:hover {
 }
 
 .nexus-js-runner-panel {
-  background: #f8faf9;
+  background: var(--surface-muted);
   border-top: 1px solid var(--line);
   display: grid;
   gap: 0.55rem;
@@ -913,7 +1104,7 @@ button:hover {
 }
 
 .nexus-js-runner-output {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 3px);
   color: var(--ink);
@@ -944,16 +1135,16 @@ button:hover {
 }
 
 .nexus-js-runner-line-warn .nexus-js-runner-method {
-  color: #9a6400;
+  color: var(--warning);
 }
 
 .nexus-js-runner-line-error .nexus-js-runner-method,
 .nexus-js-runner-error {
-  color: #a23b3b;
+  color: var(--danger);
 }
 
 .nexus-js-runner-error {
-  background: #fff7f6;
+  background: var(--danger-bg);
   border-top: 1px solid var(--line);
   font: inherit;
   margin: 0.55rem -0.55rem -0.55rem;
@@ -968,7 +1159,7 @@ button:hover {
 }
 
 .nexus-mermaid-block {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   overflow: auto;
@@ -993,13 +1184,13 @@ button:hover {
 }
 
 .nexus-mermaid-block-error {
-  background: #fff7f6;
+  background: var(--danger-bg);
   display: grid;
   gap: 0.45rem;
 }
 
 .nexus-mermaid-error {
-  color: #a23b3b;
+  color: var(--danger);
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 0.82rem;
   line-height: 1.45;
