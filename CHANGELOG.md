@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_086: Add editor spell checking.
 - T_087: Fix spellcheck context menu timing.
 - T_088: Use native spellcheck context menu.
+- T_089: Add in-editor text find.
+- T_090: Scroll active find matches into view.
+- T_091: Add editor zoom controls.
+- T_092: Move editor zoom controls to the View menu only.
 
 ### Fixed
 
@@ -169,3 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a built-in text-first PDF fallback for environments where Electron's native PDF printer fails.
 - Removed the File/Print Preview menu action, preview dialog, and preview-only IPC.
 - Added native spell checking to the editor, with inline misspelling underlines, suggestions in the editor right-click menu, and Add to dictionary support.
+- Added Edit/Find with a compact in-editor search panel, highlighted rich-text matches, match counts, and previous/next navigation.
+- Fixed Edit/Find navigation so the active match scrolls into view inside the Nexus editor surface.
+- Added editor zoom controls for zoom in, zoom out, and reset to 100% from the View menu and toolbar.
+- Removed editor zoom controls from the toolbar and updated the View menu to show the current zoom percentage on Reset Zoom.

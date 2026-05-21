@@ -1582,6 +1582,11 @@ function runEditCommand(window, command) {
   }
 }
 
+const menuState = {
+  editorZoomPercent: 100,
+  showInvisibleCharacters: false
+};
+
 function buildMenu() {
   const template = [
     {
@@ -1655,6 +1660,14 @@ function buildMenu() {
           type: "separator"
         },
         {
+          label: "Find",
+          accelerator: "CmdOrCtrl+F",
+          click: () => sendMenuAction("find")
+        },
+        {
+          type: "separator"
+        },
+        {
           label: "Refresh",
           click: () => sendMenuAction("refresh")
         },
@@ -1676,6 +1689,35 @@ function buildMenu() {
         {
           label: "Paste",
           role: "paste"
+        }
+      ]
+    },
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Zoom In",
+          accelerator: "CmdOrCtrl+Plus",
+          click: () => sendMenuAction("zoomIn")
+        },
+        {
+          label: "Zoom Out",
+          accelerator: "CmdOrCtrl+-",
+          click: () => sendMenuAction("zoomOut")
+        },
+        {
+          label: `Reset Zoom (${menuState.editorZoomPercent}%)`,
+          accelerator: "CmdOrCtrl+0",
+          click: () => sendMenuAction("resetZoom")
+        },
+        {
+          type: "separator"
+        },
+        {
+          label: "Show Invisible Characters",
+          type: "checkbox",
+          checked: menuState.showInvisibleCharacters,
+          click: () => sendMenuAction("toggleShowInvisibles")
         }
       ]
     },
@@ -2048,6 +2090,31 @@ ipcMain.handle("app:resolve-close-request", (event, shouldClose) => {
     window.close();
   } else {
     isQuitting = false;
+  }
+});
+
+ipcMain.on("menu:set-state", (_event, state) => {
+  if (!state || typeof state !== "object") {
+    return;
+  }
+
+  let changed = false;
+  if (Number.isFinite(state.editorZoomPercent)) {
+    const nextEditorZoomPercent = Math.round(state.editorZoomPercent);
+    if (nextEditorZoomPercent !== menuState.editorZoomPercent) {
+      menuState.editorZoomPercent = nextEditorZoomPercent;
+      changed = true;
+    }
+  }
+
+  if (typeof state.showInvisibleCharacters === "boolean" &&
+      state.showInvisibleCharacters !== menuState.showInvisibleCharacters) {
+    menuState.showInvisibleCharacters = state.showInvisibleCharacters;
+    changed = true;
+  }
+
+  if (changed) {
+    buildMenu();
   }
 });
 

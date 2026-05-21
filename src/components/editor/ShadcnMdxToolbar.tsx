@@ -22,6 +22,7 @@ import {
   Code2,
   FileText,
   GitCompareArrows,
+  Newspaper,
   RectangleHorizontal,
   RectangleVertical,
   WrapText
@@ -174,7 +175,7 @@ function PaperViewToggle({
         type="button"
         variant="ghost"
       >
-        <FileText aria-hidden="true" />
+        <Newspaper aria-hidden="true" />
       </Button>
     </TooltipWrap>
   );

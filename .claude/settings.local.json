@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Administrator\\\\Repos\\\\nexus\\\\node_modules\" -Directory | Where-Object { $_.Name -match \"^codemirror|@codemirror\" } | Select-Object -ExpandProperty Name | Sort-Object)",
+      "Bash(npm test *)"
+    ]
+  }
+}

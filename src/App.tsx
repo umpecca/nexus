@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { highlightWhitespace } from "@codemirror/view";
 import {
   AdmonitionDirectiveDescriptor,
   codeBlockPlugin,
@@ -11,16 +12,19 @@ import {
   linkDialogPlugin,
   linkPlugin,
   listsPlugin,
+  markdownProcessingError$,
   markdownShortcutPlugin,
   MDXEditor,
   MDXEditorMethods,
   quotePlugin,
+  searchPlugin,
   tablePlugin,
   thematicBreakPlugin,
   toolbarPlugin,
   viewMode$
 } from "@mdxeditor/editor";
-import { usePublisher } from "@mdxeditor/gurx";
+import type { ViewMode } from "@mdxeditor/editor";
+import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
 import {
   createDefaultSettings,
@@ -32,8 +36,11 @@ import {
 import type { EditorThemePreference } from "./lib/settings";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
+import FindTextPanel from "./components/editor/FindTextPanel";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
+import ParseErrorPanel from "./components/editor/ParseErrorPanel";
+import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
@@ -41,6 +48,9 @@ import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 
 const APP_TITLE = "Nexus";
+const EDITOR_ZOOM_STEP_PERCENT = 10;
+const MIN_EDITOR_ZOOM_PERCENT = 50;
+const MAX_EDITOR_ZOOM_PERCENT = 200;
 const EDITOR_SCROLL_SELECTORS = [
   ".mdxeditor-source-editor .cm-scroller",
   ".mdxeditor-diff-editor .cm-scroller",
@@ -120,6 +130,36 @@ function DiffViewController({ request }: { request: number }) {
   return null;
 }
 
+function ViewModeTracker({
+  viewModeRef
+}: {
+  viewModeRef: React.MutableRefObject<ViewMode>;
+}) {
+  const [mode] = useCellValues(viewMode$);
+
+  useEffect(() => {
+    viewModeRef.current = mode;
+  }, [mode, viewModeRef]);
+
+  return null;
+}
+
+function ParseErrorTracker({
+  onErrorChange
+}: {
+  onErrorChange: (error: ParseErrorInfo | null) => void;
+}) {
+  const [error] = useCellValues(markdownProcessingError$);
+  const callbackRef = useRef(onErrorChange);
+  callbackRef.current = onErrorChange;
+
+  useEffect(() => {
+    callbackRef.current(error ?? null);
+  }, [error]);
+
+  return null;
+}
+
 function isVisibleElement(element: HTMLElement) {
   const styles = window.getComputedStyle(element);
   return (
@@ -154,12 +194,26 @@ function applyScrollSnapshot(element: HTMLElement, snapshot: ScrollSnapshot) {
   element.scrollTop = maxScrollTop > 0 ? snapshot.ratio * maxScrollTop : snapshot.top;
 }
 
+function getRangeElement(range: Range) {
+  const container = range.commonAncestorContainer;
+  return container.nodeType === Node.ELEMENT_NODE
+    ? (container as HTMLElement)
+    : container.parentElement;
+}
+
 function resolveThemePreference(themePreference: EditorThemePreference): ResolvedTheme {
   if (themePreference === "light" || themePreference === "dark") {
     return themePreference;
   }
 
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function clampEditorZoomPercent(zoomPercent: number) {
+  return Math.min(
+    MAX_EDITOR_ZOOM_PERCENT,
+    Math.max(MIN_EDITOR_ZOOM_PERCENT, zoomPercent)
+  );
 }
 
 function App() {
@@ -170,6 +224,8 @@ function App() {
   const [previousVersionMarkdown, setPreviousVersionMarkdown] = useState<string | undefined>();
   const [diffMarkdown, setDiffMarkdown] = useState("");
   const [pendingDiffViewRequest, setPendingDiffViewRequest] = useState(0);
+  const [pendingFindRequest, setPendingFindRequest] = useState(0);
+  const [editorZoomPercent, setEditorZoomPercent] = useState(100);
   const [profileName, setProfileName] = useState("default");
   const [settings, setSettings] = useState(createDefaultSettings);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
@@ -179,6 +235,8 @@ function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
     useState<ExternalFileChangePrompt | null>(null);
+  const [parseError, setParseError] = useState<ParseErrorInfo | null>(null);
+  const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
   const editorRef = useRef<MDXEditorMethods>(null);
   const editorSurfaceRef = useRef<HTMLDivElement>(null);
   const editorScrollSnapshotRef = useRef<ScrollSnapshot>({ ratio: 0, top: 0 });
@@ -189,6 +247,32 @@ function App() {
   const hasFocusedInitialEmptyEditorRef = useRef(false);
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
+  const currentViewModeRef = useRef<ViewMode>("rich-text");
+  const menuHandlersRef = useRef({
+    createNewDocument,
+    openDocument,
+    loadDemoDocument,
+    saveDocument,
+    saveDocumentAs,
+    exportDocumentAsHtml,
+    exportDocumentAsPdf,
+    refreshDocumentFromDisk,
+    compareWithPreviousVersion,
+    openFindPanel,
+    zoomEditorIn,
+    zoomEditorOut,
+    resetEditorZoom,
+    handleCloseRequest,
+    focusInitialEmptyEditor,
+    loadDocument,
+    openSettings: () => setSettingsOpen(true),
+    openAbout: () => setAboutOpen(true),
+    toggleShowInvisibles: () =>
+      setSettings((current) => ({
+        ...current,
+        showInvisibleCharacters: !current.showInvisibleCharacters
+      }))
+  });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const editorSurfaceClassName = [
     "editor-surface",
@@ -208,25 +292,92 @@ function App() {
     settings.pageOrientation === "landscape"
       ? pageSizeOption.widthInches
       : pageSizeOption.heightInches;
+  const editorZoomScale = editorZoomPercent / 100;
   const editorStyle = {
     "--editor-font-family": settings.fontFamily,
-    "--editor-font-size": `${settings.fontSizePixels}px`,
-    "--editor-page-width": `${editorPageWidthInches}in`,
-    "--editor-page-height": `${editorPageHeightInches}in`,
-    "--editor-page-margin-top": `${settings.pageMargins.top}in`,
-    "--editor-page-margin-right": `${settings.pageMargins.right}in`,
-    "--editor-page-margin-bottom": `${settings.pageMargins.bottom}in`,
-    "--editor-page-margin-left": `${settings.pageMargins.left}in`,
-    "--editor-paragraph-spacing": `${settings.paragraphSpacingPixels}px`
+    "--editor-font-size": `${settings.fontSizePixels * editorZoomScale}px`,
+    "--editor-page-width": `${editorPageWidthInches * editorZoomScale}in`,
+    "--editor-page-height": `${editorPageHeightInches * editorZoomScale}in`,
+    "--editor-page-margin-top": `${settings.pageMargins.top * editorZoomScale}in`,
+    "--editor-page-margin-right": `${settings.pageMargins.right * editorZoomScale}in`,
+    "--editor-page-margin-bottom": `${settings.pageMargins.bottom * editorZoomScale}in`,
+    "--editor-page-margin-left": `${settings.pageMargins.left * editorZoomScale}in`,
+    "--editor-paragraph-spacing": `${settings.paragraphSpacingPixels * editorZoomScale}px`
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
+  const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
+  const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
   const imagePreviewHandler = useMemo(() => {
     return (imageSource: string) => {
       return window.nexus?.resolveImagePreview(filePath, imageSource) ?? Promise.resolve(imageSource);
     };
   }, [filePath]);
+  const scrollFindMatchIntoView = useCallback((range: Range) => {
+    const root = editorSurfaceRef.current;
+    const rangeElement = getRangeElement(range);
+    const rangeRect = Array.from(range.getClientRects()).find(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
+
+    if (!root || !rangeElement || !rangeRect) {
+      rangeElement?.scrollIntoView({ block: "center", inline: "nearest" });
+      return;
+    }
+
+    const scrollElement =
+      getEditorScrollElements(root).find(
+        (element) => element.contains(rangeElement) && element.scrollHeight > element.clientHeight
+      ) ?? getActiveEditorScrollElement(root);
+
+    if (!scrollElement) {
+      rangeElement.scrollIntoView({ block: "center", inline: "nearest" });
+      return;
+    }
+
+    const containerRect = scrollElement.getBoundingClientRect();
+    const matchTop = rangeRect.top - containerRect.top;
+    const matchBottom = rangeRect.bottom - containerRect.top;
+    const topComfort = Math.min(120, scrollElement.clientHeight * 0.28);
+    const bottomComfort = Math.min(96, scrollElement.clientHeight * 0.24);
+
+    if (matchTop >= topComfort && matchBottom <= scrollElement.clientHeight - bottomComfort) {
+      return;
+    }
+
+    const targetTop =
+      scrollElement.scrollTop + matchTop - Math.max(topComfort, scrollElement.clientHeight * 0.38);
+    scrollElement.scrollTo({
+      behavior: "smooth",
+      top: Math.max(0, targetTop)
+    });
+  }, []);
 
   filePathRef.current = filePath;
+  menuHandlersRef.current = {
+    createNewDocument,
+    openDocument,
+    loadDemoDocument,
+    saveDocument,
+    saveDocumentAs,
+    exportDocumentAsHtml,
+    exportDocumentAsPdf,
+    refreshDocumentFromDisk,
+    compareWithPreviousVersion,
+    openFindPanel,
+    zoomEditorIn,
+    zoomEditorOut,
+    resetEditorZoom,
+    handleCloseRequest,
+    focusInitialEmptyEditor,
+    loadDocument,
+    openSettings: () => setSettingsOpen(true),
+    openAbout: () => setAboutOpen(true),
+    toggleShowInvisibles: () =>
+      setSettings((current) => ({
+        ...current,
+        showInvisibleCharacters: !current.showInvisibleCharacters
+      }))
+  };
 
   useEffect(() => {
     return () => {
@@ -239,6 +390,12 @@ function App() {
   useEffect(() => {
     saveDraft({ markdown, filePath });
   }, [filePath, markdown]);
+
+  useEffect(() => {
+    if (parseError === null) {
+      setDismissedErrorKey(null);
+    }
+  }, [parseError]);
 
   useEffect(() => {
     let isMounted = true;
@@ -263,6 +420,13 @@ function App() {
   useEffect(() => {
     saveSettings(profileName, settings);
   }, [profileName, settings]);
+
+  useEffect(() => {
+    window.nexus?.setMenuState({
+      editorZoomPercent,
+      showInvisibleCharacters: settings.showInvisibleCharacters
+    });
+  }, [editorZoomPercent, settings.showInvisibleCharacters]);
 
   useEffect(() => {
     const updateResolvedTheme = () => {
@@ -391,6 +555,26 @@ function App() {
     }
 
     requestDiffView(previousVersionMarkdown);
+  }
+
+  function openFindPanel() {
+    setPendingFindRequest((current) => current + 1);
+  }
+
+  function zoomEditorIn() {
+    setEditorZoomPercent((current) =>
+      clampEditorZoomPercent(current + EDITOR_ZOOM_STEP_PERCENT)
+    );
+  }
+
+  function zoomEditorOut() {
+    setEditorZoomPercent((current) =>
+      clampEditorZoomPercent(current - EDITOR_ZOOM_STEP_PERCENT)
+    );
+  }
+
+  function resetEditorZoom() {
+    setEditorZoomPercent(100);
   }
 
   function beginProgrammaticMarkdownChange(targetMarkdown: string) {
@@ -791,61 +975,69 @@ function App() {
       hasHandledInitialOpenFileRef.current = true;
       const result = await window.nexus?.getInitialOpenFile();
       if (!result || result.canceled) {
-        focusInitialEmptyEditor();
+        menuHandlersRef.current.focusInitialEmptyEditor();
         return;
       }
 
-      loadDocument(result.markdown, result.filePath);
+      menuHandlersRef.current.loadDocument(result.markdown, result.filePath);
     }
 
     const removeMenuActionListener = window.nexus.onMenuAction((action) => {
-      if (action === "new") {
-        void createNewDocument();
-      }
-
-      if (action === "open") {
-        void openDocument();
-      }
-
-      if (action === "loadDemo") {
-        void loadDemoDocument();
-      }
-
-      if (action === "save") {
-        void saveDocument();
-      }
-
-      if (action === "saveAs") {
-        void saveDocumentAs();
-      }
-
-      if (action === "exportHtml") {
-        void exportDocumentAsHtml();
-      }
-
-      if (action === "exportPdf") {
-        void exportDocumentAsPdf();
-      }
-
-      if (action === "refresh") {
-        void refreshDocumentFromDisk();
-      }
-
-      if (action === "comparePreviousVersion") {
-        compareWithPreviousVersion();
-      }
-
-      if (action === "settings") {
-        setSettingsOpen(true);
-      }
-
-      if (action === "about") {
-        setAboutOpen(true);
+      const h = menuHandlersRef.current;
+      switch (action) {
+        case "new":
+          void h.createNewDocument();
+          break;
+        case "open":
+          void h.openDocument();
+          break;
+        case "loadDemo":
+          void h.loadDemoDocument();
+          break;
+        case "save":
+          void h.saveDocument();
+          break;
+        case "saveAs":
+          void h.saveDocumentAs();
+          break;
+        case "exportHtml":
+          void h.exportDocumentAsHtml();
+          break;
+        case "exportPdf":
+          void h.exportDocumentAsPdf();
+          break;
+        case "refresh":
+          void h.refreshDocumentFromDisk();
+          break;
+        case "comparePreviousVersion":
+          h.compareWithPreviousVersion();
+          break;
+        case "find":
+          h.openFindPanel();
+          break;
+        case "zoomIn":
+          h.zoomEditorIn();
+          break;
+        case "zoomOut":
+          h.zoomEditorOut();
+          break;
+        case "resetZoom":
+          h.resetEditorZoom();
+          break;
+        case "toggleShowInvisibles":
+          h.toggleShowInvisibles();
+          break;
+        case "settings":
+          h.openSettings();
+          break;
+        case "about":
+          h.openAbout();
+          break;
       }
     });
 
     const removeCloseRequestListener = window.nexus.onCloseRequest(() => {
-      void handleCloseRequest();
+      void menuHandlersRef.current.handleCloseRequest();
     });
 
     void loadInitialOpenFile();
@@ -854,7 +1046,46 @@ function App() {
       removeMenuActionListener();
       removeCloseRequestListener();
     };
-  }, [filePath, lastSavedMarkdown, markdown, previousVersionMarkdown, settings]);
+  }, []);
+
+  useEffect(() => {
+    function handleViewShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || (!event.ctrlKey && !event.metaKey)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "f") {
+        event.preventDefault();
+        menuHandlersRef.current.openFindPanel();
+        return;
+      }
+
+      if (key === "+" || key === "=") {
+        event.preventDefault();
+        menuHandlersRef.current.zoomEditorIn();
+        return;
+      }
+
+      if (key === "-" || key === "_") {
+        event.preventDefault();
+        menuHandlersRef.current.zoomEditorOut();
+        return;
+      }
+
+      if (key === "0") {
+        event.preventDefault();
+        menuHandlersRef.current.resetEditorZoom();
+      }
+    }
+
+    window.addEventListener("keydown", handleViewShortcut);
+
+    return () => {
+      window.removeEventListener("keydown", handleViewShortcut);
+    };
+  }, []);
 
   return (
     <main className={appShellClassName} data-theme={resolvedTheme}>
@@ -863,6 +1094,7 @@ function App() {
           <div className={editorSurfaceClassName} ref={editorSurfaceRef} style={editorStyle}>
             <EditorContextMenu>
               <MDXEditor
+                key={`editor-${settings.showInvisibleCharacters}`}
                 ref={editorRef}
                 markdown={markdown}
                 onChange={handleMarkdownChange}
@@ -900,18 +1132,31 @@ function App() {
                       mermaid: "Mermaid",
                       bash: "Bash",
                       powershell: "PowerShell"
-                    }
+                    },
+                    codeMirrorExtensions: settings.showInvisibleCharacters
+                      ? [highlightWhitespace()]
+                      : []
                   }),
                   markdownShortcutPlugin(),
+                  searchPlugin(),
                   diffSourcePlugin({
                     diffMarkdown,
                     readOnlyDiff: true,
-                    viewMode: "rich-text"
+                    viewMode: currentViewModeRef.current,
+                    codeMirrorExtensions: settings.showInvisibleCharacters
+                      ? [highlightWhitespace()]
+                      : []
                   }),
                   toolbarPlugin({
                     toolbarContents: () => (
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
+                        <FindTextPanel
+                          onActiveMatchChange={scrollFindMatchIntoView}
+                          openRequest={pendingFindRequest}
+                        />
+                        <ViewModeTracker viewModeRef={currentViewModeRef} />
+                        <ParseErrorTracker onErrorChange={setParseError} />
                         <ShadcnMdxToolbar
                           onPageOrientationChange={(pageOrientation) =>
                             setSettings((current) => ({ ...current, pageOrientation }))
@@ -938,6 +1183,13 @@ function App() {
                 ]}
               />
             </EditorContextMenu>
+            {showParseError && parseError ? (
+              <ParseErrorPanel
+                error={parseError}
+                filePath={filePath}
+                onDismiss={() => setDismissedErrorKey(parseErrorKey)}
+              />
+            ) : null}
           </div>
         </div>
       </section>

@@ -228,6 +228,7 @@ button:hover {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .editor-surface .mdxeditor {
@@ -819,6 +820,75 @@ button:hover {
   width: 30px;
 }
 
+.nexus-find-panel {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: var(--floating-shadow);
+  color: var(--ink);
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  pointer-events: auto;
+  position: fixed;
+  right: 1rem;
+  top: 4.25rem;
+  z-index: 80;
+}
+
+.nexus-find-input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--ink);
+  font: inherit;
+  height: 30px;
+  min-width: min(15rem, 42vw);
+  padding: 0.35rem 0.5rem;
+}
+
+.nexus-find-input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.nexus-find-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+  min-width: 3.6rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.nexus-find-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.12rem;
+}
+
+.nexus-find-actions .nexus-button-icon {
+  height: 28px;
+  min-height: 28px;
+  width: 28px;
+}
+
+.nexus-find-actions svg {
+  height: 14px;
+  width: 14px;
+}
+
+::highlight(MdxSearch) {
+  background: rgba(255, 214, 102, 0.48);
+  color: inherit;
+}
+
+::highlight(MdxFocusSearch) {
+  background: rgba(103, 183, 255, 0.55);
+  color: inherit;
+}
+
 .mdxeditor-select-content {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1203,4 +1273,172 @@ button:hover {
   .app-shell {
     padding: 0;
   }
+}
+
+.nexus-parse-error-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2.5rem 1.5rem;
+  background: rgba(32, 33, 36, 0.45);
+  overflow: auto;
+}
+
+[data-theme="dark"] .nexus-parse-error-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.nexus-parse-error-card {
+  width: min(48rem, 100%);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  box-shadow: var(--dialog-shadow);
+  padding: 1.75rem 1.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.nexus-parse-error-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.nexus-parse-error-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.nexus-parse-error-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.nexus-parse-error-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nexus-parse-error-heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.nexus-parse-error-message {
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nexus-parse-error-position {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.nexus-parse-error-line,
+.nexus-parse-error-caret {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.nexus-parse-error-caret {
+  margin-top: -1px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  color: var(--danger);
+  padding-top: 0.1rem;
+  padding-bottom: 0.5rem;
+}
+
+.nexus-parse-error-line-number {
+  color: var(--muted);
+  user-select: none;
+}
+
+.nexus-parse-error-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.nexus-parse-error-meta dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.nexus-parse-error-meta dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.nexus-parse-error-meta-mono {
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  word-break: break-all;
+}
+
+.nexus-parse-error-source-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.25rem 0;
+}
+
+.nexus-parse-error-source-details summary:hover {
+  color: var(--ink);
+}
+
+.nexus-parse-error-source {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.nexus-parse-error-footer {
+  display: flex;
+  justify-content: flex-end;
 }

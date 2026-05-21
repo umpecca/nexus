@@ -10,8 +10,18 @@ type NexusMenuAction =
   | "exportPdf"
   | "refresh"
   | "comparePreviousVersion"
+  | "find"
+  | "zoomIn"
+  | "zoomOut"
+  | "resetZoom"
+  | "toggleShowInvisibles"
   | "settings"
   | "about";
+
+type NexusMenuState = {
+  editorZoomPercent?: number;
+  showInvisibleCharacters?: boolean;
+};
 type NexusEditCommand = "cut" | "copy" | "paste";
 
 type OpenMarkdownResult =
@@ -87,6 +97,7 @@ declare global {
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
+      setMenuState(state: NexusMenuState): void;
     };
   }
 }

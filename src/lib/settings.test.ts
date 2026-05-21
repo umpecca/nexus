@@ -56,6 +56,7 @@ describe("settings helpers", () => {
       themePreference: DEFAULT_EDITOR_THEME_PREFERENCE,
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
+      showInvisibleCharacters: false,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
       pageMargins: {
@@ -89,6 +90,7 @@ describe("settings helpers", () => {
       themePreference: "system",
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
+      showInvisibleCharacters: false,
       pageSize: "Letter",
       pageOrientation: "portrait",
       pageMargins: {
@@ -365,6 +367,7 @@ describe("settings helpers", () => {
       themePreference: "dark",
       paperViewEnabled: false,
       responsiveContentWrappingEnabled: false,
+      showInvisibleCharacters: false,
       pageSize: "A4",
       pageOrientation: "landscape",
       pageMargins: {
@@ -384,6 +387,7 @@ describe("settings helpers", () => {
         themePreference: "dark",
         paperViewEnabled: false,
         responsiveContentWrappingEnabled: false,
+        showInvisibleCharacters: false,
         pageSize: "A4",
         pageOrientation: "landscape",
         pageMargins: {

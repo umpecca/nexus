@@ -41,7 +41,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native File/New Window action for opening multiple editor windows at the same time.
 - Operating-system file open handoff support for Markdown/text files launched from macOS Finder or Windows Explorer.
 - Cross-platform external file change detection for opened Markdown/text files.
-- Native Electron Edit menu actions for Undo, Redo, Refresh, Cut, Copy, and Paste.
+- Native Electron Edit menu actions for Undo, Redo, Find, Refresh, Cut, Copy, and Paste.
+- An in-editor text find panel with highlighted matches and previous/next navigation.
+- Native Electron View menu actions for zooming the editor display in, zooming out, and resetting to 100%, with the current zoom percentage shown in the menu.
 - MDXEditor-backed diff review for comparing the current buffer with an externally changed disk file or the previous in-memory version.
 - A native Settings menu action that opens a shadcn-styled settings dialog.
 - A native Help menu with an About item that opens a shadcn-styled about dialog.
@@ -133,8 +135,17 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall open operating-system handed-off files in their own editor windows.
 - The system shall support macOS Finder `open-file` events.
 - The system shall support Windows Explorer/Open With file paths passed to the app process, including second-instance handoff while Nexus is already running.
-- The system shall provide Electron app menu items for Edit/Undo, Edit/Redo, Edit/Refresh, Edit/Cut, Edit/Copy, and Edit/Paste.
+- The system shall provide Electron app menu items for Edit/Undo, Edit/Redo, Edit/Find, Edit/Refresh, Edit/Cut, Edit/Copy, and Edit/Paste.
+- The system shall open an in-editor find panel when Edit/Find is selected.
+- The system shall highlight matching text in the current rich-text editor content while a find query is active.
+- The system shall allow moving to the next and previous find match from the find panel.
+- The system shall scroll the active find match into view when a search starts or moves between matches.
+- The system shall show the current match position and total match count in the find panel.
 - The system shall provide an Electron Edit/Compare with Previous Version menu item.
+- The system shall provide Electron View menu actions for Zoom In, Zoom Out, and Reset Zoom.
+- The system shall show the current editor zoom percentage in the Electron View menu.
+- The system shall keep editor zoom controls out of the editor toolbar.
+- The system shall adjust the editor display zoom without changing the saved Markdown, selected base font size preference, or export typography settings.
 - The system shall provide an Electron Settings/Preferences menu item.
 - The system shall open a shadcn-styled settings dialog from Settings/Preferences.
 - The system shall provide an Electron Help/About menu item.
@@ -227,7 +238,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - Visual editing mode: primary editing mode using MDXEditor.
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo and refresh because those actions live in the native Edit menu, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only and the editor background kept white like the other editing modes.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
 - Local JavaScript runner blocks: support portable fenced code blocks using `js nexus-run` or `javascript nexus-run`, run them locally in a sandboxed browser worker, show console output/errors in the editor, and block network or nested worker APIs.
@@ -256,21 +267,23 @@ Markdown is effective for structured writing, but many users still need a calm e
 3. Begin typing immediately because the editor has focus.
 4. Edit visually, or switch to source mode through the editor toolbar.
 5. Use File/New Window to open another blank editor window when working with multiple documents.
-6. Open Markdown/text files from Finder or Explorer to launch them in Nexus editor windows.
-7. Use the Electron File menu to create, open, save, save a copy, or exit the application.
-8. Use File/Load Demo Document to replace the current buffer with a built-in feature showcase for testing or demos.
-9. Confirm the active document from the native application title.
-10. Use Settings/Preferences to choose the editor font, base font size, paper size, paper orientation, and page margins for the current OS profile.
-11. Use Help/About to view application copyright information.
-12. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
-13. Right-click an underlined misspelled word to choose a correction or add the word to the dictionary.
-14. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
-15. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
-16. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
-17. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
-18. Use Edit/Refresh to reload the current opened file from disk.
-19. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
-20. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
+6. Use Edit/Find to locate text in the current document.
+7. Use View/Zoom In, View/Zoom Out, or View/Reset Zoom to adjust the editor display while the View menu shows the current zoom percentage.
+8. Open Markdown/text files from Finder or Explorer to launch them in Nexus editor windows.
+9. Use the Electron File menu to create, open, save, save a copy, or exit the application.
+10. Use File/Load Demo Document to replace the current buffer with a built-in feature showcase for testing or demos.
+11. Confirm the active document from the native application title.
+12. Use Settings/Preferences to choose the editor font, base font size, paper size, paper orientation, and page margins for the current OS profile.
+13. Use Help/About to view application copyright information.
+14. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
+15. Right-click an underlined misspelled word to choose a correction or add the word to the dictionary.
+16. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
+17. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
+18. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
+19. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
+20. Use Edit/Refresh to reload the current opened file from disk.
+21. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
+22. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
 
 ## 5. UI / Design Notes (Optional)
 

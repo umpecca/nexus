@@ -68,5 +68,8 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   confirmSaveChanges() {
     return ipcRenderer.invoke("dialog:confirmSaveChanges");
+  },
+  setMenuState(state) {
+    ipcRenderer.send("menu:set-state", state);
   }
 });

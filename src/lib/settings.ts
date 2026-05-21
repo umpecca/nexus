@@ -71,6 +71,7 @@ export type UserSettings = {
   themePreference: EditorThemePreference;
   paperViewEnabled: boolean;
   responsiveContentWrappingEnabled: boolean;
+  showInvisibleCharacters: boolean;
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
   pageMargins: EditorPageMargins;
@@ -143,6 +144,10 @@ function sanitizeResponsiveContentWrappingEnabled(value: unknown) {
   return typeof value === "boolean" ? value : true;
 }
 
+function sanitizeShowInvisibleCharacters(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
 export function createDefaultPageMargins(): EditorPageMargins {
   return {
     top: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
@@ -184,6 +189,7 @@ export function createDefaultSettings(): UserSettings {
     themePreference: DEFAULT_EDITOR_THEME_PREFERENCE,
     paperViewEnabled: true,
     responsiveContentWrappingEnabled: true,
+    showInvisibleCharacters: false,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
     pageMargins: createDefaultPageMargins()
@@ -215,6 +221,7 @@ export function loadSettings(profileName: string): UserSettings {
       responsiveContentWrappingEnabled: sanitizeResponsiveContentWrappingEnabled(
         parsed.responsiveContentWrappingEnabled
       ),
+      showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)
         ? parsed.pageOrientation
