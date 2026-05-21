@@ -101,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_090: Scroll active find matches into view.
 - T_091: Add editor zoom controls.
 - T_092: Move editor zoom controls to the View menu only.
+- T_093: Keep PDF export on rich rendered output.
+- T_094: Restore the pre-print-preview PDF export flow.
 
 ### Fixed
 
@@ -177,3 +179,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Edit/Find navigation so the active match scrolls into view inside the Nexus editor surface.
 - Added editor zoom controls for zoom in, zoom out, and reset to 100% from the View menu and toolbar.
 - Removed editor zoom controls from the toolbar and updated the View menu to show the current zoom percentage on Reset Zoom.
+- Restored PDF export to rich rendered output only, correcting Electron custom margin units and reporting failures instead of writing plain text fallback PDFs.
+- Reverted PDF export to the pre-print-preview direct hidden-window render and print flow.

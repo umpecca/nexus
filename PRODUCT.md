@@ -195,8 +195,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall export PDFs using the selected paper size.
 - The system shall export PDFs using the selected paper orientation.
 - The system shall export PDFs using the selected paper margins.
-- The system shall retry PDF generation with safer print settings when Chromium rejects the configured print layout.
-- The system shall produce a valid text-first PDF fallback when native Chromium PDF printing is unavailable.
+- The system shall generate PDFs from the rendered rich export HTML through a direct hidden-window print flow.
+- The system shall report a PDF export failure instead of writing a plain text PDF when direct rich PDF generation is unavailable.
 - The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
 - The system shall render fenced Mermaid diagrams as static SVG diagrams during HTML and PDF export.
 - The system shall render supported admonition directives as styled callout blocks during HTML and PDF export.
@@ -249,7 +249,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged; the user can toggle whether plain view wraps to the full application width or to a centered readable column without adding page-level horizontal scrolling.
 - App theme: the settings dialog lets the user choose a Light, Dark, or System app theme. The selected theme is stored per OS profile, System tracks the desktop color-scheme setting, dark mode uses a restrained neutral palette with visible editor carets and toolbar icons, and document export output remains light for predictable PDF/HTML results.
 - Editable page background: rich-text, source, diff, and plain-view editor backgrounds match the toolbar background color for visual continuity.
-- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output including bundled web fonts, use the selected paper size, orientation, and margins for PDF output, retry with safer print settings if Chromium rejects the configured PDF layout, and use native save dialogs without changing the active document.
+- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output including bundled web fonts, use the selected paper size, orientation, and margins for PDF output, print PDFs through the direct hidden-window rich export path, report failure instead of silently downgrading PDF output to plain text, and use native save dialogs without changing the active document.
 - The app shall not provide a separate custom visual/source tab bar.
 
 ### 3.5 Non-Functional / Experience Requirements

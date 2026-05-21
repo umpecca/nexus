@@ -111,13 +111,7 @@ const maxExportParagraphSpacingPixels = 32;
 const defaultPdfPageMarginInches = 1;
 const minPdfPageMarginInches = 0.25;
 const maxPdfPageMarginInches = 2;
-const pdfPixelsPerInch = 96;
-const pdfPointsPerInch = 72;
-const pdfPageSizeDimensionsInches = new Map([
-  ["Letter", { width: 8.5, height: 11 }],
-  ["A4", { width: 8.27, height: 11.69 }]
-]);
-const pdfPageSizes = new Set(pdfPageSizeDimensionsInches.keys());
+const pdfPageSizes = new Set(["Letter", "A4"]);
 const pdfPageOrientations = new Set(["portrait", "landscape"]);
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -267,24 +261,6 @@ function getPdfPageOrientation(value) {
   return pdfPageOrientations.has(value) ? value : "portrait";
 }
 
-function formatCssInches(value) {
-  return `${Number(value).toFixed(3).replace(/\.?0+$/, "")}in`;
-}
-
-function getPdfPageDimensions(value, orientation) {
-  const pageSize = getPdfPageSize(value);
-  const dimensions = pdfPageSizeDimensionsInches.get(pageSize) ?? pdfPageSizeDimensionsInches.get("Letter");
-
-  if (orientation === "landscape") {
-    return {
-      width: dimensions.height,
-      height: dimensions.width
-    };
-  }
-
-  return dimensions;
-}
-
 function getExportFontSize(value) {
   if (
     typeof value === "number" &&
@@ -341,37 +317,12 @@ function getPdfPageMargins(value) {
   const margins = typeof value === "object" && value !== null ? value : {};
 
   return {
+    marginType: "custom",
     top: getPdfPageMargin(margins.top),
     bottom: getPdfPageMargin(margins.bottom),
     left: getPdfPageMargin(margins.left),
     right: getPdfPageMargin(margins.right)
   };
-}
-
-function getElectronPdfMargins(value) {
-  return getPdfPageMargins(value);
-}
-
-function getElectronPdfOptions(options = {}) {
-  return {
-    pageSize: getPdfPageSize(options.pageSize),
-    landscape: getPdfPageOrientation(options.pageOrientation) === "landscape",
-    margins: getElectronPdfMargins(options.pageMargins),
-    printBackground: true
-  };
-}
-
-function getPdfPrintStyle(options = {}) {
-  const pageOrientation = getPdfPageOrientation(options.pageOrientation);
-  const pageDimensions = getPdfPageDimensions(options.pageSize, pageOrientation);
-  const pageMargins = getPdfPageMargins(options.pageMargins);
-
-  return `
-    @page {
-      size: ${formatCssInches(pageDimensions.width)} ${formatCssInches(pageDimensions.height)};
-      margin: ${formatCssInches(pageMargins.top)} ${formatCssInches(pageMargins.right)} ${formatCssInches(pageMargins.bottom)} ${formatCssInches(pageMargins.left)};
-    }
-  `;
 }
 
 function stripMarkdownFrontmatter(markdown) {
@@ -741,35 +692,10 @@ function createMarkedHighlightExtension() {
   };
 }
 
-function getPdfExportWindowSize(options = {}) {
-  const pageOrientation = getPdfPageOrientation(options.pageOrientation);
-  const dimensions = getPdfPageDimensions(options.pageSize, pageOrientation);
-
-  return {
-    width: Math.ceil(dimensions.width * pdfPixelsPerInch),
-    height: Math.ceil(dimensions.height * pdfPixelsPerInch)
-  };
-}
-
-function createExportWindow(options = {}) {
-  const visible = options.visible === true;
-  const windowSize = getPdfExportWindowSize(options.pdfOptions);
-
+function createExportWindow() {
   return new BrowserWindow({
-    width: windowSize.width,
-    height: windowSize.height,
-    minWidth: windowSize.width,
-    minHeight: windowSize.height,
-    x: visible ? -32000 : undefined,
-    y: visible ? -32000 : undefined,
-    show: visible,
-    focusable: !visible,
-    skipTaskbar: visible,
-    useContentSize: true,
-    backgroundColor: "#ffffff",
-    paintWhenInitiallyHidden: true,
+    show: false,
     webPreferences: {
-      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -779,20 +705,7 @@ function createExportWindow(options = {}) {
 }
 
 async function loadExportHtml(exportWindow, html) {
-  const tempDirectory = await fs.mkdtemp(path.join(app.getPath("temp"), "nexus-export-"));
-  const tempHtmlPath = path.join(tempDirectory, "export.html");
-
-  try {
-    await fs.writeFile(tempHtmlPath, html, "utf8");
-    await exportWindow.loadFile(tempHtmlPath);
-  } catch (error) {
-    await fs.rm(tempDirectory, { recursive: true, force: true });
-    throw error;
-  }
-
-  return async () => {
-    await fs.rm(tempDirectory, { recursive: true, force: true });
-  };
+  await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
 
 async function renderExportMermaidDiagrams(webContents) {
@@ -860,239 +773,9 @@ async function renderExportMermaidDiagrams(webContents) {
   );
 }
 
-async function waitForExportDocumentReady(webContents) {
-  await webContents.executeJavaScript(
-    `
-      (async () => {
-        await document.fonts?.ready;
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      })();
-    `,
-    true
-  );
-}
-
 async function serializeRenderedExportHtml(webContents) {
   const html = await webContents.executeJavaScript("document.documentElement.outerHTML", true);
   return `<!doctype html>\n${html}`;
-}
-
-async function printExportHtmlToPdf(html, printOptions, options = {}) {
-  let exportWindow;
-  let cleanupExportHtml;
-
-  try {
-    exportWindow = createExportWindow(options);
-    cleanupExportHtml = await loadExportHtml(exportWindow, html);
-    if (options.visible) {
-      exportWindow.blur();
-    }
-    await renderExportMermaidDiagrams(exportWindow.webContents);
-    await waitForExportDocumentReady(exportWindow.webContents);
-
-    return exportWindow.webContents.printToPDF(printOptions);
-  } finally {
-    if (cleanupExportHtml) {
-      await cleanupExportHtml();
-    }
-
-    if (exportWindow && !exportWindow.isDestroyed()) {
-      exportWindow.destroy();
-    }
-  }
-}
-
-function sanitizeFallbackPdfText(value) {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "?")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
-}
-
-function escapeFallbackPdfText(value) {
-  return sanitizeFallbackPdfText(value)
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-}
-
-function simplifyFallbackMarkdownLine(line) {
-  let text = sanitizeFallbackPdfText(line).trimEnd();
-
-  if (/^ {0,3}#{1,6}\s+/.test(text)) {
-    text = text.replace(/^ {0,3}#{1,6}\s+/, "").toUpperCase();
-  }
-
-  text = text
-    .replace(/^ {0,3}>\s?/, "> ")
-    .replace(/^ {0,3}[-*+]\s+/, "- ")
-    .replace(/^ {0,3}!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, source) => {
-      const label = String(alt || source || "image").trim();
-      return `[Image: ${label}]`;
-    })
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-    .replace(/[*_~`]/g, "")
-    .replace(/==([^=]+)==/g, "$1");
-
-  return text;
-}
-
-function getFallbackPdfLines(markdown, currentPath, printError) {
-  const lines = [
-    getDocumentTitleForExport(currentPath),
-    "",
-    "Nexus generated this text-first PDF because Electron's native PDF printer failed.",
-    `Original print error: ${printError instanceof Error ? printError.message : String(printError)}`,
-    ""
-  ];
-  const source = stripMarkdownFrontmatter(markdown);
-  let isInFence = false;
-
-  for (const rawLine of source.split(/\r?\n/)) {
-    if (isFenceBoundary(rawLine)) {
-      isInFence = !isInFence;
-      lines.push(isInFence ? "Code block:" : "");
-      continue;
-    }
-
-    lines.push(simplifyFallbackMarkdownLine(rawLine));
-  }
-
-  return lines;
-}
-
-function wrapFallbackPdfLine(line, maxCharacters) {
-  const text = sanitizeFallbackPdfText(line);
-  if (text.trim().length === 0) {
-    return [""];
-  }
-
-  const indentMatch = text.match(/^\s*/);
-  const indent = indentMatch ? indentMatch[0] : "";
-  const words = text.trim().split(/\s+/);
-  const lines = [];
-  let currentLine = "";
-
-  for (const word of words) {
-    if (word.length > maxCharacters) {
-      if (currentLine) {
-        lines.push(currentLine);
-        currentLine = "";
-      }
-
-      for (let index = 0; index < word.length; index += maxCharacters) {
-        lines.push(word.slice(index, index + maxCharacters));
-      }
-      continue;
-    }
-
-    const candidate = currentLine ? `${currentLine} ${word}` : `${indent}${word}`;
-    if (candidate.length > maxCharacters && currentLine) {
-      lines.push(currentLine);
-      currentLine = `${indent}${word}`;
-    } else {
-      currentLine = candidate;
-    }
-  }
-
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  return lines;
-}
-
-function buildFallbackPdfDocument(pageContents, pageWidthPoints, pageHeightPoints) {
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  const objects = [];
-  const pageObjectIds = [];
-  const fontObjectId = 3 + pageContents.length * 2;
-
-  for (let index = 0; index < pageContents.length; index += 1) {
-    pageObjectIds.push(3 + index * 2);
-  }
-
-  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-  objects[2] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageContents.length} >>`;
-
-  for (const [index, content] of pageContents.entries()) {
-    const pageObjectId = pageObjectIds[index];
-    const contentObjectId = pageObjectId + 1;
-    objects[pageObjectId] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPoints.toFixed(2)} ${pageHeightPoints.toFixed(2)}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`;
-    objects[contentObjectId] =
-      `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`;
-  }
-
-  objects[fontObjectId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-
-  for (let id = 1; id < objects.length; id += 1) {
-    offsets[id] = Buffer.byteLength(pdf, "latin1");
-    pdf += `${id} 0 obj\n${objects[id]}\nendobj\n`;
-  }
-
-  const xrefOffset = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length}\n`;
-  pdf += "0000000000 65535 f \n";
-
-  for (let id = 1; id < objects.length; id += 1) {
-    pdf += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
-  }
-
-  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
-}
-
-function renderMarkdownFallbackPdf(markdown, currentPath, options = {}, printError) {
-  const pageOrientation = getPdfPageOrientation(options.pageOrientation);
-  const dimensions = getPdfPageDimensions(options.pageSize, pageOrientation);
-  const margins = getPdfPageMargins(options.pageMargins);
-  const pageWidthPoints = dimensions.width * pdfPointsPerInch;
-  const pageHeightPoints = dimensions.height * pdfPointsPerInch;
-  const leftMarginPoints = margins.left * pdfPointsPerInch;
-  const topMarginPoints = margins.top * pdfPointsPerInch;
-  const bottomMarginPoints = margins.bottom * pdfPointsPerInch;
-  const contentWidthPoints = pageWidthPoints - leftMarginPoints - margins.right * pdfPointsPerInch;
-  const fontSizePoints = getExportFontSize(options.fontSizePixels) * 0.75;
-  const lineHeightPoints = Math.max(fontSizePoints * 1.35, fontSizePoints + 4);
-  const maxCharacters = Math.max(24, Math.floor(contentWidthPoints / (fontSizePoints * 0.52)));
-  const pageContents = [];
-  let contentLines = [];
-  let y = pageHeightPoints - topMarginPoints;
-
-  function startNewPage() {
-    if (contentLines.length > 0) {
-      pageContents.push(contentLines.join("\n"));
-    }
-
-    contentLines = [];
-    y = pageHeightPoints - topMarginPoints;
-  }
-
-  for (const line of getFallbackPdfLines(markdown, currentPath, printError)) {
-    for (const wrappedLine of wrapFallbackPdfLine(line, maxCharacters)) {
-      if (y < bottomMarginPoints + lineHeightPoints) {
-        startNewPage();
-      }
-
-      if (wrappedLine.length > 0) {
-        contentLines.push(
-          `BT /F1 ${fontSizePoints.toFixed(2)} Tf 1 0 0 1 ${leftMarginPoints.toFixed(2)} ${y.toFixed(2)} Tm (${escapeFallbackPdfText(wrappedLine)}) Tj ET`
-        );
-      }
-
-      y -= lineHeightPoints;
-    }
-  }
-
-  startNewPage();
-
-  if (pageContents.length === 0) {
-    pageContents.push("");
-  }
-
-  return buildFallbackPdfDocument(pageContents, pageWidthPoints, pageHeightPoints);
 }
 
 async function renderMermaidInExportHtml(html) {
@@ -1101,18 +784,12 @@ async function renderMermaidInExportHtml(html) {
   }
 
   let exportWindow;
-  let cleanupExportHtml;
-
   try {
     exportWindow = createExportWindow();
-    cleanupExportHtml = await loadExportHtml(exportWindow, html);
+    await loadExportHtml(exportWindow, html);
     await renderExportMermaidDiagrams(exportWindow.webContents);
     return serializeRenderedExportHtml(exportWindow.webContents);
   } finally {
-    if (cleanupExportHtml) {
-      await cleanupExportHtml();
-    }
-
     if (exportWindow && !exportWindow.isDestroyed()) {
       exportWindow.destroy();
     }
@@ -1179,74 +856,6 @@ async function showExportError(event, format, error) {
   } else {
     await dialog.showMessageBox(options);
   }
-}
-
-async function renderMarkdownPdf(markdown, currentPath, options = {}) {
-  const html = await renderMarkdownExportHtml(markdown, currentPath, {
-    excludeFrontmatter: true,
-    fontFamily: options?.fontFamily,
-    fontSizePixels: options?.fontSizePixels,
-    paragraphSpacingPixels: options?.paragraphSpacingPixels,
-    pdfPrintStyle: getPdfPrintStyle(options)
-  });
-
-  try {
-    return await printExportHtmlToPdf(html, {
-      preferCSSPageSize: true,
-      printBackground: true
-    }, {
-      pdfOptions: options
-    });
-  } catch (error) {
-    console.warn("CSS-sized hidden PDF generation failed; retrying with Electron page options.", error);
-  }
-
-  const fallbackHtml = await renderMarkdownExportHtml(markdown, currentPath, {
-    excludeFrontmatter: true,
-    fontFamily: options?.fontFamily,
-    fontSizePixels: options?.fontSizePixels,
-    paragraphSpacingPixels: options?.paragraphSpacingPixels
-  });
-
-  try {
-    return await printExportHtmlToPdf(fallbackHtml, getElectronPdfOptions(options), {
-      pdfOptions: options
-    });
-  } catch (error) {
-    console.warn("Configured hidden PDF generation failed; retrying with default print options.", error);
-  }
-
-  try {
-    return await printExportHtmlToPdf(fallbackHtml, { printBackground: true }, {
-      pdfOptions: options
-    });
-  } catch (error) {
-    console.warn("Default hidden PDF generation failed; retrying in an off-screen export window.", error);
-  }
-
-  try {
-    return await printExportHtmlToPdf(fallbackHtml, { printBackground: true }, {
-      pdfOptions: options,
-      visible: true
-    });
-  } catch (error) {
-    console.warn("Off-screen PDF generation failed; using text-first fallback PDF renderer.", error);
-    return renderMarkdownFallbackPdf(markdown, currentPath, options, error);
-  }
-}
-
-async function showPdfSaveDialog(currentPath) {
-  const result = await dialog.showSaveDialog({
-    title: "Export PDF",
-    defaultPath: getDefaultExportPath(currentPath, "pdf"),
-    filters: pdfFilters
-  });
-
-  if (result.canceled || !result.filePath) {
-    return { canceled: true };
-  }
-
-  return { canceled: false, filePath: result.filePath };
 }
 
 function getComparableFilePath(filePath) {
@@ -1984,20 +1593,48 @@ ipcMain.handle("file:export-html", async (event, payload) => {
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
   const { currentPath, markdown, options } = payload ?? {};
+  const pageSize = getPdfPageSize(options?.pageSize);
+  const pageMargins = getPdfPageMargins(options?.pageMargins);
+  const landscape = getPdfPageOrientation(options?.pageOrientation) === "landscape";
+  let exportWindow;
 
   try {
-    const result = await showPdfSaveDialog(currentPath);
+    const html = await renderMarkdownExportHtml(markdown, currentPath, {
+      excludeFrontmatter: true,
+      fontFamily: options?.fontFamily,
+      fontSizePixels: options?.fontSizePixels,
+      paragraphSpacingPixels: options?.paragraphSpacingPixels
+    });
+    const result = await dialog.showSaveDialog({
+      title: "Export PDF",
+      defaultPath: getDefaultExportPath(currentPath, "pdf"),
+      filters: pdfFilters
+    });
 
-    if (result.canceled) {
+    if (result.canceled || !result.filePath) {
       return { canceled: true };
     }
 
-    const pdf = await renderMarkdownPdf(markdown, currentPath, options);
+    exportWindow = createExportWindow();
+    await loadExportHtml(exportWindow, html);
+    await renderExportMermaidDiagrams(exportWindow.webContents);
+    await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
+    const pdf = await exportWindow.webContents.printToPDF({
+      landscape,
+      margins: pageMargins,
+      pageSize,
+      printBackground: true
+    });
+
     await fs.writeFile(result.filePath, pdf);
     return { canceled: false, filePath: result.filePath };
   } catch (error) {
     await showExportError(event, "PDF", error);
     return { canceled: true };
+  } finally {
+    if (exportWindow && !exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
   }
 });
 
