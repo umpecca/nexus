@@ -103,6 +103,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - T_092: Move editor zoom controls to the View menu only.
 - T_093: Keep PDF export on rich rendered output.
 - T_094: Restore the pre-print-preview PDF export flow.
+- T_095: Add MCP server settings and preferences UI scaffold.
+- T_096: Add the embedded MCP HTTP server with read-only document tools.
+- T_097: Add the MCP replace_document tool with diff confirmation modal.
+- T_098: Add an opt-in no-auth mode for the embedded MCP server.
+- T_099: Add Microsoft Word (.docx) export from the File menu.
+- T_100: Fix Word export so images, Mermaid diagrams, and text formatting survive the .docx conversion.
+- T_101: Switch the Word export pipeline to the actively-maintained TurboDocx fork (`@turbodocx/html-to-docx`).
+- T_102: Fix the Word export Marked renderer crash by forwarding `this` to the captured default renderers so Marked's parser context resolves correctly.
+- T_103: Remove the File / Export as Word Document feature (`@turbodocx/html-to-docx` dependency, the `file:export-docx` IPC handler, the `Export as Word Document…` menu item, the DOCX-only inline-style renderer overrides, `inlineLocalImageDataUrls`, `rasterizeExportSvgsViaCapture`, `getDocxPageSetup`, the preload bridge, and the TypeScript declarations) because the post-T_102 .docx output was blank in Word/LibreOffice.
+- T_104: Reimplement File / Export as HTML as a self-contained static document with base64 local images, base64 Mermaid SVG image data URLs, and embedded bundled font assets.
 
 ### Fixed
 
@@ -181,3 +191,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed editor zoom controls from the toolbar and updated the View menu to show the current zoom percentage on Reset Zoom.
 - Restored PDF export to rich rendered output only, correcting Electron custom margin units and reporting failures instead of writing plain text fallback PDFs.
 - Reverted PDF export to the pre-print-preview direct hidden-window render and print flow.
+- Reworked HTML export to prompt first, render through a self-contained export path, inline supported local Markdown images and bundled fonts as base64 data URLs, and serialize Mermaid diagrams as base64 SVG `<img>` elements while leaving PDF export behavior unchanged.

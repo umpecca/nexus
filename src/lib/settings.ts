@@ -57,6 +57,25 @@ export const EDITOR_PAGE_MARGIN_SIDES = [
   { label: "Left", value: "left" }
 ] as const;
 
+export const MCP_SERVER_DEFAULT_PORT = 39125;
+export const MCP_SERVER_MIN_PORT = 1024;
+export const MCP_SERVER_MAX_PORT = 65535;
+export const MCP_SERVER_DEFAULT_HOST = "127.0.0.1";
+
+export const MCP_AUTH_MODE_OPTIONS = [
+  { label: "Bearer token (recommended)", value: "bearer" },
+  { label: "No authentication", value: "none" }
+] as const;
+
+export type McpAuthMode = (typeof MCP_AUTH_MODE_OPTIONS)[number]["value"];
+
+export type McpServerSettings = {
+  enabled: boolean;
+  port: number;
+  authMode: McpAuthMode;
+  bearerToken: string;
+};
+
 export type EditorFontFamily = (typeof EDITOR_FONT_OPTIONS)[number]["value"];
 export type EditorThemePreference = (typeof EDITOR_THEME_OPTIONS)[number]["value"];
 export type EditorPageSize = (typeof EDITOR_PAGE_SIZE_OPTIONS)[number]["value"];
@@ -75,6 +94,7 @@ export type UserSettings = {
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
   pageMargins: EditorPageMargins;
+  mcpServer: McpServerSettings;
 };
 
 const SETTINGS_KEY_PREFIX = "nexus:settings:v1";
@@ -170,6 +190,70 @@ function sanitizeEditorPageMargin(value: unknown) {
   return DEFAULT_EDITOR_PAGE_MARGIN_INCHES;
 }
 
+export function sanitizeMcpServerPort(value: unknown): number {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= MCP_SERVER_MIN_PORT &&
+    value <= MCP_SERVER_MAX_PORT
+  ) {
+    return value;
+  }
+
+  return MCP_SERVER_DEFAULT_PORT;
+}
+
+function sanitizeMcpBearerToken(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function sanitizeMcpAuthMode(value: unknown): McpAuthMode {
+  return MCP_AUTH_MODE_OPTIONS.some((option) => option.value === value)
+    ? (value as McpAuthMode)
+    : "bearer";
+}
+
+export function createDefaultMcpServerSettings(): McpServerSettings {
+  return {
+    enabled: false,
+    port: MCP_SERVER_DEFAULT_PORT,
+    authMode: "bearer",
+    bearerToken: ""
+  };
+}
+
+export function sanitizeMcpServerSettings(value: unknown): McpServerSettings {
+  const source = typeof value === "object" && value !== null ? (value as Partial<McpServerSettings>) : {};
+
+  return {
+    enabled: typeof source.enabled === "boolean" ? source.enabled : false,
+    port: sanitizeMcpServerPort(source.port),
+    authMode: sanitizeMcpAuthMode(source.authMode),
+    bearerToken: sanitizeMcpBearerToken(source.bearerToken)
+  };
+}
+
+export function generateMcpBearerToken(): string {
+  const cryptoApi = typeof globalThis !== "undefined" ? (globalThis as { crypto?: Crypto }).crypto : undefined;
+
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID().replace(/-/g, "");
+  }
+
+  if (cryptoApi?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    cryptoApi.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  let token = "";
+  for (let index = 0; index < 32; index += 1) {
+    token += Math.floor(Math.random() * 16).toString(16);
+  }
+  return token;
+}
+
 export function sanitizeEditorPageMargins(value: unknown): EditorPageMargins {
   const margins = typeof value === "object" && value !== null ? value : {};
 
@@ -192,7 +276,8 @@ export function createDefaultSettings(): UserSettings {
     showInvisibleCharacters: false,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
-    pageMargins: createDefaultPageMargins()
+    pageMargins: createDefaultPageMargins(),
+    mcpServer: createDefaultMcpServerSettings()
   };
 }
 
@@ -226,7 +311,8 @@ export function loadSettings(profileName: string): UserSettings {
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)
         ? parsed.pageOrientation
         : DEFAULT_EDITOR_PAGE_ORIENTATION,
-      pageMargins: sanitizeEditorPageMargins(parsed.pageMargins)
+      pageMargins: sanitizeEditorPageMargins(parsed.pageMargins),
+      mcpServer: sanitizeMcpServerSettings(parsed.mcpServer)
     };
   } catch {
     return createDefaultSettings();

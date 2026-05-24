@@ -13,7 +13,9 @@ import type {
   EditorPageMarginSide,
   EditorPageOrientation,
   EditorPageSize,
-  EditorThemePreference
+  EditorThemePreference,
+  McpAuthMode,
+  McpServerSettings
 } from "../../lib/settings";
 import {
   EDITOR_FONT_OPTIONS,
@@ -29,14 +31,22 @@ import {
   EDITOR_PARAGRAPH_SPACING_MAX_PIXELS,
   EDITOR_PARAGRAPH_SPACING_MIN_PIXELS,
   EDITOR_PARAGRAPH_SPACING_STEP_PIXELS,
-  EDITOR_THEME_OPTIONS
+  EDITOR_THEME_OPTIONS,
+  MCP_AUTH_MODE_OPTIONS,
+  MCP_SERVER_DEFAULT_HOST,
+  MCP_SERVER_MAX_PORT,
+  MCP_SERVER_MIN_PORT,
+  generateMcpBearerToken,
+  sanitizeMcpServerPort
 } from "../../lib/settings";
 
 type SettingsDialogProps = {
   fontFamily: EditorFontFamily;
   fontSizePixels: number;
+  mcpServer: McpServerSettings;
   onFontFamilyChange: (fontFamily: EditorFontFamily) => void;
   onFontSizePixelsChange: (fontSizePixels: number) => void;
+  onMcpServerChange: (next: McpServerSettings) => void;
   onPageMarginsChange: (pageMargins: EditorPageMargins) => void;
   onPageOrientationChange: (pageOrientation: EditorPageOrientation) => void;
   onPageSizeChange: (pageSize: EditorPageSize) => void;
@@ -75,8 +85,10 @@ function formatNumber(value: number) {
 function SettingsDialog({
   fontFamily,
   fontSizePixels,
+  mcpServer,
   onFontFamilyChange,
   onFontSizePixelsChange,
+  onMcpServerChange,
   onPageMarginsChange,
   onPageOrientationChange,
   onPageSizeChange,
@@ -92,6 +104,60 @@ function SettingsDialog({
   profileName,
   themePreference
 }: SettingsDialogProps) {
+  function handleMcpEnabledChange(nextEnabled: boolean) {
+    const needsToken =
+      nextEnabled && mcpServer.authMode === "bearer" && mcpServer.bearerToken === "";
+
+    onMcpServerChange({
+      ...mcpServer,
+      enabled: nextEnabled,
+      bearerToken: needsToken ? generateMcpBearerToken() : mcpServer.bearerToken
+    });
+  }
+
+  function handleMcpPortChange(value: string) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    onMcpServerChange({
+      ...mcpServer,
+      port: sanitizeMcpServerPort(parsed)
+    });
+  }
+
+  function handleMcpAuthModeChange(nextMode: McpAuthMode) {
+    const needsToken =
+      nextMode === "bearer" && mcpServer.enabled && mcpServer.bearerToken === "";
+
+    onMcpServerChange({
+      ...mcpServer,
+      authMode: nextMode,
+      bearerToken: needsToken ? generateMcpBearerToken() : mcpServer.bearerToken
+    });
+  }
+
+  function handleMcpRegenerateToken() {
+    onMcpServerChange({
+      ...mcpServer,
+      bearerToken: generateMcpBearerToken()
+    });
+  }
+
+  function handleMcpCopyToken() {
+    if (!mcpServer.bearerToken) {
+      return;
+    }
+
+    if (navigator?.clipboard?.writeText) {
+      void navigator.clipboard.writeText(mcpServer.bearerToken);
+    }
+  }
+
+  const mcpConnectionUrl = mcpServer.enabled
+    ? `http://${MCP_SERVER_DEFAULT_HOST}:${mcpServer.port}/mcp`
+    : "";
   function handleFontSizeChange(value: string) {
     const nextFontSize = Number.parseFloat(value);
     if (!Number.isFinite(nextFontSize)) {
@@ -255,6 +321,100 @@ function SettingsDialog({
                 </label>
               ))}
             </div>
+          </fieldset>
+
+          <fieldset className="nexus-settings-fieldset">
+            <legend className="nexus-settings-label">MCP server (experimental)</legend>
+            <p className="nexus-settings-help">
+              Lets an external AI client (Claude, ChatGPT) read this document and propose
+              edits over a local HTTP connection. Off by default. Every write must be
+              approved in a diff confirmation dialog.
+            </p>
+
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Enable MCP server</span>
+              <input
+                type="checkbox"
+                checked={mcpServer.enabled}
+                onChange={(event) => handleMcpEnabledChange(event.target.checked)}
+              />
+            </label>
+
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Port</span>
+              <span className="nexus-settings-input-with-unit">
+                <input
+                  className="nexus-settings-input"
+                  inputMode="numeric"
+                  max={MCP_SERVER_MAX_PORT}
+                  min={MCP_SERVER_MIN_PORT}
+                  onChange={(event) => handleMcpPortChange(event.target.value)}
+                  step={1}
+                  type="number"
+                  value={String(mcpServer.port)}
+                />
+              </span>
+            </label>
+
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Authentication</span>
+              <select
+                className="nexus-settings-select"
+                value={mcpServer.authMode}
+                onChange={(event) => handleMcpAuthModeChange(event.target.value as McpAuthMode)}
+              >
+                {MCP_AUTH_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {mcpServer.enabled && mcpServer.authMode === "none" && (
+              <p className="nexus-settings-warning">
+                Any local process that can reach {MCP_SERVER_DEFAULT_HOST}:{mcpServer.port} will
+                be able to call MCP tools while the server is enabled. Writes still require
+                approval in the confirmation dialog.
+              </p>
+            )}
+
+            {mcpServer.enabled && (
+              <label className="nexus-settings-field">
+                <span className="nexus-settings-label">Connection URL</span>
+                <input
+                  className="nexus-settings-input"
+                  readOnly
+                  type="text"
+                  value={mcpConnectionUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+            )}
+
+            {mcpServer.enabled && mcpServer.authMode === "bearer" && mcpServer.bearerToken && (
+              <>
+                <label className="nexus-settings-field">
+                  <span className="nexus-settings-label">Bearer token</span>
+                  <input
+                    className="nexus-settings-input"
+                    readOnly
+                    type="text"
+                    value={mcpServer.bearerToken}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
+
+                <div className="nexus-settings-mcp-actions">
+                  <Button type="button" variant="outline" onClick={handleMcpCopyToken}>
+                    Copy token
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handleMcpRegenerateToken}>
+                    Regenerate token
+                  </Button>
+                </div>
+              </>
+            )}
           </fieldset>
 
           <p className="nexus-settings-profile">Profile: {profileName}</p>

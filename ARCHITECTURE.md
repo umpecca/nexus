@@ -12,8 +12,9 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 
 - `package.json`: Project scripts, Electron package metadata, Windows and macOS icon packaging metadata, Markdown export dependency metadata, bundled Fontsource font dependencies, and runtime dependencies.
 - `.github/workflows/build-desktop.yml`: GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts on `develop` pushes and manual runs.
-- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, View, Settings, and Help menus, handles file dialogs and unsaved-change prompts, forwards editor zoom menu actions, displays the current editor zoom percentage in the View menu, exports Markdown to HTML and paper-sized PDF with local image resolution, selected editor font, selected base font size, selected orientation, selected margins, and static Mermaid diagram rendering, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, owns the native editable context menu with spellcheck suggestions, and loads the built renderer.
-- `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs, paper-size, orientation, and margin PDF export options, image selection and preview-resolution APIs, external file change subscriptions, and the unsaved-change confirmation dialog.
+- `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, View, Settings, and Help menus, handles file dialogs and unsaved-change prompts, forwards editor zoom menu actions, displays the current editor zoom percentage in the View menu, exports Markdown to self-contained HTML and paper-sized PDF with local image resolution, selected editor font, selected base font size, selected orientation, selected margins, and Mermaid diagram rendering, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, owns the native editable context menu with spellcheck suggestions, hosts the optional embedded MCP server lifecycle, routes MCP read tool calls to the focused renderer, routes MCP write tool calls through the renderer confirmation dialog, and loads the built renderer.
+- `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs (HTML and PDF), paper-size, orientation, and margin PDF export options, image selection and preview-resolution APIs, external file change subscriptions, the unsaved-change confirmation dialog, MCP server configure/get-state/regenerate-token requests, MCP renderer registration, MCP read/write tool dispatch from main, and MCP write-confirmation result reporting.
+- `electron/mcp-server.cjs`: Embedded Model Context Protocol server. Owns the `http.Server` bound to `127.0.0.1` on the configured port, implements the Streamable HTTP transport at `POST /mcp` with JSON-RPC framing, validates the bearer token, dispatches to the read-only and write tool implementations, and exposes start/stop/reconfigure hooks used by `electron/main.cjs`. The write tool delegates to a main-process bridge that asks the target renderer to confirm before resolving.
 - `index.html`: Vite application entry point.
 - `src/main.tsx`: React bootstrap and bundled Fontsource font stylesheet imports for editor rendering.
 - `src/App.tsx`: Primary app shell, document state, blank startup behavior, initial empty-editor focus, application title formatting, font, paragraph spacing, paper-size, paper-orientation, margin, editor zoom state, light/dark/system theme resolution, paper/plain editor view state, plain-view responsive wrapping state, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, find-panel command routing, and diff baseline coordination.
@@ -25,13 +26,14 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 - `src/components/editor/ListExitPlugin.ts`: Small MDXEditor/Lexical plugin that restores normal desktop list exit behavior when Enter is pressed on an empty list item.
 - `src/components/editor/ShadcnMdxToolbar.tsx`: Project-owned shadcn-styled grouped toolbar composition that keeps MDXEditor's broad rich-text command set visible in unlabeled button groups, applies consistent tooltips to Nexus-owned controls, includes paper/plain, paper orientation, and plain-view responsive wrapping toggles, floats the view-control group in source and diff modes, and leaves undo, redo, refresh, zoom, and document actions in native menus.
 - `src/components/ui/button-group.tsx`: Local shadcn-style button group primitive used to cluster related toolbar controls without visible group labels.
-- `src/components/settings/SettingsDialog.tsx`: Shadcn-styled settings dialog for editor appearance, light/dark/system theme, unit-labeled base font size, paragraph spacing, paper-size, paper-orientation, and margin preferences.
+- `src/components/settings/SettingsDialog.tsx`: Shadcn-styled settings dialog for editor appearance, light/dark/system theme, unit-labeled base font size, paragraph spacing, paper-size, paper-orientation, margin preferences, and the optional MCP server enable/port/auth-mode/bearer-token section.
+- `src/components/mcp/McpWriteConfirmDialog.tsx`: Shadcn-styled confirmation modal that renders the proposed Markdown alongside the current buffer when an MCP client invokes the document replace tool, with Approve and Reject actions resolving the pending tool call.
 - `src/components/ui/`: Local shadcn-style UI primitives used by project-owned controls.
 - `src/styles.css`: Global application styling, including light and dark app theme tokens, the toggleable paper/plain rich-text editing surface, toolbar-matched rich/source/diff editor backgrounds, edge-to-edge editor frame, sticky white shadcn-styled grouped toolbar layout with a gray bottom border, floating source/diff view controls, bordered paragraph dropdown controls, and raised transform-offset dropdown and tooltip layers.
 - `src/lib/utils.ts`: Shared class name utility for shadcn-style components.
 - `src/lib/markdown.ts`: Markdown utilities, default document content, local storage helpers, and line-ending-normalized dirty comparison helpers.
 - `src/lib/demoDocument.ts`: Built-in Markdown feature showcase used by the File/Load Demo Document action for demos and export smoke tests.
-- `src/lib/settings.ts`: Local settings utilities, default editor font, bundled web font options, base font size, paragraph spacing, light/dark/system theme preference, paper/plain view, plain-view responsive wrapping, paper-size, paper-orientation, margin configuration, and OS-profile-scoped storage keys.
+- `src/lib/settings.ts`: Local settings utilities, default editor font, bundled web font options, base font size, paragraph spacing, light/dark/system theme preference, paper/plain view, plain-view responsive wrapping, paper-size, paper-orientation, margin configuration, MCP server enabled/port/auth-mode/bearer-token defaults and sanitizers, and OS-profile-scoped storage keys.
 - `scripts/run-electron.ps1`: Windows PowerShell runner that builds the app and launches it through the local Electron dependency.
 - `scripts/generate-mac-icon.mjs`: Cross-platform Node script that converts the root `nexus.png` asset into a packaged macOS `nexus.icns` bundle icon.
 - `tasks/`: AI-DLC task documents.
@@ -54,6 +56,10 @@ flowchart LR
     Watcher <--> Files
     Bridge <--> Profile["OS Profile Name"]
     Shell <--> OSOpen["Finder / Explorer File Open"]
+    Shell <--> McpServer["Embedded MCP Server (127.0.0.1)"]
+    McpServer <--> McpClient["External MCP Client (Claude / ChatGPT)"]
+    McpServer <--> Bridge
+    App <--> McpConfirm["MCP Write Confirmation Dialog"]
 ```
 
 Data flow:
@@ -73,7 +79,7 @@ Data flow:
 13. For File/Open, the focused renderer first asks the main process to show the native open-file dialog; only after a file is selected does it compare the current buffer against the last saved/opened buffer using the same line-ending-normalized dirty check and ask whether to save, discard, or cancel before replacing dirty content.
 14. For File/Load Demo Document, the focused renderer asks the same dirty-buffer confirmation helper before replacing the current buffer with the built-in feature showcase as a clean untitled document.
 15. For File/Export as HTML and File/Export as PDF, the focused renderer sends its current Markdown buffer, current file path, selected editor font, selected base font size, and selected paragraph spacing to Electron without changing saved state. PDF export also sends the selected Letter or A4 paper size, portrait/landscape orientation, and page margins.
-16. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, converts supported admonition directives into styled callout HTML, emits Mermaid placeholders for fenced `mermaid` code blocks, renders those placeholders to static SVG in a hidden BrowserWindow, writes rendered HTML with the selected editor font and base font size, injects Fontsource CSS imports for selected bundled web fonts, or strips leading YAML frontmatter before loading the rendered document into a hidden export window. PDF output uses the pre-print-preview direct flow: load the rendered HTML as a data URL, render Mermaid diagrams in that export window, wait for fonts, call Electron's PDF renderer once with selected page size, orientation, custom margins, and print backgrounds, then write the resulting bytes after a save dialog. If direct rich PDF generation fails, the export reports that error instead of writing a plain text fallback PDF.
+16. The Electron main process renders export HTML with Marked, resolves Markdown image paths with the same local path rules used by preview, converts supported admonition directives into styled callout HTML, and emits Mermaid placeholders for fenced `mermaid` code blocks. HTML export uses a self-contained path: prompt for the destination, inline supported local Markdown images as base64 data URLs, inline selected bundled Fontsource CSS and font files as base64 data URLs, load the document from a temporary file for Mermaid rendering, replace successful Mermaid placeholders with base64 SVG image data URLs, and write the static HTML file. PDF output keeps the pre-print-preview direct flow: strip leading YAML frontmatter, load the rendered HTML as a data URL, render Mermaid diagrams in that export window, wait for fonts, call Electron's PDF renderer once with selected page size, orientation, custom margins, and print backgrounds, then write the resulting bytes after a save dialog. If direct rich PDF generation fails, the export reports that error instead of writing a plain text fallback PDF.
 17. Each renderer formats its own native window title from its current file path and dirty state, using the app name first and falling back to Untitled when no file path is active.
 18. Window close attempts are paused per window while that renderer decides whether dirty content should be saved, discarded, or kept open.
 19. Application quit requests walk through all open windows, prompting each dirty renderer before closing it; canceling any prompt stops the quit flow.
@@ -102,6 +108,13 @@ Data flow:
 42. During programmatic document replacement, the renderer ignores stale MDXEditor change events from the replaced buffer so the new disk contents remain clean.
 43. Edit/Compare with Previous Version asks the focused renderer to use that previous-version baseline as MDXEditor's read-only diff side.
 44. When changes are pushed to `develop`, GitHub Actions installs dependencies, runs tests, checks Electron entry files, builds the renderer, packages Windows and macOS builds with electron-builder, applies `nexus.ico` to Windows executable artifacts, applies `nexus.icns` to macOS app bundles, and uploads the generated installers/archives as workflow artifacts.
+45. On app launch, each renderer reads the per-profile MCP settings from localStorage (enabled flag, port, bearer token) and calls `mcp:configure` over IPC so the main process can ensure the embedded MCP server matches the persisted state for that profile. The same call fires whenever the user toggles the server, changes port, or regenerates the token from the settings dialog.
+46. The Electron main process owns at most one MCP `http.Server` instance. Configure requests start the server when enabled and stop it when disabled. The server binds to `127.0.0.1` only; bind failures are reported back to the requesting renderer through the configure response so the settings dialog can display a port-in-use error.
+47. Each renderer registers itself as an MCP-addressable window through preload (`mcp:register-window`) and unregisters on unload. The main process keeps a per-window MCP record (window ID, captured webContents ID, last-known file path and dirty state) and tracks which window currently has focus.
+49. Incoming MCP requests are JSON-RPC over Streamable HTTP at `POST /mcp`. The server checks the configured authentication mode: when set to bearer-token it validates `Authorization: Bearer {token}` against the active token and returns 401 on mismatch, and when set to none it accepts any request that already passed the loopback-only check. After authentication, the server dispatches `initialize`, `tools/list`, and `tools/call` directly. Read tool calls (`nexus_list_windows`, `nexus_get_document`) read the latest cached renderer state held by the main-process MCP record so no renderer round trip is needed.
+50. MCP write tool calls (`nexus_replace_document`) send `mcp:confirm-write` over IPC to the target renderer (focused window or specified window ID), with the proposed Markdown and a short MCP client label. The renderer opens the shadcn-styled MCP write confirmation dialog showing the current buffer alongside the proposed replacement, and replies `mcp:write-decision` with approve or reject.
+51. On approve, the renderer replaces the editor buffer with the proposed Markdown (using the same programmatic-change guard as external reloads so stale `onChange` events do not mark it dirty before the dirty comparison settles) and reports success back to the MCP server, which returns a JSON-RPC result to the client. On reject, the renderer reports rejection and the MCP server returns a JSON-RPC error result.
+52. Closing a window while a pending MCP write confirmation is open auto-rejects that pending call and removes the window from the MCP registry. Disabling the MCP server while requests are in flight closes the HTTP listener and rejects all pending confirmation calls.
 
 ## Technology Used
 
@@ -118,6 +131,7 @@ Data flow:
 - Radix Dialog: Accessible primitive backing the shadcn-styled settings modal.
 - Lucide React: UI icons.
 - Vitest: Unit test runner for utility behavior.
+- Node `http` and `crypto`: Embedded MCP server transport and bearer-token generation.
 
 ## Core Components
 
@@ -209,9 +223,9 @@ Deployment: Runs in each desktop app renderer window with disk reads delegated t
 
 Name: HTML and PDF Export
 
-Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown, current file path, selected editor font, selected base font size, and selected paragraph spacing through preload. PDF export also sends the selected Letter or A4 paper size, portrait/landscape orientation, and page margins. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, converts supported admonition directives into callout HTML, turns fenced Mermaid blocks into export placeholders, renders those placeholders as static SVG diagrams in a hidden BrowserWindow using Mermaid's browser bundle, injects Fontsource CSS imports for selected bundled web fonts, writes rendered HTML through a native save dialog, or strips leading YAML frontmatter metadata before printing the rendered document to PDF bytes with the selected editor font, base font size, and paragraph spacing. PDF generation intentionally uses the pre-print-preview direct path: create one hidden export window, load the rendered HTML as a data URL, render Mermaid placeholders in that window, wait for fonts, and call `printToPDF` once with the selected page size, orientation, custom margins, and print backgrounds. If direct rich printing fails, File/Export as PDF reports the failure and does not create a text-only fallback PDF.
+Description: Adds File menu export actions for rendered HTML and PDF copies of the current Markdown buffer. The renderer sends the active Markdown, current file path, selected editor font, selected base font size, and selected paragraph spacing through preload. PDF export also sends the selected Letter or A4 paper size, portrait/landscape orientation, and page margins. The Electron main process renders a styled HTML document with Marked, resolves Markdown image paths relative to the opened Markdown file when possible, converts supported admonition directives into callout HTML, and turns fenced Mermaid blocks into export placeholders. HTML export prompts for a destination first, embeds supported local images and bundled web font files as base64 data URLs, renders Mermaid placeholders in a hidden BrowserWindow using Mermaid's browser bundle, replaces successful diagrams with base64 SVG image data URL `<img>` elements, and writes a self-contained static HTML file. PDF generation intentionally keeps the pre-print-preview direct path: strip leading YAML frontmatter metadata, create one hidden export window, load the rendered HTML as a data URL, render Mermaid placeholders as inline SVG in that window, wait for fonts, and call `printToPDF` once with the selected page size, orientation, custom margins, and print backgrounds. If direct rich printing fails, File/Export as PDF reports the failure and does not create a text-only fallback PDF.
 
-Technologies: Electron menu action forwarding, preload export IPC, Marked, Mermaid browser bundle, Electron `BrowserWindow.webContents.printToPDF`, Node file writes.
+Technologies: Electron menu action forwarding, preload export IPC, Marked, Mermaid browser bundle, base64 `data:` URLs, Electron `BrowserWindow.webContents.printToPDF`, Node file reads and writes.
 
 Deployment: Runs across each renderer window and the Electron main process. Exporting does not mutate the renderer's file path, saved baseline, or dirty state.
 
@@ -275,6 +289,16 @@ Technologies: React state, Radix Dialog, local storage, Electron IPC for profile
 
 Deployment: Runs inside the desktop app renderer with profile metadata supplied by the main process.
 
+#### Embedded MCP Server Workflow
+
+Name: Optional Local MCP Server
+
+Description: Provides an off-by-default local Model Context Protocol server so external AI clients such as Claude Desktop (via an mcp-remote bridge) or ChatGPT custom connectors can read the currently focused Markdown document and propose full-document replacements that the user reviews in a diff confirmation modal before applying. The Electron main process owns the server lifecycle: starting one `http.Server` listener on `127.0.0.1:{port}` when the renderer reports the feature enabled, validating `Authorization: Bearer` against the active per-profile token, framing JSON-RPC over Streamable HTTP, and dispatching the `initialize`, `tools/list`, and `tools/call` methods. The tool surface in v1 is `nexus_list_windows`, `nexus_get_document`, and `nexus_replace_document`. Read tools resolve from the per-window MCP state record held in main. The write tool sends a confirmation IPC to the target renderer, which opens the MCP write dialog using MDXEditor-style diff presentation, and resolves the JSON-RPC call with the user's decision. The server stops listening immediately on toggle-off, on application quit, and on port reconfiguration.
+
+Technologies: Node `http`, Node `crypto` (random token generation), Electron IPC, React state, Radix Dialog, MDXEditor diff source plugin.
+
+Deployment: Runs entirely on the user's machine. The HTTP listener binds to `127.0.0.1` only and authenticates clients with a static per-profile bearer token shown in the settings dialog.
+
 #### About Workflow
 
 Name: Help About Dialog
@@ -325,7 +349,7 @@ Type: Browser local storage.
 
 Purpose: Stores transient draft state as a convenience, and stores profile-scoped editor settings such as font, base font size, paragraph spacing, app theme, paper/plain view, plain-view responsive wrapping, paper-size, paper-orientation, and margin preferences.
 
-Key Schemas/Collections: `nexus:draft:v1`, `nexus:settings:v1:{profileName}`.
+Key Schemas/Collections: `nexus:draft:v1`, `nexus:settings:v1:{profileName}` (now includes nested MCP server enabled/port/bearer-token fields).
 
 ### File System
 
@@ -362,7 +386,10 @@ Data Encryption: N/A for v1 local storage; users should avoid treating local bro
 Key Security Tools/Practices:
 
 - Keep document content local by default.
-- Do not send content to remote AI services in v1.
+- Keep the embedded MCP server off by default so document content does not leave the app unless the user explicitly opts in.
+- Bind the embedded MCP HTTP listener to `127.0.0.1` only and require a per-profile bearer token on every request by default; treat the optional no-auth mode as an explicit user opt-in for trusted single-user environments and surface a visible warning in the settings dialog when it is selected.
+- Require an in-app diff confirmation modal before any MCP write tool can modify the document, so even an authenticated client cannot silently change content.
+- Do not send content to first-party remote AI services in v1.
 - Prefer explicit user actions for open and save.
 - Use Electron built-in menu roles and webContents edit commands for standard Edit behavior instead of exposing clipboard contents to the renderer.
 - Use Electron built-in spellcheck APIs and native context-menu data for misspelling replacement and dictionary updates instead of exposing document text to custom spellcheck code.
@@ -391,12 +418,17 @@ Code Quality Tools: TypeScript compiler.
 - Add changed-lines review and accept/reject controls for individual changed blocks.
 - Add Git-aware diff support for repository-backed Markdown files.
 - Add platform-specific signing and notarization once release credentials are available.
+- Expand the MCP tool surface (patch/find-replace tools, save/save-as tools, image-aware writes) once the read+replace baseline is in use.
+- Add a stdio MCP transport via a separate launcher binary for clients that do not yet support HTTP/Streamable transport.
+- Add an in-app MCP activity log so the user can review recent tool calls and their decisions.
 
 ## Glossary / Acronyms
 
 AI: Artificial Intelligence.
 
 AI-DLC: AI Development Lifecycle.
+
+MCP: Model Context Protocol — JSON-RPC based protocol for connecting AI applications to external tools and data sources.
 
 MDX: Markdown with JSX.
 

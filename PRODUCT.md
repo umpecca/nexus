@@ -63,16 +63,24 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout with optional responsive content wrapping.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
 - A clean blank untitled document on every app launch and in every new editor window.
+- An optional embedded Model Context Protocol (MCP) server, off by default, that exposes the focused editor document to external AI clients (such as Claude Desktop via an mcp-remote shim, or ChatGPT custom connectors) when the user enables it from the preferences modal.
+- A read-only MCP tool surface for listing open editor windows and reading the active document.
+- A write MCP tool surface for replacing the active document content, gated by an in-app shadcn-styled diff confirmation modal that the user must approve or reject for every individual write call.
+- Per-OS-profile MCP server enabled/disabled, port number, authentication mode (bearer token or none), and randomly generated bearer token preferences stored locally.
 
 #### Out of Scope
 
 - Top-level document action buttons.
-- Real AI provider integration.
+- Real AI provider integration baked into the editor UI.
 - Inline AI controls.
+- MCP tools beyond reading the active document and replacing its full contents (partial patches, multi-window batched edits, file open/save through MCP, image or attachment write tools).
+- Outbound MCP client behavior (Nexus calling other MCP servers).
+- Remote network exposure of the MCP server (only `127.0.0.1` binding is supported).
 - Multi-user collaboration.
 - Cloud sync.
 - Full Git integration.
 - Advanced presentation export formats beyond HTML and PDF.
+- Microsoft Word (.docx) export (previously attempted in T_099–T_102 and removed in T_103 because the round-tripped HTML lost its body content during DOCX conversion; may be revisited later).
 - Plugin marketplace or extension system.
 
 ### 2.5 Constraints & Assumptions
@@ -119,6 +127,24 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Given I launch Nexus  
 - When the editor appears  
 - Then it starts as a blank untitled document
+
+**Story 3**
+> As a writer working with an AI assistant,
+> I want to optionally let Claude or ChatGPT read and propose edits to my open document,
+> so that I can keep my AI assistant in the loop without copy-pasting Markdown back and forth.
+
+#### Acceptance Criteria
+- Given the MCP server is off (the default)
+- When the application launches
+- Then no network ports are opened and no AI client can read or write document content
+
+- Given I enable the MCP server from the preferences modal
+- When an authenticated MCP client calls a read tool
+- Then the focused window's current Markdown is returned without prompting the user
+
+- Given I enable the MCP server from the preferences modal
+- When an authenticated MCP client calls a write tool
+- Then the editor shows a shadcn-styled diff confirmation modal and the write only applies after I click Approve
 
 ### 3.4 Functional Requirements
 
@@ -188,7 +214,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall not rewrite relative image paths in the Markdown source when resolving them for preview.
 - The system shall allow opening Markdown files from the local file system through File/Open.
 - The system shall allow saving the current document through File/Save and File/Save As.
-- The system shall allow exporting the current Markdown document to an HTML file through File/Export as HTML.
+- The system shall allow exporting the current Markdown document to a self-contained HTML file through File/Export as HTML.
 - The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
 - The system shall export HTML and PDF using the selected base font size.
 - The system shall export HTML and PDF using the selected paragraph spacing.
@@ -198,7 +224,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall generate PDFs from the rendered rich export HTML through a direct hidden-window print flow.
 - The system shall report a PDF export failure instead of writing a plain text PDF when direct rich PDF generation is unavailable.
 - The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
-- The system shall render fenced Mermaid diagrams as static SVG diagrams during HTML and PDF export.
+- The system shall embed supported local Markdown images as base64 data URLs during HTML export.
+- The system shall render fenced Mermaid diagrams as base64 SVG image data URLs during HTML export and as static SVG diagrams during PDF export.
+- The system shall embed bundled web font assets as base64 data URLs during HTML export when a bundled font is selected.
 - The system shall render supported admonition directives as styled callout blocks during HTML and PDF export.
 - The system shall exclude leading YAML frontmatter metadata from PDF export output.
 - The system shall not change the current file path, saved baseline, or dirty state when exporting or previewing.
@@ -233,6 +261,31 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall apply the project-owned `.icns` asset to macOS packaged application bundles so Finder and Dock do not show the default Electron icon.
 - The system shall allow the desktop build workflow to be started manually from GitHub Actions.
 - The system shall upload packaged desktop artifacts for download from the workflow run.
+- The system shall ship with the embedded MCP server disabled by default.
+- The system shall allow the user to enable or disable the embedded MCP server from the settings dialog.
+- The system shall let the user choose the MCP server's TCP port from the settings dialog within an allowed local port range, defaulting to 39125.
+- The system shall generate a random bearer token the first time the MCP server is enabled and reuse the same token while it remains enabled.
+- The system shall allow the user to regenerate the MCP bearer token from the settings dialog.
+- The system shall display the current MCP bearer token in the settings dialog with a copy-to-clipboard control.
+- The system shall display the current MCP server connection URL in the settings dialog when the server is enabled.
+- The system shall allow the user to choose between bearer-token authentication (default) and no authentication for the MCP server from the settings dialog.
+- The system shall display a clear warning in the settings dialog when the user selects no authentication, explaining that any local process can call the MCP server while it is enabled.
+- The system shall hide the bearer-token controls in the settings dialog while the authentication mode is set to none.
+- The system shall store the MCP server enabled flag, port number, authentication mode, and bearer token locally using a key scoped to the current OS profile name.
+- The system shall bind the embedded MCP server to `127.0.0.1` only and refuse any non-loopback connection.
+- The system shall reject MCP requests that do not include the configured bearer token in the `Authorization: Bearer` header while the authentication mode is set to bearer-token.
+- The system shall accept MCP requests without any Authorization header while the authentication mode is set to none.
+- The system shall expose a Streamable HTTP MCP transport at `/mcp` while the server is enabled.
+- The system shall support MCP `initialize`, `tools/list`, and `tools/call` JSON-RPC methods through the embedded server.
+- The system shall expose an MCP tool that lists open editor windows with stable identifiers, document titles, file paths, and dirty status.
+- The system shall expose an MCP tool that returns the current Markdown, file path, and dirty status for the focused editor window or for a specified window identifier.
+- The system shall expose an MCP tool that replaces the current Markdown contents of the focused editor window or a specified window identifier with caller-supplied Markdown.
+- The system shall display a shadcn-styled MCP write confirmation dialog in the target editor window whenever an MCP client calls a write tool, showing a Markdown diff between the current buffer and the proposed replacement.
+- The system shall apply an MCP write only after the user clicks Approve in the confirmation dialog for that specific tool call.
+- The system shall return an explicit rejection result to the MCP client when the user clicks Reject in the confirmation dialog or closes it.
+- The system shall return an explicit rejection result to the MCP client when no editor window can host the confirmation dialog.
+- The system shall stop accepting MCP connections immediately when the user disables the MCP server.
+- The system shall close listening sockets on application quit so that ports are released for the next launch.
 
 #### 3.4.x Specialized Logic or Modes (Optional)
 
@@ -249,8 +302,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged; the user can toggle whether plain view wraps to the full application width or to a centered readable column without adding page-level horizontal scrolling.
 - App theme: the settings dialog lets the user choose a Light, Dark, or System app theme. The selected theme is stored per OS profile, System tracks the desktop color-scheme setting, dark mode uses a restrained neutral palette with visible editor carets and toolbar icons, and document export output remains light for predictable PDF/HTML results.
 - Editable page background: rich-text, source, diff, and plain-view editor backgrounds match the toolbar background color for visual continuity.
-- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render Mermaid fences as static SVG diagrams, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output including bundled web fonts, use the selected paper size, orientation, and margins for PDF output, print PDFs through the direct hidden-window rich export path, report failure instead of silently downgrading PDF output to plain text, and use native save dialogs without changing the active document.
+- Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output, use the selected paper size, orientation, and margins for PDF page setup, print PDFs through the direct hidden-window rich export path, report failure instead of silently downgrading any export, and use native save dialogs without changing the active document. HTML export is self-contained for supported local images, Mermaid diagrams, and bundled web font assets by writing them as base64 data URLs.
 - The app shall not provide a separate custom visual/source tab bar.
+- MCP server: a local HTTP-based Model Context Protocol server runs inside the Electron main process while enabled. Transport is Streamable HTTP at `http://127.0.0.1:{port}/mcp` with a single POST endpoint that accepts JSON-RPC requests and returns JSON-RPC responses. Authentication mode is either a static bearer token shown in the preferences modal (default) or no authentication (opt-in, intended for trusted single-user environments). In either mode, the listener stays bound to `127.0.0.1` and the write confirmation dialog still gates every replace_document call. The tool surface is intentionally narrow: list windows, read document, replace document. Read tools execute immediately against the focused renderer (or specified window). The write tool routes through the target renderer's confirmation dialog and resolves with the user's decision before responding to the MCP client. The server is intended for local AI assistants on the same machine, not network exposure.
 
 ### 3.5 Non-Functional / Experience Requirements
 
@@ -275,7 +329,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 11. Confirm the active document from the native application title.
 12. Use Settings/Preferences to choose the editor font, base font size, paper size, paper orientation, and page margins for the current OS profile.
 13. Use Help/About to view application copyright information.
-14. Use the Electron Edit menu or the editor right-click menu to cut, copy, and paste while editing.
+14. Use the Electron Edit menu or the editor right-click menu to cut, copy, copy a rich-text selection for Microsoft Word, and paste while editing.
 15. Right-click an underlined misspelled word to choose a correction or add the word to the dictionary.
 16. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
 17. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
@@ -284,6 +338,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 20. Use Edit/Refresh to reload the current opened file from disk.
 21. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
 22. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
+23. Optionally enable the MCP server from Settings/Preferences, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it.
 
 ## 5. UI / Design Notes (Optional)
 
@@ -345,6 +400,14 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Settings storage can be unavailable or invalid; the app should keep using a default Letter paper size.
 - Settings storage can be unavailable or invalid; the app should keep using portrait paper orientation.
 - Settings storage can be unavailable or invalid; the app should keep using default one-inch page margins.
+- Settings storage can be unavailable or invalid; the MCP server should remain disabled until the user explicitly turns it on.
+- The configured MCP port can already be in use on the host; the server should report the bind failure to the renderer and remain disabled until the user picks another port.
+- MCP write tool calls that arrive while no editor window is open should be rejected with a clear error and not crash the main process.
+- MCP write tool calls that arrive while a confirmation dialog is already open in the target window should queue or be rejected with a busy error rather than overlapping multiple dialogs.
+- Closing the only editor window while a confirmation dialog is open should reject the pending MCP write rather than leaving the client waiting indefinitely.
+- Disabling the MCP server while a tool call is in flight should close the connection and resolve the pending call with a rejection.
+- An MCP request without a bearer token, with the wrong token, or with the wrong content type should receive an explicit 401/400 response instead of being silently dropped while the authentication mode is bearer-token.
+- An MCP request that arrives while the authentication mode is none should be processed without checking the Authorization header, but the loopback-only binding and write confirmation dialog should still apply.
 
 ## 7. Future Iterations / Open Questions
 
@@ -354,6 +417,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Add Git-backed diffs when a document belongs to a repository.
 - Add export targets for PDF, DOCX, or slide decks.
 - Add true paginated page breaks if print-layout editing becomes a core workflow.
+- Expand the MCP tool surface with partial patch / find-replace tools, save and save-as tools, and image/attachment-aware tools once the read+replace baseline proves out.
+- Add an MCP audit log or activity panel so users can see recent tool calls and decisions.
+- Add stdio MCP transport via a separate launcher binary for clients (such as current Claude Desktop) that do not yet support HTTP/Streamable transport directly.
 
 ## 8. Notes for LLM-Assisted Development (Optional)
 

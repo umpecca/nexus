@@ -64,6 +64,12 @@ describe("settings helpers", () => {
         right: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
         bottom: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
         left: DEFAULT_EDITOR_PAGE_MARGIN_INCHES
+      },
+      mcpServer: {
+        enabled: false,
+        port: 39125,
+        authMode: "bearer",
+        bearerToken: ""
       }
     });
   });
@@ -98,6 +104,12 @@ describe("settings helpers", () => {
         right: 1,
         bottom: 1,
         left: 1
+      },
+      mcpServer: {
+        enabled: false,
+        port: 39125,
+        authMode: "bearer",
+        bearerToken: ""
       }
     });
   });
@@ -375,6 +387,12 @@ describe("settings helpers", () => {
         right: 0.75,
         bottom: 1,
         left: 1.25
+      },
+      mcpServer: {
+        enabled: false,
+        port: 39125,
+        authMode: "bearer",
+        bearerToken: ""
       }
     });
 
@@ -395,6 +413,12 @@ describe("settings helpers", () => {
           right: 0.75,
           bottom: 1,
           left: 1.25
+        },
+        mcpServer: {
+          enabled: false,
+          port: 39125,
+          authMode: "bearer",
+          bearerToken: ""
         }
       })
     );

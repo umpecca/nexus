@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 const menuActionChannel = "menu:action";
 const closeRequestChannel = "app:request-close";
 const externalFileChangeChannel = "file:external-change";
+const mcpConfirmWriteChannel = "mcp:confirm-write";
 
 contextBridge.exposeInMainWorld("nexus", {
   platform: process.platform,
@@ -26,6 +27,12 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   runEditCommand(command) {
     return ipcRenderer.invoke("edit:command", command);
+  },
+  writeHtmlToClipboard(payload) {
+    return ipcRenderer.invoke("clipboard:write-html", payload);
+  },
+  convertImageToDataUrl(source) {
+    return ipcRenderer.invoke("image:to-data-url", source);
   },
   getProfileName() {
     return ipcRenderer.invoke("app:get-profile-name");
@@ -71,5 +78,25 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   setMenuState(state) {
     ipcRenderer.send("menu:set-state", state);
+  },
+  configureMcpServer(config) {
+    return ipcRenderer.invoke("mcp:configure", config);
+  },
+  registerMcpWindow(payload) {
+    ipcRenderer.send("mcp:register-window", payload);
+  },
+  updateMcpWindowState(state) {
+    ipcRenderer.send("mcp:update-window-state", state);
+  },
+  unregisterMcpWindow() {
+    ipcRenderer.send("mcp:unregister-window");
+  },
+  onMcpConfirmWrite(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(mcpConfirmWriteChannel, listener);
+    return () => ipcRenderer.removeListener(mcpConfirmWriteChannel, listener);
+  },
+  resolveMcpWrite(requestId, decision) {
+    ipcRenderer.send("mcp:write-decision", { requestId, decision });
   }
 });

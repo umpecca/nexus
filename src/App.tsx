@@ -46,8 +46,17 @@ import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
+import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
 
 const APP_TITLE = "Nexus";
+
+const MCP_WINDOW_ID = (() => {
+  const cryptoApi = typeof globalThis !== "undefined" ? (globalThis as { crypto?: Crypto }).crypto : undefined;
+  if (cryptoApi?.randomUUID) {
+    return `nexus-${cryptoApi.randomUUID()}`;
+  }
+  return `nexus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+})();
 const EDITOR_ZOOM_STEP_PERCENT = 10;
 const MIN_EDITOR_ZOOM_PERCENT = 50;
 const MAX_EDITOR_ZOOM_PERCENT = 200;
@@ -235,6 +244,9 @@ function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
     useState<ExternalFileChangePrompt | null>(null);
+  const [pendingMcpWrite, setPendingMcpWrite] = useState<
+    { requestId: string; markdown: string; clientLabel: string } | null
+  >(null);
   const [parseError, setParseError] = useState<ParseErrorInfo | null>(null);
   const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
   const editorRef = useRef<MDXEditorMethods>(null);
@@ -271,7 +283,8 @@ function App() {
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
-      }))
+      })),
+    copyHtmlSelection
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const editorSurfaceClassName = [
@@ -376,7 +389,8 @@ function App() {
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
-      }))
+      })),
+    copyHtmlSelection
   };
 
   useEffect(() => {
@@ -422,6 +436,20 @@ function App() {
   }, [profileName, settings]);
 
   useEffect(() => {
+    void window.nexus?.configureMcpServer({
+      enabled: settings.mcpServer.enabled,
+      port: settings.mcpServer.port,
+      authMode: settings.mcpServer.authMode,
+      bearerToken: settings.mcpServer.bearerToken
+    });
+  }, [
+    settings.mcpServer.enabled,
+    settings.mcpServer.port,
+    settings.mcpServer.authMode,
+    settings.mcpServer.bearerToken
+  ]);
+
+  useEffect(() => {
     window.nexus?.setMenuState({
       editorZoomPercent,
       showInvisibleCharacters: settings.showInvisibleCharacters
@@ -463,6 +491,81 @@ function App() {
       hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)
     );
   }, [filePath, lastSavedMarkdown, markdown]);
+
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
+    window.nexus.registerMcpWindow({
+      windowId: MCP_WINDOW_ID,
+      title: formatWindowTitle(filePath, hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)),
+      filePath: filePath ?? null,
+      dirty: hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown),
+      markdown
+    });
+
+    const handleBeforeUnload = () => {
+      window.nexus?.unregisterMcpWindow();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.nexus?.unregisterMcpWindow();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    window.nexus?.updateMcpWindowState({
+      title: formatWindowTitle(filePath, hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)),
+      filePath: filePath ?? null,
+      dirty: hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown),
+      markdown
+    });
+  }, [filePath, lastSavedMarkdown, markdown]);
+
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
+    return window.nexus.onMcpConfirmWrite((payload) => {
+      setPendingMcpWrite((current) => {
+        if (current) {
+          window.nexus?.resolveMcpWrite(payload.requestId, "reject");
+          return current;
+        }
+        return payload;
+      });
+    });
+  }, []);
+
+  function approvePendingMcpWrite() {
+    setPendingMcpWrite((pending) => {
+      if (!pending) {
+        return null;
+      }
+
+      beginProgrammaticMarkdownChange(pending.markdown);
+      editorRef.current?.setMarkdown(pending.markdown);
+      setMarkdown(pending.markdown);
+      window.nexus?.resolveMcpWrite(pending.requestId, "approve");
+      return null;
+    });
+  }
+
+  function rejectPendingMcpWrite() {
+    setPendingMcpWrite((pending) => {
+      if (!pending) {
+        return null;
+      }
+
+      window.nexus?.resolveMcpWrite(pending.requestId, "reject");
+      return null;
+    });
+  }
 
   useEffect(() => {
     if (!window.nexus) {
@@ -692,6 +795,122 @@ function App() {
         });
       });
     });
+  }
+
+  async function rasterizeSvgToPngDataUrl(
+    svg: SVGElement,
+    width: number,
+    height: number
+  ): Promise<string | null> {
+    const clone = svg.cloneNode(true) as SVGElement;
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    if (!clone.getAttribute("xmlns")) {
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    }
+
+    const svgString = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    try {
+      return await new Promise<string | null>((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          const scale = 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(width * scale));
+          canvas.height = Math.max(1, Math.round(height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(null);
+            return;
+          }
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.scale(scale, scale);
+          ctx.drawImage(image, 0, 0, width, height);
+          try {
+            resolve(canvas.toDataURL("image/png"));
+          } catch {
+            resolve(null);
+          }
+        };
+        image.onerror = () => resolve(null);
+        image.src = svgUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  }
+
+  async function copyHtmlSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return;
+    }
+
+    const text = selection.toString();
+    if (!text) {
+      return;
+    }
+
+    const liveSvgs: { svg: SVGElement; width: number; height: number }[] = [];
+    const allSvgs = Array.from(document.querySelectorAll("svg"));
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      const range = selection.getRangeAt(index);
+      for (const svg of allSvgs) {
+        if (!range.intersectsNode(svg)) {
+          continue;
+        }
+        const rect = svg.getBoundingClientRect();
+        liveSvgs.push({
+          svg,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    }
+
+    const container = document.createElement("div");
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      container.appendChild(selection.getRangeAt(index).cloneContents());
+    }
+
+    const clonedSvgs = Array.from(container.querySelectorAll("svg"));
+    const replaceableCount = Math.min(clonedSvgs.length, liveSvgs.length);
+    for (let i = 0; i < replaceableCount; i += 1) {
+      const cloned = clonedSvgs[i];
+      const { svg, width, height } = liveSvgs[i];
+      if (width <= 0 || height <= 0) {
+        continue;
+      }
+      const dataUrl = await rasterizeSvgToPngDataUrl(svg, width, height);
+      if (!dataUrl) {
+        continue;
+      }
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.width = Math.round(width);
+      img.height = Math.round(height);
+      cloned.parentNode?.replaceChild(img, cloned);
+    }
+
+    const imgs = Array.from(container.querySelectorAll("img"));
+    for (const img of imgs) {
+      const src = img.getAttribute("src");
+      if (!src || src.startsWith("data:")) {
+        continue;
+      }
+      const dataUrl = await window.nexus?.convertImageToDataUrl(src);
+      if (dataUrl) {
+        img.setAttribute("src", dataUrl);
+      }
+    }
+
+    const html = container.innerHTML;
+
+    void window.nexus?.writeHtmlToClipboard({ html, text });
   }
 
   async function saveDocument(): Promise<boolean> {
@@ -1033,6 +1252,9 @@ function App() {
         case "about":
           h.openAbout();
           break;
+        case "copyHtml":
+          void h.copyHtmlSelection();
+          break;
       }
     });
 
@@ -1209,10 +1431,12 @@ function App() {
       <SettingsDialog
         fontFamily={settings.fontFamily}
         fontSizePixels={settings.fontSizePixels}
+        mcpServer={settings.mcpServer}
         onFontFamilyChange={(fontFamily) => setSettings((current) => ({ ...current, fontFamily }))}
         onFontSizePixelsChange={(fontSizePixels) =>
           setSettings((current) => ({ ...current, fontSizePixels }))
         }
+        onMcpServerChange={(mcpServer) => setSettings((current) => ({ ...current, mcpServer }))}
         onPageMarginsChange={(pageMargins) =>
           setSettings((current) => ({ ...current, pageMargins }))
         }
@@ -1240,6 +1464,14 @@ function App() {
         themePreference={settings.themePreference}
       />
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
+      <McpWriteConfirmDialog
+        open={pendingMcpWrite !== null}
+        clientLabel={pendingMcpWrite?.clientLabel ?? ""}
+        currentMarkdown={markdown}
+        proposedMarkdown={pendingMcpWrite?.markdown ?? ""}
+        onApprove={approvePendingMcpWrite}
+        onReject={rejectPendingMcpWrite}
+      />
     </main>
   );
 }

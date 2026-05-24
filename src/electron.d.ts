@@ -16,7 +16,8 @@ type NexusMenuAction =
   | "resetZoom"
   | "toggleShowInvisibles"
   | "settings"
-  | "about";
+  | "about"
+  | "copyHtml";
 
 type NexusMenuState = {
   editorZoomPercent?: number;
@@ -66,6 +67,40 @@ type SelectBase64ImageResult =
   | { canceled: true }
   | { canceled: false; filePath: string; mimeType: string; dataUrl: string };
 
+type ConfigureMcpServerInput = {
+  enabled: boolean;
+  port: number;
+  authMode: "bearer" | "none";
+  bearerToken: string;
+};
+
+type ConfigureMcpServerResult =
+  | { ok: true; listening: boolean; port?: number }
+  | { ok: false; listening?: false; error: string };
+
+type RegisterMcpWindowInput = {
+  windowId: string;
+  title: string;
+  filePath: string | null;
+  dirty: boolean;
+  markdown: string;
+};
+
+type UpdateMcpWindowStateInput = Partial<{
+  title: string;
+  filePath: string | null;
+  dirty: boolean;
+  markdown: string;
+}>;
+
+type McpConfirmWriteEvent = {
+  requestId: string;
+  markdown: string;
+  clientLabel: string;
+};
+
+type McpWriteDecision = "approve" | "reject";
+
 declare global {
   interface Window {
     nexus?: {
@@ -75,6 +110,8 @@ declare global {
       onExternalFileChange(callback: (event: ExternalFileChangeEvent) => void): () => void;
       resolveCloseRequest(shouldClose: boolean): Promise<void>;
       runEditCommand(command: NexusEditCommand): Promise<void>;
+      writeHtmlToClipboard(payload: { html: string; text: string }): Promise<{ written: boolean }>;
+      convertImageToDataUrl(source: string): Promise<string | null>;
       getProfileName(): Promise<string>;
       openMarkdownFile(): Promise<OpenMarkdownResult>;
       getInitialOpenFile(): Promise<OpenMarkdownResult>;
@@ -98,6 +135,12 @@ declare global {
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
       setMenuState(state: NexusMenuState): void;
+      configureMcpServer(config: ConfigureMcpServerInput): Promise<ConfigureMcpServerResult>;
+      registerMcpWindow(payload: RegisterMcpWindowInput): void;
+      updateMcpWindowState(state: UpdateMcpWindowStateInput): void;
+      unregisterMcpWindow(): void;
+      onMcpConfirmWrite(callback: (event: McpConfirmWriteEvent) => void): () => void;
+      resolveMcpWrite(requestId: string, decision: McpWriteDecision): void;
     };
   }
 }

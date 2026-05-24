@@ -2,8 +2,10 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { existsSync, watch } = require("node:fs");
 const os = require("node:os");
-const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require("electron");
+const { pathToFileURL, fileURLToPath } = require("node:url");
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain } = require("electron");
+
+const mcpServer = require("./mcp-server.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
 const appIconPath = path.join(__dirname, "..", "nexus.png");
@@ -12,6 +14,118 @@ const fileWatchers = new Map();
 const pendingInitialFiles = new Map();
 const pendingExternalFilePaths = [];
 let isQuitting = false;
+
+const mcpWindowRecords = new Map();
+let mcpFocusedWindowId = null;
+let mcpPendingWriteCounter = 0;
+const mcpPendingWrites = new Map();
+
+function findMcpWindowByWindowId(windowId) {
+  for (const record of mcpWindowRecords.values()) {
+    if (record.windowId === windowId) {
+      return record;
+    }
+  }
+  return null;
+}
+
+function findMcpFocusedWindow() {
+  if (mcpFocusedWindowId) {
+    const focused = findMcpWindowByWindowId(mcpFocusedWindowId);
+    if (focused) {
+      return focused;
+    }
+  }
+
+  return mcpWindowRecords.values().next().value ?? null;
+}
+
+function mcpListWindows() {
+  const focusedId = findMcpFocusedWindow()?.windowId ?? null;
+  return Array.from(mcpWindowRecords.values()).map((record) => ({
+    windowId: record.windowId,
+    title: record.title || "Untitled",
+    filePath: record.filePath || null,
+    dirty: Boolean(record.dirty),
+    focused: record.windowId === focusedId
+  }));
+}
+
+function mcpGetDocument(windowId) {
+  const record = windowId
+    ? findMcpWindowByWindowId(windowId)
+    : findMcpFocusedWindow();
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    windowId: record.windowId,
+    title: record.title || "Untitled",
+    filePath: record.filePath || null,
+    dirty: Boolean(record.dirty),
+    markdown: record.markdown ?? ""
+  };
+}
+
+function rejectAllPendingMcpWrites(reason) {
+  for (const pending of mcpPendingWrites.values()) {
+    pending.resolve({ applied: false, reason });
+  }
+  mcpPendingWrites.clear();
+}
+
+mcpServer.setHost({
+  listWindows: mcpListWindows,
+  getDocument: mcpGetDocument,
+  rejectAllPendingWrites: rejectAllPendingMcpWrites,
+  requestReplaceDocument: ({ windowId, markdown, clientLabel }) => {
+    return new Promise((resolve) => {
+      const record = windowId ? findMcpWindowByWindowId(windowId) : findMcpFocusedWindow();
+      if (!record) {
+        resolve({ applied: false, reason: "no-window" });
+        return;
+      }
+
+      for (const pending of mcpPendingWrites.values()) {
+        if (pending.webContentsId === record.webContentsId) {
+          resolve({ applied: false, reason: "busy" });
+          return;
+        }
+      }
+
+      const window = BrowserWindow.fromId(record.browserWindowId);
+      if (!window || window.isDestroyed()) {
+        mcpWindowRecords.delete(record.webContentsId);
+        resolve({ applied: false, reason: "no-window" });
+        return;
+      }
+
+      mcpPendingWriteCounter += 1;
+      const requestId = `mcp-write-${mcpPendingWriteCounter}`;
+      mcpPendingWrites.set(requestId, {
+        resolve,
+        webContentsId: record.webContentsId
+      });
+
+      try {
+        window.webContents.send("mcp:confirm-write", {
+          requestId,
+          markdown,
+          clientLabel: clientLabel || "an MCP client"
+        });
+      } catch (error) {
+        mcpPendingWrites.delete(requestId);
+        resolve({
+          applied: false,
+          reason: "send-failed",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+  }
+});
 
 const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
 const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
@@ -220,6 +334,62 @@ function resolveImagePreviewSource(documentPath, imageSource) {
   return `${pathToFileURL(resolvedPath).href}${suffix}`;
 }
 
+function resolveLocalImageFilePath(documentPath, imageSource) {
+  if (typeof imageSource !== "string") {
+    return null;
+  }
+
+  const source = imageSource.trim();
+  if (!source || source.startsWith("#") || source.startsWith("//")) {
+    return null;
+  }
+
+  const { imagePath } = splitImageSourceSuffix(source);
+  if (!imagePath || imagePath.startsWith("#") || imagePath.startsWith("//")) {
+    return null;
+  }
+
+  if (/^file:/i.test(imagePath)) {
+    try {
+      return fileURLToPath(imagePath);
+    } catch {
+      return null;
+    }
+  }
+
+  if (hasUrlScheme(imagePath)) {
+    return null;
+  }
+
+  if (path.isAbsolute(imagePath)) {
+    return imagePath;
+  }
+
+  if (typeof documentPath !== "string" || documentPath.length === 0) {
+    return null;
+  }
+
+  return path.resolve(path.dirname(documentPath), imagePath);
+}
+
+async function getLocalImageDataUrl(documentPath, imageSource) {
+  const imagePath = resolveLocalImageFilePath(documentPath, imageSource);
+  if (!imagePath) {
+    return null;
+  }
+
+  const mimeType = imageMimeTypes.get(path.extname(imagePath).toLowerCase());
+  if (!mimeType) {
+    return null;
+  }
+
+  try {
+    return await readFileAsDataUrl(imagePath, mimeType);
+  } catch {
+    return null;
+  }
+}
+
 function escapeHtmlAttribute(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -251,6 +421,51 @@ function getDefaultExportPath(currentPath, extension) {
   }
 
   return fileName;
+}
+
+function buildFallbackExportHtmlDocument(markdown, currentPath) {
+  const title = getDocumentTitleForExport(currentPath);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtmlText(title)}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #111827;
+      background: #ffffff;
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+    }
+
+    main {
+      box-sizing: border-box;
+      width: min(100%, 920px);
+      margin: 0 auto;
+      padding: 48px 40px;
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <pre>${escapeHtmlText(markdown ?? "")}</pre>
+  </main>
+</body>
+</html>`;
 }
 
 function getPdfPageSize(value) {
@@ -291,13 +506,93 @@ function getExportFontFamily(value) {
   return exportFontFamilies.has(value) ? value : defaultExportFontFamily;
 }
 
-function getExportFontCssImportRules(value) {
+async function readFileAsDataUrl(filePath, mimeType) {
+  const data = await fs.readFile(filePath);
+  return `data:${mimeType};base64,${data.toString("base64")}`;
+}
+
+function getFontAssetMimeType(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".otf":
+      return "font/otf";
+    case ".ttf":
+      return "font/ttf";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function unquoteCssUrlValue(value) {
+  const trimmed = String(value ?? "").trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
+async function inlineCssFileUrls(cssText, cssFilePath) {
+  const urlPattern = /url\(([^)]+)\)/g;
+  let output = "";
+  let lastIndex = 0;
+
+  for (const match of cssText.matchAll(urlPattern)) {
+    const index = match.index ?? 0;
+    output += cssText.slice(lastIndex, index);
+
+    const urlValue = unquoteCssUrlValue(match[1]);
+    if (
+      !urlValue ||
+      urlValue.startsWith("#") ||
+      urlValue.startsWith("//") ||
+      hasUrlScheme(urlValue)
+    ) {
+      output += match[0];
+    } else {
+      const assetPath = path.resolve(path.dirname(cssFilePath), urlValue);
+      const dataUrl = await readFileAsDataUrl(assetPath, getFontAssetMimeType(assetPath));
+      output += `url("${dataUrl}")`;
+    }
+
+    lastIndex = index + match[0].length;
+  }
+
+  return `${output}${cssText.slice(lastIndex)}`;
+}
+
+async function getExportFontCssImportRules(value, options = {}) {
   const fontFamily = getExportFontFamily(value);
   const cssImports = exportFontCssImportsByFamily.get(fontFamily) ?? [];
 
-  return cssImports
-    .map((cssPath) => `@import url("${pathToFileURL(require.resolve(cssPath)).href}");`)
-    .join("\n");
+  if (!options.inlineAssets) {
+    return cssImports
+      .map((cssPath) => `@import url("${pathToFileURL(require.resolve(cssPath)).href}");`)
+      .join("\n");
+  }
+
+  const cssBlocks = [];
+  for (const cssPath of cssImports) {
+    try {
+      const cssFilePath = require.resolve(cssPath);
+      const cssText = await fs.readFile(cssFilePath, "utf8");
+      cssBlocks.push(await inlineCssFileUrls(cssText, cssFilePath));
+    } catch {
+      try {
+        cssBlocks.push(`@import url("${pathToFileURL(require.resolve(cssPath)).href}");`);
+      } catch {
+        // Keep export writing even if an optional bundled font package is unavailable.
+      }
+    }
+  }
+
+  return cssBlocks.join("\n");
 }
 
 function getPdfPageMargin(value) {
@@ -440,10 +735,12 @@ async function renderMarkdownAdmonitions(markdown, parseMarkdown) {
   return output.join("\n");
 }
 
-function buildExportHtmlDocument(title, bodyHtml, options = {}) {
+async function buildExportHtmlDocument(title, bodyHtml, options = {}) {
   const escapedTitle = escapeHtmlAttribute(title);
   const fontFamily = getExportFontFamily(options.fontFamily);
-  const fontCssImportRules = getExportFontCssImportRules(fontFamily);
+  const fontCssImportRules = await getExportFontCssImportRules(fontFamily, {
+    inlineAssets: options.inlineFontAssets
+  });
   const fontSizePixels = getExportFontSize(options.fontSizePixels);
   const paragraphSpacingPixels = getExportParagraphSpacing(options.paragraphSpacingPixels);
   const pdfPrintStyle = options.pdfPrintStyle ?? "";
@@ -587,7 +884,8 @@ ${pdfPrintStyle}
       text-align: center;
     }
 
-    .nexus-export-mermaid svg {
+    .nexus-export-mermaid svg,
+    .nexus-export-mermaid img {
       display: inline-block;
       max-width: 100%;
       height: auto;
@@ -687,7 +985,8 @@ function createMarkedHighlightExtension() {
       };
     },
     renderer(token) {
-      return `<mark>${this.parser.parseInline(token.tokens)}</mark>`;
+      const inner = this.parser.parseInline(token.tokens);
+      return `<mark>${inner}</mark>`;
     }
   };
 }
@@ -708,8 +1007,21 @@ async function loadExportHtml(exportWindow, html) {
   await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
 
-async function renderExportMermaidDiagrams(webContents) {
+async function loadExportHtmlFromTemporaryFile(exportWindow, html) {
+  const tempDirectory = await fs.mkdtemp(path.join(app.getPath("temp"), "nexus-export-"));
+  const tempFilePath = path.join(tempDirectory, "export.html");
+
+  try {
+    await fs.writeFile(tempFilePath, html, "utf8");
+    await exportWindow.loadFile(tempFilePath);
+  } finally {
+    await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function renderExportMermaidDiagrams(webContents, options = {}) {
   const mermaidScriptUrl = pathToFileURL(require.resolve("mermaid/dist/mermaid.min.js")).href;
+  const diagramsAsImages = Boolean(options.diagramsAsImages);
 
   await webContents.executeJavaScript(
     `
@@ -740,6 +1052,45 @@ async function renderExportMermaidDiagrams(webContents) {
           theme: "default"
         });
 
+        const diagramsAsImages = ${JSON.stringify(diagramsAsImages)};
+        const textToBase64 = (text) => {
+          const bytes = new TextEncoder().encode(text);
+          let binary = "";
+          const chunkSize = 0x8000;
+          for (let index = 0; index < bytes.length; index += chunkSize) {
+            binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+          }
+          return btoa(binary);
+        };
+        const parseSvgSize = (svgText) => {
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = svgText;
+          const svg = wrapper.querySelector("svg");
+          if (!svg) {
+            return {};
+          }
+
+          const parseLength = (value) => {
+            const match = String(value ?? "").match(/^([0-9]+(?:\\.[0-9]+)?)/);
+            return match ? Number(match[1]) : null;
+          };
+          let width = parseLength(svg.getAttribute("width"));
+          let height = parseLength(svg.getAttribute("height"));
+
+          if ((!width || !height) && svg.getAttribute("viewBox")) {
+            const parts = svg.getAttribute("viewBox").trim().split(/[\\s,]+/).map(Number);
+            if (parts.length === 4 && parts.every(Number.isFinite)) {
+              width = width || parts[2];
+              height = height || parts[3];
+            }
+          }
+
+          return {
+            width: width && width > 0 ? Math.round(width) : null,
+            height: height && height > 0 ? Math.round(height) : null
+          };
+        };
+
         for (const [index, diagram] of diagrams.entries()) {
           const source = diagram.querySelector(".nexus-export-mermaid-source")?.textContent ?? "";
 
@@ -753,7 +1104,23 @@ async function renderExportMermaidDiagrams(webContents) {
               source
             );
             diagram.classList.add("nexus-export-mermaid-rendered");
-            diagram.innerHTML = result.svg;
+            if (diagramsAsImages) {
+              const image = document.createElement("img");
+              const size = parseSvgSize(result.svg);
+              image.src = \`data:image/svg+xml;base64,\${textToBase64(result.svg)}\`;
+              image.alt = result.diagramType
+                ? \`Mermaid \${result.diagramType} diagram\`
+                : "Mermaid diagram";
+              if (size.width) {
+                image.width = size.width;
+              }
+              if (size.height) {
+                image.height = size.height;
+              }
+              diagram.replaceChildren(image);
+            } else {
+              diagram.innerHTML = result.svg;
+            }
           } catch (error) {
             const title = document.createElement("strong");
             const details = document.createElement("pre");
@@ -778,7 +1145,7 @@ async function serializeRenderedExportHtml(webContents) {
   return `<!doctype html>\n${html}`;
 }
 
-async function renderMermaidInExportHtml(html) {
+async function renderMermaidInExportHtml(html, options = {}) {
   if (!hasExportMermaidPlaceholder(html)) {
     return html;
   }
@@ -786,13 +1153,38 @@ async function renderMermaidInExportHtml(html) {
   let exportWindow;
   try {
     exportWindow = createExportWindow();
-    await loadExportHtml(exportWindow, html);
-    await renderExportMermaidDiagrams(exportWindow.webContents);
+    if (options.loadFromTemporaryFile) {
+      await loadExportHtmlFromTemporaryFile(exportWindow, html);
+    } else {
+      await loadExportHtml(exportWindow, html);
+    }
+    await renderExportMermaidDiagrams(exportWindow.webContents, options);
     return serializeRenderedExportHtml(exportWindow.webContents);
   } finally {
     if (exportWindow && !exportWindow.isDestroyed()) {
       exportWindow.destroy();
     }
+  }
+}
+
+async function renderMarkdownSelfContainedHtml(markdown, currentPath, options = {}) {
+  const html = await renderMarkdownExportHtml(markdown, currentPath, {
+    fontFamily: options.fontFamily,
+    fontSizePixels: options.fontSizePixels,
+    inlineFontAssets: true,
+    inlineLocalImages: true,
+    paragraphSpacingPixels: options.paragraphSpacingPixels
+  });
+
+  try {
+    return await renderMermaidInExportHtml(html, {
+      diagramsAsImages: true,
+      loadFromTemporaryFile: true
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Export HTML kept rendered Markdown HTML after Mermaid render failure: ${message}`);
+    return html;
   }
 }
 
@@ -807,13 +1199,12 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
     return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(token.text)}"${title}>`;
   };
 
-  renderer.code = (token) => {
+  renderer.code = function (token) {
     if (!isMermaidFence(getCodeTokenLanguage(token))) {
       return defaultCodeRenderer(token);
     }
-
     return [
-      '<figure class="nexus-export-mermaid">',
+      `<figure class="nexus-export-mermaid">`,
       `<pre class="nexus-export-mermaid-source">${escapeHtmlText(token.text)}</pre>`,
       "</figure>"
     ].join("");
@@ -824,25 +1215,38 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
     breaks: false,
     extensions: [createMarkedHighlightExtension()],
     gfm: true,
-    renderer
+    renderer,
+    walkTokens: options.inlineLocalImages
+      ? async (token) => {
+          if (token?.type !== "image" || typeof token.href !== "string") {
+            return;
+          }
+
+          const dataUrl = await getLocalImageDataUrl(currentPath, token.href);
+          if (dataUrl) {
+            token.href = dataUrl;
+          }
+        }
+      : null
   });
   const sourceMarkdown = options.excludeFrontmatter
     ? stripMarkdownFrontmatter(markdown)
     : markdown ?? "";
-  const markdownWithAdmonitions = await renderMarkdownAdmonitions(sourceMarkdown, (content) =>
-    marked.parse(content)
+  const markdownWithAdmonitions = await renderMarkdownAdmonitions(
+    sourceMarkdown,
+    (content) => marked.parse(content)
   );
   const bodyHtml = await marked.parse(markdownWithAdmonitions);
   return buildExportHtmlDocument(getDocumentTitleForExport(currentPath), bodyHtml, {
     fontFamily: options.fontFamily,
     fontSizePixels: options.fontSizePixels,
     paragraphSpacingPixels: options.paragraphSpacingPixels,
+    inlineFontAssets: options.inlineFontAssets,
     pdfPrintStyle: options.pdfPrintStyle
   });
 }
 
-async function showExportError(event, format, error) {
-  const window = BrowserWindow.fromWebContents(event.sender);
+async function showExportErrorForWindow(window, format, error) {
   const message = error instanceof Error ? error.message : "The document could not be exported.";
   const options = {
     type: "error",
@@ -855,6 +1259,51 @@ async function showExportError(event, format, error) {
     await dialog.showMessageBox(window, options);
   } else {
     await dialog.showMessageBox(options);
+  }
+}
+
+async function showExportError(event, format, error) {
+  await showExportErrorForWindow(BrowserWindow.fromWebContents(event.sender), format, error);
+}
+
+async function showSaveDialogForWindow(window, options) {
+  if (window && !window.isDestroyed()) {
+    return dialog.showSaveDialog(window, options);
+  }
+
+  return dialog.showSaveDialog(options);
+}
+
+async function exportHtmlFromPayload(window, payload) {
+  const { currentPath, markdown, options } = payload ?? {};
+
+  try {
+    const result = await showSaveDialogForWindow(window, {
+      title: "Export HTML",
+      defaultPath: getDefaultExportPath(currentPath, "html"),
+      filters: htmlFilters
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+
+    await fs.mkdir(path.dirname(result.filePath), { recursive: true });
+
+    const html = await renderMarkdownExportHtml(markdown, currentPath, {
+      excludeFrontmatter: true,
+      fontFamily: options?.fontFamily,
+      fontSizePixels: options?.fontSizePixels,
+      paragraphSpacingPixels: options?.paragraphSpacingPixels
+    });
+
+    await fs.writeFile(result.filePath, html, "utf8");
+    console.log(`Export HTML wrote rendered Markdown HTML file: ${result.filePath}`);
+
+    return { canceled: false, filePath: result.filePath };
+  } catch (error) {
+    await showExportErrorForWindow(window, "HTML", error);
+    return { canceled: true };
   }
 }
 
@@ -1127,10 +1576,31 @@ function createWindow(options = {}) {
     requestWindowClose(window);
   });
 
+  window.on("focus", () => {
+    const record = mcpWindowRecords.get(webContentsId);
+    if (record) {
+      mcpFocusedWindowId = record.windowId;
+    }
+  });
+
   window.on("closed", () => {
     stopFileWatcher(webContentsId);
     pendingInitialFiles.delete(webContentsId);
     closeStates.delete(window);
+
+    const record = mcpWindowRecords.get(webContentsId);
+    if (record) {
+      mcpWindowRecords.delete(webContentsId);
+      for (const [requestId, pending] of mcpPendingWrites.entries()) {
+        if (pending.webContentsId === webContentsId) {
+          pending.resolve({ applied: false, reason: "window-closed" });
+          mcpPendingWrites.delete(requestId);
+        }
+      }
+      if (mcpFocusedWindowId === record.windowId) {
+        mcpFocusedWindowId = null;
+      }
+    }
 
     if (isQuitting && BrowserWindow.getAllWindows().length > 0) {
       setImmediate(requestNextWindowClose);
@@ -1238,7 +1708,27 @@ function buildMenu() {
         },
         {
           label: "Export as HTML",
-          click: () => sendMenuAction("exportHtml")
+          click: (_menuItem, browserWindow) => {
+            console.log("Export as HTML menu item clicked");
+            const window =
+              browserWindow && !browserWindow.isDestroyed()
+                ? browserWindow
+                : BrowserWindow.getFocusedWindow();
+            const record = window ? mcpWindowRecords.get(window.webContents.id) : null;
+
+            if (record) {
+              console.log("Export as HTML menu item using main-process document snapshot");
+              void exportHtmlFromPayload(window, {
+                currentPath: record.filePath,
+                markdown: record.markdown ?? "",
+                options: {}
+              });
+              return;
+            }
+
+            console.log("Export as HTML menu item forwarding to renderer");
+            sendMenuAction("exportHtml");
+          }
         },
         {
           label: "Export as PDF",
@@ -1294,6 +1784,11 @@ function buildMenu() {
         {
           label: "Copy",
           role: "copy"
+        },
+        {
+          label: "Copy as HTML",
+          accelerator: "CmdOrCtrl+Shift+C",
+          click: () => sendMenuAction("copyHtml")
         },
         {
           label: "Paste",
@@ -1439,6 +1934,11 @@ function showEditorContextMenu(window, params = {}) {
       click: () => runEditCommand(window, "copy")
     },
     {
+      label: "Copy as HTML",
+      accelerator: "CmdOrCtrl+Shift+C",
+      click: () => window.webContents.send("menu:action", "copyHtml")
+    },
+    {
       label: "Paste",
       accelerator: "CmdOrCtrl+V",
       click: () => runEditCommand(window, "paste")
@@ -1564,31 +2064,8 @@ ipcMain.handle("file:saveAs", async (event, payload) => {
 });
 
 ipcMain.handle("file:export-html", async (event, payload) => {
-  const { currentPath, markdown, options } = payload ?? {};
-
-  try {
-    const html = await renderMarkdownExportHtml(markdown, currentPath, {
-      fontFamily: options?.fontFamily,
-      fontSizePixels: options?.fontSizePixels,
-      paragraphSpacingPixels: options?.paragraphSpacingPixels
-    });
-    const result = await dialog.showSaveDialog({
-      title: "Export HTML",
-      defaultPath: getDefaultExportPath(currentPath, "html"),
-      filters: htmlFilters
-    });
-
-    if (result.canceled || !result.filePath) {
-      return { canceled: true };
-    }
-
-    const renderedHtml = await renderMermaidInExportHtml(html);
-    await fs.writeFile(result.filePath, renderedHtml, "utf8");
-    return { canceled: false, filePath: result.filePath };
-  } catch (error) {
-    await showExportError(event, "HTML", error);
-    return { canceled: true };
-  }
+  console.log("Export HTML IPC handler started");
+  return exportHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
@@ -1678,6 +2155,51 @@ ipcMain.handle("edit:command", (event, command) => {
   runEditCommand(window, command);
 });
 
+ipcMain.handle("clipboard:write-html", (_event, payload) => {
+  const html = typeof payload?.html === "string" ? payload.html : "";
+  const text = typeof payload?.text === "string" ? payload.text : "";
+
+  if (!html && !text) {
+    return { written: false };
+  }
+
+  clipboard.write({ html, text });
+  return { written: true };
+});
+
+ipcMain.handle("image:to-data-url", async (_event, source) => {
+  if (typeof source !== "string" || source.length === 0) {
+    return null;
+  }
+
+  if (source.startsWith("data:")) {
+    return source;
+  }
+
+  try {
+    if (source.startsWith("file://")) {
+      const filePath = fileURLToPath(source);
+      const data = await fs.readFile(filePath);
+      const mimeType = getImageMimeType(filePath);
+      return `data:${mimeType};base64,${data.toString("base64")}`;
+    }
+
+    if (/^https?:\/\//i.test(source)) {
+      const response = await fetch(source);
+      if (!response.ok) {
+        return null;
+      }
+      const contentType = response.headers.get("content-type") || "application/octet-stream";
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return `data:${contentType};base64,${buffer.toString("base64")}`;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+});
+
 ipcMain.handle("app:get-profile-name", () => {
   try {
     return os.userInfo().username || "default";
@@ -1727,6 +2249,118 @@ ipcMain.handle("app:resolve-close-request", (event, shouldClose) => {
     window.close();
   } else {
     isQuitting = false;
+  }
+});
+
+ipcMain.handle("mcp:configure", async (_event, config) => {
+  if (!config || typeof config !== "object") {
+    return { ok: false, error: "invalid-config" };
+  }
+
+  const nextEnabled = typeof config.enabled === "boolean" ? config.enabled : false;
+  const nextPortCandidate = Number(config.port);
+  const nextPort =
+    Number.isInteger(nextPortCandidate) && nextPortCandidate >= 1024 && nextPortCandidate <= 65535
+      ? nextPortCandidate
+      : 39125;
+  const nextAuthMode = config.authMode === "none" ? "none" : "bearer";
+  const nextToken = typeof config.bearerToken === "string" ? config.bearerToken : "";
+
+  return mcpServer.configure({
+    enabled: nextEnabled,
+    port: nextPort,
+    authMode: nextAuthMode,
+    bearerToken: nextToken
+  });
+});
+
+ipcMain.on("mcp:register-window", (event, payload) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  const webContentsId = event.sender.id;
+  const windowId =
+    typeof payload?.windowId === "string" && payload.windowId.length > 0
+      ? payload.windowId
+      : `nexus-${webContentsId}`;
+
+  mcpWindowRecords.set(webContentsId, {
+    windowId,
+    webContentsId,
+    browserWindowId: window.id,
+    title: typeof payload?.title === "string" ? payload.title : "Untitled",
+    filePath: typeof payload?.filePath === "string" ? payload.filePath : null,
+    dirty: Boolean(payload?.dirty),
+    markdown: typeof payload?.markdown === "string" ? payload.markdown : ""
+  });
+
+  if (window.isFocused()) {
+    mcpFocusedWindowId = windowId;
+  }
+});
+
+ipcMain.on("mcp:update-window-state", (event, payload) => {
+  const record = mcpWindowRecords.get(event.sender.id);
+  if (!record || !payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (typeof payload.title === "string") {
+    record.title = payload.title;
+  }
+  if (typeof payload.filePath === "string" || payload.filePath === null) {
+    record.filePath = payload.filePath;
+  }
+  if (typeof payload.dirty === "boolean") {
+    record.dirty = payload.dirty;
+  }
+  if (typeof payload.markdown === "string") {
+    record.markdown = payload.markdown;
+  }
+});
+
+ipcMain.on("mcp:unregister-window", (event) => {
+  const record = mcpWindowRecords.get(event.sender.id);
+  if (!record) {
+    return;
+  }
+
+  mcpWindowRecords.delete(event.sender.id);
+
+  for (const [requestId, pending] of mcpPendingWrites.entries()) {
+    if (pending.webContentsId === record.webContentsId) {
+      pending.resolve({ applied: false, reason: "window-closed" });
+      mcpPendingWrites.delete(requestId);
+    }
+  }
+
+  if (mcpFocusedWindowId === record.windowId) {
+    mcpFocusedWindowId = null;
+  }
+});
+
+ipcMain.on("mcp:write-decision", (_event, payload) => {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  const { requestId, decision } = payload;
+  if (typeof requestId !== "string") {
+    return;
+  }
+
+  const pending = mcpPendingWrites.get(requestId);
+  if (!pending) {
+    return;
+  }
+
+  mcpPendingWrites.delete(requestId);
+  if (decision === "approve") {
+    pending.resolve({ applied: true });
+  } else {
+    pending.resolve({ applied: false, reason: "user-rejected" });
   }
 });
 
@@ -1820,4 +2454,9 @@ app.on("window-all-closed", () => {
   if (isQuitting || process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  rejectAllPendingMcpWrites("app-quit");
+  void mcpServer.stop();
 });
