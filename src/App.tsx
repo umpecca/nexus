@@ -284,7 +284,7 @@ function App() {
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
       })),
-    copyHtmlSelection
+    copyDocumentAsHtml
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const editorSurfaceClassName = [
@@ -390,7 +390,7 @@ function App() {
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
       })),
-    copyHtmlSelection
+    copyDocumentAsHtml
   };
 
   useEffect(() => {
@@ -952,6 +952,15 @@ function App() {
     });
   }
 
+  async function copyDocumentAsHtml() {
+    const currentMarkdown = getCurrentMarkdown();
+    await window.nexus?.copyMarkdownAsHtml(filePath, currentMarkdown, {
+      fontFamily: settings.fontFamily,
+      fontSizePixels: settings.fontSizePixels,
+      paragraphSpacingPixels: settings.paragraphSpacingPixels
+    });
+  }
+
   async function exportDocumentAsPdf() {
     const currentMarkdown = getCurrentMarkdown();
     await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown, getPdfExportOptions());
@@ -1253,7 +1262,7 @@ function App() {
           h.openAbout();
           break;
         case "copyHtml":
-          void h.copyHtmlSelection();
+          void h.copyDocumentAsHtml();
           break;
       }
     });

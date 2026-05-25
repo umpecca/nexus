@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld("nexus", {
   writeHtmlToClipboard(payload) {
     return ipcRenderer.invoke("clipboard:write-html", payload);
   },
+  copyMarkdownAsHtml(currentPath, markdown, options) {
+    return ipcRenderer.invoke("clipboard:copy-html-document", { currentPath, markdown, options });
+  },
   convertImageToDataUrl(source) {
     return ipcRenderer.invoke("image:to-data-url", source);
   },

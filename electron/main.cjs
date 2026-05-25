@@ -1594,6 +1594,30 @@ async function showSaveDialogForWindow(window, options) {
   return dialog.showSaveDialog(options);
 }
 
+async function renderBaselineExportHtml(markdown, currentPath, options = {}) {
+  return renderMarkdownExportHtml(markdown, currentPath, {
+    excludeFrontmatter: true,
+    fontFamily: options?.fontFamily,
+    fontSizePixels: options?.fontSizePixels,
+    inlineLocalImages: true,
+    paragraphSpacingPixels: options?.paragraphSpacingPixels
+  });
+}
+
+async function tryEnhanceExportHtmlWithMermaidPngs(html, warningContext) {
+  if (!hasExportMermaidPlaceholder(html)) {
+    return html;
+  }
+
+  try {
+    return await renderMermaidPngImagesInExportHtml(html);
+  } catch (enhanceError) {
+    const message = enhanceError instanceof Error ? enhanceError.message : String(enhanceError);
+    console.warn(`${warningContext}: ${message}`);
+    return html;
+  }
+}
+
 async function exportHtmlFromPayload(window, payload) {
   const { currentPath, markdown, options } = payload ?? {};
 
@@ -1615,26 +1639,18 @@ async function exportHtmlFromPayload(window, payload) {
       "Exporting HTML",
       "Rendering diagrams and writing the HTML file. Please wait.",
       async () => {
-        const html = await renderMarkdownExportHtml(markdown, currentPath, {
-          excludeFrontmatter: true,
-          fontFamily: options?.fontFamily,
-          fontSizePixels: options?.fontSizePixels,
-          paragraphSpacingPixels: options?.paragraphSpacingPixels
-        });
+        const html = await renderBaselineExportHtml(markdown, currentPath, options);
 
         await fs.writeFile(result.filePath, html, "utf8");
         console.log(`Export HTML wrote baseline rendered HTML file: ${result.filePath}`);
 
-        if (hasExportMermaidPlaceholder(html)) {
-          try {
-            const renderedHtml = await renderMermaidPngImagesInExportHtml(html);
-            await fs.writeFile(result.filePath, renderedHtml, "utf8");
-            console.log(`Export HTML wrote Mermaid PNG-enhanced HTML file: ${result.filePath}`);
-          } catch (enhanceError) {
-            const message =
-              enhanceError instanceof Error ? enhanceError.message : String(enhanceError);
-            console.warn(`Export HTML kept baseline file after Mermaid PNG enhancement failure: ${message}`);
-          }
+        const renderedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
+          html,
+          "Export HTML kept baseline file after Mermaid PNG enhancement failure"
+        );
+        if (renderedHtml !== html) {
+          await fs.writeFile(result.filePath, renderedHtml, "utf8");
+          console.log(`Export HTML wrote Mermaid PNG-enhanced HTML file: ${result.filePath}`);
         }
 
         return { canceled: false, filePath: result.filePath };
@@ -1643,6 +1659,36 @@ async function exportHtmlFromPayload(window, payload) {
   } catch (error) {
     await showExportErrorForWindow(window, "HTML", error);
     return { canceled: true };
+  }
+}
+
+async function copyHtmlFromPayload(window, payload) {
+  const { currentPath, markdown, options } = payload ?? {};
+
+  try {
+    return await withExportProgressWindow(
+      window,
+      "Copying HTML",
+      "Rendering diagrams and copying HTML. Please wait.",
+      async () => {
+        const html = await renderBaselineExportHtml(markdown, currentPath, options);
+        const renderedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
+          html,
+          "Copy HTML kept baseline HTML after Mermaid PNG enhancement failure"
+        );
+
+        clipboard.write({
+          html: renderedHtml,
+          text: markdown ?? ""
+        });
+        console.log("Copy HTML wrote rendered document HTML to clipboard");
+
+        return { copied: true };
+      }
+    );
+  } catch (error) {
+    await showExportErrorForWindow(window, "HTML", error);
+    return { copied: false };
   }
 }
 
@@ -2504,6 +2550,11 @@ ipcMain.handle("clipboard:write-html", (_event, payload) => {
 
   clipboard.write({ html, text });
   return { written: true };
+});
+
+ipcMain.handle("clipboard:copy-html-document", async (event, payload) => {
+  console.log("Copy HTML IPC handler started");
+  return copyHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
 ipcMain.handle("image:to-data-url", async (_event, source) => {

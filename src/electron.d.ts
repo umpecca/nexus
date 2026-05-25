@@ -33,6 +33,7 @@ type SaveMarkdownResult =
   | { canceled: true }
   | { canceled?: false; filePath: string };
 
+type CopyHtmlResult = { copied: boolean };
 type ConfirmSaveChangesResult = "save" | "discard" | "cancel";
 type ExportMarkdownPageMargins = {
   top?: number;
@@ -111,6 +112,11 @@ declare global {
       resolveCloseRequest(shouldClose: boolean): Promise<void>;
       runEditCommand(command: NexusEditCommand): Promise<void>;
       writeHtmlToClipboard(payload: { html: string; text: string }): Promise<{ written: boolean }>;
+      copyMarkdownAsHtml(
+        currentPath: string | undefined,
+        markdown: string,
+        options?: ExportMarkdownHtmlOptions
+      ): Promise<CopyHtmlResult>;
       convertImageToDataUrl(source: string): Promise<string | null>;
       getProfileName(): Promise<string>;
       openMarkdownFile(): Promise<OpenMarkdownResult>;
