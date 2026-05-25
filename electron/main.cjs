@@ -131,6 +131,9 @@ const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
 const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
 const fileWatchDebounceMs = 350;
 const internalWriteSuppressMs = 1500;
+const exportProgressPaintDelayMs = 80;
+const htmlMermaidPngEnhancementTimeoutMs = 12000;
+const htmlMermaidPngCaptureTimeoutMs = 4000;
 const defaultExportFontFamily =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const exportFontDefinitions = [
@@ -1003,6 +1006,142 @@ function createExportWindow() {
   });
 }
 
+function createExportProgressWindow(parentWindow, title, message) {
+  const hasParent = parentWindow && !parentWindow.isDestroyed();
+  const progressWindow = new BrowserWindow({
+    parent: hasParent ? parentWindow : undefined,
+    modal: Boolean(hasParent),
+    show: false,
+    width: 380,
+    height: 170,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    fullscreenable: false,
+    title,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtmlText(title)}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #111827;
+      background: #ffffff;
+    }
+
+    body {
+      box-sizing: border-box;
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #ffffff;
+    }
+
+    main {
+      width: 100%;
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #d1d5db;
+      border-top-color: #2563eb;
+      border-radius: 999px;
+      animation: spin 0.8s linear infinite;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    p {
+      margin: 0;
+      max-width: 30ch;
+      color: #4b5563;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>${escapeHtmlText(title)}</h1>
+    <p>${escapeHtmlText(message)}</p>
+  </main>
+</body>
+</html>`;
+
+  void progressWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  progressWindow.once("ready-to-show", () => {
+    if (!progressWindow.isDestroyed()) {
+      progressWindow.show();
+    }
+  });
+
+  return progressWindow;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout(promise, timeoutMs, description) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${description} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function withExportProgressWindow(parentWindow, title, message, task) {
+  const progressWindow = createExportProgressWindow(parentWindow, title, message);
+
+  try {
+    await delay(exportProgressPaintDelayMs);
+    return await task();
+  } finally {
+    if (!progressWindow.isDestroyed()) {
+      progressWindow.destroy();
+    }
+  }
+}
+
 async function loadExportHtml(exportWindow, html) {
   await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
@@ -1140,9 +1279,190 @@ async function renderExportMermaidDiagrams(webContents, options = {}) {
   );
 }
 
+async function replaceRenderedMermaidDiagramsWithPngImages(exportWindow) {
+  const webContents = exportWindow.webContents;
+  const diagramCount = await webContents.executeJavaScript(
+    `
+      (() => {
+        const diagrams = Array.from(document.querySelectorAll(".nexus-export-mermaid-rendered"));
+        for (const [index, diagram] of diagrams.entries()) {
+          diagram.dataset.nexusExportMermaidIndex = String(index);
+        }
+        return diagrams.length;
+      })();
+    `,
+    true
+  );
+
+  if (!Number.isInteger(diagramCount) || diagramCount <= 0) {
+    return;
+  }
+
+  const originalContentSize = exportWindow.getContentSize();
+
+  try {
+    for (let index = 0; index < diagramCount; index += 1) {
+      const measurement = await webContents.executeJavaScript(
+        `
+          (() => {
+            const diagram = document.querySelector('[data-nexus-export-mermaid-index="${index}"]');
+            const svg = diagram?.querySelector("svg");
+            if (!diagram || !svg) {
+              return null;
+            }
+
+            const diagramRect = diagram.getBoundingClientRect();
+            const svgRect = svg.getBoundingClientRect();
+            const title = svg.querySelector(":scope > title")?.textContent?.trim() ?? "";
+            const desc = svg.querySelector(":scope > desc")?.textContent?.trim() ?? "";
+
+            return {
+              width: Math.ceil(Math.max(diagramRect.width, svgRect.width)),
+              height: Math.ceil(Math.max(diagramRect.height, svgRect.height)),
+              alt: desc || title || "Mermaid diagram"
+            };
+          })();
+        `,
+        true
+      );
+
+      if (!measurement || measurement.width <= 0 || measurement.height <= 0) {
+        continue;
+      }
+
+      const contentWidth = Math.max(800, Math.min(4096, measurement.width + 96));
+      const contentHeight = Math.max(600, Math.min(4096, measurement.height + 96));
+      exportWindow.setContentSize(contentWidth, contentHeight);
+
+      const captureRect = await webContents.executeJavaScript(
+        `
+          (async () => {
+            const diagram = document.querySelector('[data-nexus-export-mermaid-index="${index}"]');
+            if (!diagram) {
+              return null;
+            }
+
+            diagram.scrollIntoView({ block: "center", inline: "center" });
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+            const rect = diagram.getBoundingClientRect();
+            const left = Math.max(0, Math.floor(rect.left));
+            const top = Math.max(0, Math.floor(rect.top));
+            const width = Math.max(1, Math.ceil(Math.min(rect.width, window.innerWidth - left)));
+            const height = Math.max(1, Math.ceil(Math.min(rect.height, window.innerHeight - top)));
+
+            return {
+              left,
+              top,
+              width,
+              height,
+              viewportWidth: window.innerWidth,
+              viewportHeight: window.innerHeight
+            };
+          })();
+        `,
+        true
+      );
+
+      if (
+        !captureRect ||
+        captureRect.width <= 0 ||
+        captureRect.height <= 0 ||
+        captureRect.viewportWidth <= 0 ||
+        captureRect.viewportHeight <= 0
+      ) {
+        continue;
+      }
+
+      const image = await withTimeout(
+        webContents.capturePage(
+          {
+            x: captureRect.left,
+            y: captureRect.top,
+            width: captureRect.width,
+            height: captureRect.height
+          },
+          { stayHidden: true }
+        ),
+        htmlMermaidPngCaptureTimeoutMs,
+        "Mermaid PNG capture"
+      );
+      const pngDataUrl = `data:image/png;base64,${image.toPNG().toString("base64")}`;
+      const replacement = {
+        index,
+        src: pngDataUrl,
+        alt: measurement.alt,
+        width: Math.round(captureRect.width),
+        height: Math.round(captureRect.height)
+      };
+
+      await webContents.executeJavaScript(
+        `
+          (() => {
+            const replacement = ${JSON.stringify(replacement)};
+            const diagram = document.querySelector(
+              \`[data-nexus-export-mermaid-index="\${replacement.index}"]\`
+            );
+            if (!diagram) {
+              return false;
+            }
+
+            const image = document.createElement("img");
+            image.src = replacement.src;
+            image.alt = replacement.alt;
+            image.width = replacement.width;
+            image.height = replacement.height;
+            diagram.classList.add("nexus-export-mermaid-png");
+            diagram.replaceChildren(image);
+            return true;
+          })();
+        `,
+        true
+      );
+    }
+  } finally {
+    exportWindow.setContentSize(originalContentSize[0], originalContentSize[1]);
+  }
+}
+
 async function serializeRenderedExportHtml(webContents) {
   const html = await webContents.executeJavaScript("document.documentElement.outerHTML", true);
   return `<!doctype html>\n${html}`;
+}
+
+async function renderMermaidPngImagesInExportHtml(html) {
+  if (!hasExportMermaidPlaceholder(html)) {
+    return html;
+  }
+
+  let exportWindow;
+  try {
+    exportWindow = createExportWindow();
+    await withTimeout(
+      loadExportHtmlFromTemporaryFile(exportWindow, html),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "HTML export page load"
+    );
+    await withTimeout(
+      renderExportMermaidDiagrams(exportWindow.webContents),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "Mermaid diagram render"
+    );
+    await withTimeout(
+      replaceRenderedMermaidDiagramsWithPngImages(exportWindow),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "Mermaid PNG replacement"
+    );
+    return await withTimeout(
+      serializeRenderedExportHtml(exportWindow.webContents),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "HTML export serialization"
+    );
+  } finally {
+    if (exportWindow && !exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
+  }
 }
 
 async function renderMermaidInExportHtml(html, options = {}) {
@@ -1290,17 +1610,36 @@ async function exportHtmlFromPayload(window, payload) {
 
     await fs.mkdir(path.dirname(result.filePath), { recursive: true });
 
-    const html = await renderMarkdownExportHtml(markdown, currentPath, {
-      excludeFrontmatter: true,
-      fontFamily: options?.fontFamily,
-      fontSizePixels: options?.fontSizePixels,
-      paragraphSpacingPixels: options?.paragraphSpacingPixels
-    });
+    return await withExportProgressWindow(
+      window,
+      "Exporting HTML",
+      "Rendering diagrams and writing the HTML file. Please wait.",
+      async () => {
+        const html = await renderMarkdownExportHtml(markdown, currentPath, {
+          excludeFrontmatter: true,
+          fontFamily: options?.fontFamily,
+          fontSizePixels: options?.fontSizePixels,
+          paragraphSpacingPixels: options?.paragraphSpacingPixels
+        });
 
-    await fs.writeFile(result.filePath, html, "utf8");
-    console.log(`Export HTML wrote rendered Markdown HTML file: ${result.filePath}`);
+        await fs.writeFile(result.filePath, html, "utf8");
+        console.log(`Export HTML wrote baseline rendered HTML file: ${result.filePath}`);
 
-    return { canceled: false, filePath: result.filePath };
+        if (hasExportMermaidPlaceholder(html)) {
+          try {
+            const renderedHtml = await renderMermaidPngImagesInExportHtml(html);
+            await fs.writeFile(result.filePath, renderedHtml, "utf8");
+            console.log(`Export HTML wrote Mermaid PNG-enhanced HTML file: ${result.filePath}`);
+          } catch (enhanceError) {
+            const message =
+              enhanceError instanceof Error ? enhanceError.message : String(enhanceError);
+            console.warn(`Export HTML kept baseline file after Mermaid PNG enhancement failure: ${message}`);
+          }
+        }
+
+        return { canceled: false, filePath: result.filePath };
+      }
+    );
   } catch (error) {
     await showExportErrorForWindow(window, "HTML", error);
     return { canceled: true };
