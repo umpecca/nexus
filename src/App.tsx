@@ -267,6 +267,7 @@ function App() {
     saveDocument,
     saveDocumentAs,
     exportDocumentAsHtml,
+    exportDocumentAsWord,
     exportDocumentAsPdf,
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
@@ -373,6 +374,7 @@ function App() {
     saveDocument,
     saveDocumentAs,
     exportDocumentAsHtml,
+    exportDocumentAsWord,
     exportDocumentAsPdf,
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
@@ -502,7 +504,10 @@ function App() {
       title: formatWindowTitle(filePath, hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)),
       filePath: filePath ?? null,
       dirty: hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown),
-      markdown
+      markdown,
+      exportOptions: {
+        word: getWordExportOptions()
+      }
     });
 
     const handleBeforeUnload = () => {
@@ -522,9 +527,12 @@ function App() {
       title: formatWindowTitle(filePath, hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)),
       filePath: filePath ?? null,
       dirty: hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown),
-      markdown
+      markdown,
+      exportOptions: {
+        word: getWordExportOptions()
+      }
     });
-  }, [filePath, lastSavedMarkdown, markdown]);
+  }, [filePath, lastSavedMarkdown, markdown, settings]);
 
   useEffect(() => {
     if (!window.nexus) {
@@ -952,6 +960,20 @@ function App() {
     });
   }
 
+  async function exportDocumentAsWord() {
+    const currentMarkdown = getCurrentMarkdown();
+    await window.nexus?.exportMarkdownAsWord(filePath, currentMarkdown, getWordExportOptions());
+  }
+
+  function getWordExportOptions() {
+    return {
+      fontFamily: settings.fontFamily,
+      fontSizePixels: settings.fontSizePixels,
+      paragraphSpacingPixels: settings.paragraphSpacingPixels,
+      pageMargins: settings.pageMargins
+    };
+  }
+
   async function copyDocumentAsHtml() {
     const currentMarkdown = getCurrentMarkdown();
     await window.nexus?.copyMarkdownAsHtml(filePath, currentMarkdown, {
@@ -1230,6 +1252,9 @@ function App() {
           break;
         case "exportHtml":
           void h.exportDocumentAsHtml();
+          break;
+        case "exportWord":
+          void h.exportDocumentAsWord();
           break;
         case "exportPdf":
           void h.exportDocumentAsPdf();

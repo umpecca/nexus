@@ -7,6 +7,7 @@ type NexusMenuAction =
   | "save"
   | "saveAs"
   | "exportHtml"
+  | "exportWord"
   | "exportPdf"
   | "refresh"
   | "comparePreviousVersion"
@@ -45,6 +46,9 @@ type ExportMarkdownHtmlOptions = {
   fontFamily?: string;
   fontSizePixels?: number;
   paragraphSpacingPixels?: number;
+};
+type ExportMarkdownWordOptions = ExportMarkdownHtmlOptions & {
+  pageMargins?: ExportMarkdownPageMargins;
 };
 type ExportMarkdownPdfOptions = {
   fontFamily?: string;
@@ -85,6 +89,9 @@ type RegisterMcpWindowInput = {
   filePath: string | null;
   dirty: boolean;
   markdown: string;
+  exportOptions?: {
+    word?: ExportMarkdownWordOptions;
+  };
 };
 
 type UpdateMcpWindowStateInput = Partial<{
@@ -92,6 +99,9 @@ type UpdateMcpWindowStateInput = Partial<{
   filePath: string | null;
   dirty: boolean;
   markdown: string;
+  exportOptions: {
+    word?: ExportMarkdownWordOptions;
+  };
 }>;
 
 type McpConfirmWriteEvent = {
@@ -130,6 +140,11 @@ declare global {
         currentPath: string | undefined,
         markdown: string,
         options?: ExportMarkdownHtmlOptions
+      ): Promise<SaveMarkdownResult>;
+      exportMarkdownAsWord(
+        currentPath: string | undefined,
+        markdown: string,
+        options?: ExportMarkdownWordOptions
       ): Promise<SaveMarkdownResult>;
       exportMarkdownAsPdf(
         currentPath: string | undefined,

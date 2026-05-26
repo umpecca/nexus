@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld("nexus", {
   exportMarkdownAsHtml(currentPath, markdown, options) {
     return ipcRenderer.invoke("file:export-html", { currentPath, markdown, options });
   },
+  exportMarkdownAsWord(currentPath, markdown, options) {
+    return ipcRenderer.invoke("file:export-word", { currentPath, markdown, options });
+  },
   exportMarkdownAsPdf(currentPath, markdown, options) {
     return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown, options });
   },

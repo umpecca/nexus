@@ -4,6 +4,7 @@ const { existsSync, watch } = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain } = require("electron");
+const htmlToDocx = require("@turbodocx/html-to-docx");
 
 const mcpServer = require("./mcp-server.cjs");
 
@@ -219,6 +220,23 @@ const exportFontFamilies = new Set(exportFontDefinitions.map((definition) => def
 const exportFontCssImportsByFamily = new Map(
   exportFontDefinitions.map((definition) => [definition.family, definition.cssImports])
 );
+const defaultWordExportFontFamily = "Arial";
+const wordExportFontsByFamily = new Map([
+  [defaultExportFontFamily, defaultWordExportFontFamily],
+  ["Roboto, Arial, sans-serif", defaultWordExportFontFamily],
+  ['"Open Sans", Arial, sans-serif', defaultWordExportFontFamily],
+  ["Lato, Arial, sans-serif", defaultWordExportFontFamily],
+  ['"Source Sans 3", Arial, sans-serif', defaultWordExportFontFamily],
+  ['"Segoe UI", Arial, sans-serif', "Segoe UI"],
+  ["Merriweather, Georgia, serif", "Georgia"],
+  ['"Source Serif 4", Georgia, serif', "Georgia"],
+  ['Georgia, "Times New Roman", serif', "Georgia"],
+  ["Cambria, Georgia, serif", "Cambria"],
+  ['"JetBrains Mono", "Courier New", monospace', "Courier New"],
+  ['"Roboto Mono", "Courier New", monospace', "Courier New"],
+  ['Consolas, "Courier New", monospace', "Consolas"],
+  ['"Courier New", monospace', "Courier New"]
+]);
 const defaultExportFontSizePixels = 16;
 const minExportFontSizePixels = 12;
 const maxExportFontSizePixels = 24;
@@ -228,6 +246,7 @@ const maxExportParagraphSpacingPixels = 32;
 const defaultPdfPageMarginInches = 1;
 const minPdfPageMarginInches = 0.25;
 const maxPdfPageMarginInches = 2;
+const twipsPerInch = 1440;
 const pdfPageSizes = new Set(["Letter", "A4"]);
 const pdfPageOrientations = new Set(["portrait", "landscape"]);
 
@@ -509,6 +528,27 @@ function getExportFontFamily(value) {
   return exportFontFamilies.has(value) ? value : defaultExportFontFamily;
 }
 
+function getWordExportFontFamily(value) {
+  const fontFamily = getExportFontFamily(value);
+  const mappedFont = wordExportFontsByFamily.get(fontFamily);
+  if (mappedFont) {
+    return mappedFont;
+  }
+
+  const normalizedFontFamily = fontFamily.toLowerCase();
+  if (normalizedFontFamily.includes("monospace")) {
+    return "Courier New";
+  }
+  if (normalizedFontFamily.includes("sans-serif")) {
+    return defaultWordExportFontFamily;
+  }
+  if (normalizedFontFamily.includes("serif")) {
+    return "Georgia";
+  }
+
+  return defaultWordExportFontFamily;
+}
+
 async function readFileAsDataUrl(filePath, mimeType) {
   const data = await fs.readFile(filePath);
   return `data:${mimeType};base64,${data.toString("base64")}`;
@@ -620,6 +660,21 @@ function getPdfPageMargins(value) {
     bottom: getPdfPageMargin(margins.bottom),
     left: getPdfPageMargin(margins.left),
     right: getPdfPageMargin(margins.right)
+  };
+}
+
+function getDocxPageMarginTwips(value) {
+  return Math.round(getPdfPageMargin(value) * twipsPerInch);
+}
+
+function getDocxPageMargins(value) {
+  const margins = typeof value === "object" && value !== null ? value : {};
+
+  return {
+    top: getDocxPageMarginTwips(margins.top),
+    right: getDocxPageMarginTwips(margins.right),
+    bottom: getDocxPageMarginTwips(margins.bottom),
+    left: getDocxPageMarginTwips(margins.left)
   };
 }
 
@@ -961,6 +1016,100 @@ function getCodeTokenLanguage(token) {
 
 function isMermaidFence(language) {
   return String(language ?? "").trim().toLowerCase() === "mermaid";
+}
+
+function renderExportCodeBlockWithLineBreaks(token) {
+  const language = getCodeTokenLanguage(token);
+  const className = language ? ` class="language-${escapeHtmlAttribute(language)}"` : "";
+  const codeText = String(token?.text ?? "").replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+  const escapedCode = token?.escaped ? codeText : escapeHtmlText(codeText);
+  const codeWithBreaks = escapedCode.replace(/\n/g, "<br />");
+  return `<pre><code${className}>${codeWithBreaks}</code></pre>\n`;
+}
+
+function inlineWordMarkHighlightStyles(html) {
+  return String(html ?? "").replace(
+    /<mark\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi,
+    (match, attributes) => {
+      if (/\sstyle\s*=/i.test(attributes)) {
+        return match.replace(
+          /(\sstyle\s*=\s*)(["'])([\s\S]*?)\2/i,
+          (styleMatch, prefix, quote, styleValue) => {
+            if (/(^|;)\s*background(?:-color)?\s*:/i.test(styleValue)) {
+              return styleMatch;
+            }
+
+            const separator = styleValue.trim().endsWith(";") || !styleValue.trim() ? "" : ";";
+            return `${prefix}${quote}${styleValue}${separator} background-color: #ffff00;${quote}`;
+          }
+        );
+      }
+
+      return `<mark${attributes} style="background-color: #ffff00;">`;
+    }
+  );
+}
+
+function inlineWordTableHeaderStyles(html) {
+  return String(html ?? "").replace(/<thead\b[\s\S]*?<\/thead>/gi, (theadHtml) =>
+    theadHtml.replace(/<tr\b((?:"[^"]*"|'[^']*'|[^'">])*)>/i, (match, attributes) => {
+      if (/\sstyle\s*=/i.test(attributes)) {
+        return match.replace(
+          /(\sstyle\s*=\s*)(["'])([\s\S]*?)\2/i,
+          (styleMatch, prefix, quote, styleValue) => {
+            if (/(^|;)\s*font-weight\s*:/i.test(styleValue)) {
+              return styleMatch;
+            }
+
+            const separator = styleValue.trim().endsWith(";") || !styleValue.trim() ? "" : ";";
+            return `${prefix}${quote}${styleValue}${separator} font-weight: bold;${quote}`;
+          }
+        );
+      }
+
+      return `<tr${attributes} style="font-weight: bold;">`;
+    })
+  );
+}
+
+function getWordAsideSectionHtml(content, className) {
+  const match = String(content ?? "").match(
+    new RegExp(
+      `<div\\b(?=[^>]*\\bclass\\s*=\\s*["'][^"']*\\b${className}\\b)[^>]*>([\\s\\S]*?)<\\/div>`,
+      "i"
+    )
+  );
+  return match ? match[1].trim() : "";
+}
+
+function getWordAsideTableCellHtml(content) {
+  const source = String(content ?? "").trim();
+  const titleHtml = getWordAsideSectionHtml(source, "nexus-export-admonition-title");
+  const bodyHtml = getWordAsideSectionHtml(source, "nexus-export-admonition-content");
+
+  if (titleHtml || bodyHtml) {
+    return `${titleHtml ? `<p><strong>${titleHtml}</strong></p>` : ""}${bodyHtml}`;
+  }
+
+  return source;
+}
+
+function convertWordAsidesToSingleCellTables(html) {
+  return String(html ?? "").replace(
+    /<aside\b((?:"[^"]*"|'[^']*'|[^'">])*)>([\s\S]*?)<\/aside>/gi,
+    (_match, attributes, content) =>
+      `<table${attributes}><tbody><tr><td>${getWordAsideTableCellHtml(content)}</td></tr></tbody></table>`
+  );
+}
+
+function unwrapWordMainContainer(html) {
+  return String(html ?? "")
+    .replace(/(<body\b[^>]*>)\s*<main\b[^>]*>\s*/i, "$1")
+    .replace(/\s*<\/main>\s*(<\/body>)/i, "$1");
+}
+
+function removeWordExportDoctype(html) {
+  return String(html ?? "").replace(/^\s*<!doctype[^>]*>\s*/i, "");
 }
 
 function hasExportMermaidPlaceholder(html) {
@@ -1520,8 +1669,11 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
   };
 
   renderer.code = function (token) {
-    if (!isMermaidFence(getCodeTokenLanguage(token))) {
-      return defaultCodeRenderer(token);
+    const language = getCodeTokenLanguage(token);
+    if (!isMermaidFence(language)) {
+      return options.codeBlockNewlinesAsBreaks
+        ? renderExportCodeBlockWithLineBreaks(token)
+        : defaultCodeRenderer(token);
     }
     return [
       `<figure class="nexus-export-mermaid">`,
@@ -1596,6 +1748,7 @@ async function showSaveDialogForWindow(window, options) {
 
 async function renderBaselineExportHtml(markdown, currentPath, options = {}) {
   return renderMarkdownExportHtml(markdown, currentPath, {
+    codeBlockNewlinesAsBreaks: options?.codeBlockNewlinesAsBreaks,
     excludeFrontmatter: true,
     fontFamily: options?.fontFamily,
     fontSizePixels: options?.fontSizePixels,
@@ -1658,6 +1811,69 @@ async function exportHtmlFromPayload(window, payload) {
     );
   } catch (error) {
     await showExportErrorForWindow(window, "HTML", error);
+    return { canceled: true };
+  }
+}
+
+async function exportWordFromPayload(window, payload) {
+  const { currentPath, markdown, options } = payload ?? {};
+
+  try {
+    const result = await showSaveDialogForWindow(window, {
+      title: "Export Word",
+      defaultPath: getDefaultExportPath(currentPath, "docx"),
+      filters: docxFilters
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+
+    await fs.mkdir(path.dirname(result.filePath), { recursive: true });
+
+    return await withExportProgressWindow(
+      window,
+      "Exporting Word",
+      "Rendering diagrams and writing the Word file. Please wait.",
+      async () => {
+        const html = await renderBaselineExportHtml(markdown, currentPath, {
+          ...options,
+          codeBlockNewlinesAsBreaks: true
+        });
+        const renderedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
+          html,
+          "Export Word kept baseline HTML after Mermaid PNG enhancement failure"
+        );
+        const wordHtml = convertWordAsidesToSingleCellTables(
+          inlineWordTableHeaderStyles(
+            inlineWordMarkHighlightStyles(unwrapWordMainContainer(removeWordExportDoctype(renderedHtml)))
+          )
+        );
+        const wordFontFamily = getWordExportFontFamily(options?.fontFamily);
+
+        const docx = await htmlToDocx(wordHtml, null, {
+          font: wordFontFamily,
+          margins: getDocxPageMargins(options?.pageMargins),
+          table: {
+            row: {
+              cantSplit: true
+            },
+            borderOptions: {
+              size: 1,
+              color: "000000",
+              stroke: "single"
+            }
+          }
+        });
+        const docxBuffer = Buffer.isBuffer(docx) ? docx : Buffer.from(docx);
+        await fs.writeFile(result.filePath, docxBuffer);
+        console.log(`Export Word wrote DOCX file with ${wordFontFamily} font: ${result.filePath}`);
+
+        return { canceled: false, filePath: result.filePath };
+      }
+    );
+  } catch (error) {
+    await showExportErrorForWindow(window, "Word", error);
     return { canceled: true };
   }
 }
@@ -2116,6 +2332,30 @@ function buildMenu() {
           }
         },
         {
+          label: "Export to Word",
+          click: (_menuItem, browserWindow) => {
+            console.log("Export to Word menu item clicked");
+            const window =
+              browserWindow && !browserWindow.isDestroyed()
+                ? browserWindow
+                : BrowserWindow.getFocusedWindow();
+            const record = window ? mcpWindowRecords.get(window.webContents.id) : null;
+
+            if (record) {
+              console.log("Export to Word menu item using main-process document snapshot");
+              void exportWordFromPayload(window, {
+                currentPath: record.filePath,
+                markdown: record.markdown ?? "",
+                options: record.exportOptions?.word ?? {}
+              });
+              return;
+            }
+
+            console.log("Export to Word menu item forwarding to renderer");
+            sendMenuAction("exportWord");
+          }
+        },
+        {
           label: "Export as PDF",
           click: () => sendMenuAction("exportPdf")
         },
@@ -2242,6 +2482,11 @@ const markdownFilters = [
 
 const htmlFilters = [
   { name: "HTML", extensions: ["html", "htm"] },
+  { name: "All Files", extensions: ["*"] }
+];
+
+const docxFilters = [
+  { name: "Word Document", extensions: ["docx"] },
   { name: "All Files", extensions: ["*"] }
 ];
 
@@ -2451,6 +2696,11 @@ ipcMain.handle("file:saveAs", async (event, payload) => {
 ipcMain.handle("file:export-html", async (event, payload) => {
   console.log("Export HTML IPC handler started");
   return exportHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
+});
+
+ipcMain.handle("file:export-word", async (event, payload) => {
+  console.log("Export Word IPC handler started");
+  return exportWordFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
@@ -2683,7 +2933,11 @@ ipcMain.on("mcp:register-window", (event, payload) => {
     title: typeof payload?.title === "string" ? payload.title : "Untitled",
     filePath: typeof payload?.filePath === "string" ? payload.filePath : null,
     dirty: Boolean(payload?.dirty),
-    markdown: typeof payload?.markdown === "string" ? payload.markdown : ""
+    markdown: typeof payload?.markdown === "string" ? payload.markdown : "",
+    exportOptions:
+      typeof payload?.exportOptions === "object" && payload.exportOptions !== null
+        ? payload.exportOptions
+        : {}
   });
 
   if (window.isFocused()) {
@@ -2708,6 +2962,9 @@ ipcMain.on("mcp:update-window-state", (event, payload) => {
   }
   if (typeof payload.markdown === "string") {
     record.markdown = payload.markdown;
+  }
+  if (typeof payload.exportOptions === "object" && payload.exportOptions !== null) {
+    record.exportOptions = payload.exportOptions;
   }
 });
 
