@@ -14,6 +14,32 @@ tags:
 
 This built-in demo document exercises the editor features Nexus currently supports. Use it for quick visual checks, export smoke tests, and toolbar experiments.
 
+## Heading Levels
+
+# Heading One
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Heading Two
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+### Heading Three
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+#### Heading Four
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+##### Heading Five
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+###### Heading Six
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
 ## Text Formatting
 
 Nexus supports **bold**, *italic*, <u>underline</u>, ~~strikethrough~~, \`inline code\`, ==highlighted text==, H<sub>2</sub>O, and E = mc<sup>2</sup>.

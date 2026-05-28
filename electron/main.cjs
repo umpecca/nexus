@@ -834,8 +834,33 @@ ${pdfPrintStyle}
     }
 
     h1, h2, h3, h4, h5, h6 {
+      font-weight: 700;
       line-height: 1.25;
       margin: 1.6em 0 0.6em;
+    }
+
+    h1 {
+      font-size: ${fontSizePixels * 2.375}px;
+    }
+
+    h2 {
+      font-size: ${fontSizePixels * 1.875}px;
+    }
+
+    h3 {
+      font-size: ${fontSizePixels * 1.5}px;
+    }
+
+    h4 {
+      font-size: ${fontSizePixels * 1.25}px;
+    }
+
+    h5 {
+      font-size: ${fontSizePixels * 1.125}px;
+    }
+
+    h6 {
+      font-size: ${fontSizePixels}px;
     }
 
     h1:first-child, h2:first-child, h3:first-child {
