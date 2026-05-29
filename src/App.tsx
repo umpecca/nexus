@@ -41,6 +41,7 @@ import FileChangedDialog from "./components/editor/FileChangedDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
+import { katexCodeBlockDescriptor } from "./components/editor/KatexCodeBlock";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
@@ -1371,6 +1372,7 @@ function App() {
                     defaultCodeBlockLanguage: "txt",
                     codeBlockEditorDescriptors: [
                       mermaidCodeBlockDescriptor,
+                      katexCodeBlockDescriptor,
                       localJavaScriptRunnerCodeBlockDescriptor
                     ]
                   }),
@@ -1386,6 +1388,7 @@ function App() {
                       html: "HTML",
                       json: "JSON",
                       mermaid: "Mermaid",
+                      math: "Math (LaTeX)",
                       bash: "Bash",
                       powershell: "PowerShell"
                     },

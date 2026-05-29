@@ -91,6 +91,22 @@ flowchart LR
     Export --> Share["Shareable Output"]
 \`\`\`
 
+## Math Equations
+
+Math expressions are written as LaTeX inside a \`math\` code fence and rendered with KaTeX.
+
+\`\`\`math
+E = mc^2
+\`\`\`
+
+\`\`\`math
+\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}
+\`\`\`
+
+\`\`\`math
+\\frac{\\partial}{\\partial t}\\Psi(\\mathbf{r}, t) = -\\frac{i}{\\hbar}\\hat{H}\\,\\Psi(\\mathbf{r}, t)
+\`\`\`
+
 ## Runnable JavaScript Block
 
 \`\`\`js nexus-run

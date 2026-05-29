@@ -802,6 +802,9 @@ async function buildExportHtmlDocument(title, bodyHtml, options = {}) {
   const fontSizePixels = getExportFontSize(options.fontSizePixels);
   const paragraphSpacingPixels = getExportParagraphSpacing(options.paragraphSpacingPixels);
   const pdfPrintStyle = options.pdfPrintStyle ?? "";
+  const katexCssRules = hasExportMathPlaceholder(bodyHtml)
+    ? await getKatexCssRules({ inlineAssets: options.inlineFontAssets })
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -811,6 +814,7 @@ async function buildExportHtmlDocument(title, bodyHtml, options = {}) {
   <title>${escapedTitle}</title>
   <style>
 ${fontCssImportRules}
+${katexCssRules}
 ${pdfPrintStyle}
     :root {
       color-scheme: light;
@@ -1000,6 +1004,44 @@ ${pdfPrintStyle}
       white-space: pre-wrap;
     }
 
+    .nexus-export-math {
+      margin: 1.4em 0;
+      max-width: 100%;
+      overflow-x: auto;
+      text-align: center;
+    }
+
+    .nexus-export-math .katex-display {
+      margin: 0;
+    }
+
+    .nexus-export-math img {
+      display: inline-block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .nexus-export-math-error {
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      background: #fff7f7;
+      color: #991b1b;
+      padding: 1em;
+      text-align: left;
+    }
+
+    .nexus-export-math-error strong {
+      display: block;
+      margin-bottom: 0.5em;
+    }
+
+    .nexus-export-math-error pre {
+      margin: 0;
+      border-color: #fecaca;
+      background: #fffafa;
+      white-space: pre-wrap;
+    }
+
     table {
       border-collapse: collapse;
       width: 100%;
@@ -1041,6 +1083,50 @@ function getCodeTokenLanguage(token) {
 
 function isMermaidFence(language) {
   return String(language ?? "").trim().toLowerCase() === "mermaid";
+}
+
+function isMathFence(language) {
+  return String(language ?? "").trim().toLowerCase() === "math";
+}
+
+function renderExportMathBlockHtml(source) {
+  const katex = require("katex");
+  try {
+    const html = katex.renderToString(String(source ?? ""), {
+      displayMode: true,
+      throwOnError: true,
+      output: "htmlAndMathml",
+      strict: "ignore"
+    });
+    return `<figure class="nexus-export-math">${html}</figure>`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return [
+      `<figure class="nexus-export-math nexus-export-math-error">`,
+      `<strong>Math render error</strong>`,
+      `<pre>${escapeHtmlText(message)}</pre>`,
+      `<pre>${escapeHtmlText(source)}</pre>`,
+      `</figure>`
+    ].join("");
+  }
+}
+
+function hasExportMathPlaceholder(html) {
+  return typeof html === "string" && html.includes('class="nexus-export-math');
+}
+
+async function getKatexCssRules(options = {}) {
+  const cssPath = require.resolve("katex/dist/katex.min.css");
+  if (!options.inlineAssets) {
+    return `@import url("${pathToFileURL(cssPath).href}");`;
+  }
+
+  try {
+    const cssText = await fs.readFile(cssPath, "utf8");
+    return await inlineCssFileUrls(cssText, cssPath);
+  } catch {
+    return `@import url("${pathToFileURL(cssPath).href}");`;
+  }
 }
 
 function renderExportCodeBlockWithLineBreaks(token) {
@@ -1695,6 +1781,9 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
 
   renderer.code = function (token) {
     const language = getCodeTokenLanguage(token);
+    if (isMathFence(language)) {
+      return renderExportMathBlockHtml(token.text);
+    }
     if (!isMermaidFence(language)) {
       return options.codeBlockNewlinesAsBreaks
         ? renderExportCodeBlockWithLineBreaks(token)
@@ -1796,6 +1885,195 @@ async function tryEnhanceExportHtmlWithMermaidPngs(html, warningContext) {
   }
 }
 
+async function replaceRenderedMathBlocksWithPngImages(exportWindow) {
+  const webContents = exportWindow.webContents;
+  const blockCount = await webContents.executeJavaScript(
+    `
+      (() => {
+        const blocks = Array.from(
+          document.querySelectorAll(".nexus-export-math:not(.nexus-export-math-error)")
+        );
+        for (const [index, block] of blocks.entries()) {
+          block.dataset.nexusExportMathIndex = String(index);
+        }
+        return blocks.length;
+      })();
+    `,
+    true
+  );
+
+  if (!Number.isInteger(blockCount) || blockCount <= 0) {
+    return;
+  }
+
+  const originalContentSize = exportWindow.getContentSize();
+
+  try {
+    for (let index = 0; index < blockCount; index += 1) {
+      const measurement = await webContents.executeJavaScript(
+        `
+          (() => {
+            const block = document.querySelector('[data-nexus-export-math-index="${index}"]');
+            if (!block) {
+              return null;
+            }
+            const blockRect = block.getBoundingClientRect();
+            const katex =
+              block.querySelector(".katex-display") ||
+              block.querySelector(".katex") ||
+              block;
+            const katexRect = katex.getBoundingClientRect();
+            return {
+              width: Math.ceil(Math.max(blockRect.width, katexRect.width)),
+              height: Math.ceil(Math.max(blockRect.height, katexRect.height)),
+              alt: "Math equation"
+            };
+          })();
+        `,
+        true
+      );
+
+      if (!measurement || measurement.width <= 0 || measurement.height <= 0) {
+        continue;
+      }
+
+      const contentWidth = Math.max(800, Math.min(4096, measurement.width + 96));
+      const contentHeight = Math.max(600, Math.min(4096, measurement.height + 96));
+      exportWindow.setContentSize(contentWidth, contentHeight);
+
+      const captureRect = await webContents.executeJavaScript(
+        `
+          (async () => {
+            const block = document.querySelector('[data-nexus-export-math-index="${index}"]');
+            if (!block) {
+              return null;
+            }
+            block.scrollIntoView({ block: "center", inline: "center" });
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const rect = block.getBoundingClientRect();
+            const left = Math.max(0, Math.floor(rect.left));
+            const top = Math.max(0, Math.floor(rect.top));
+            const width = Math.max(1, Math.ceil(Math.min(rect.width, window.innerWidth - left)));
+            const height = Math.max(1, Math.ceil(Math.min(rect.height, window.innerHeight - top)));
+            return {
+              left,
+              top,
+              width,
+              height,
+              viewportWidth: window.innerWidth,
+              viewportHeight: window.innerHeight
+            };
+          })();
+        `,
+        true
+      );
+
+      if (
+        !captureRect ||
+        captureRect.width <= 0 ||
+        captureRect.height <= 0 ||
+        captureRect.viewportWidth <= 0 ||
+        captureRect.viewportHeight <= 0
+      ) {
+        continue;
+      }
+
+      const image = await withTimeout(
+        webContents.capturePage(
+          {
+            x: captureRect.left,
+            y: captureRect.top,
+            width: captureRect.width,
+            height: captureRect.height
+          },
+          { stayHidden: true }
+        ),
+        htmlMermaidPngCaptureTimeoutMs,
+        "Math PNG capture"
+      );
+      const pngDataUrl = `data:image/png;base64,${image.toPNG().toString("base64")}`;
+      const replacement = {
+        index,
+        src: pngDataUrl,
+        alt: measurement.alt,
+        width: Math.round(captureRect.width),
+        height: Math.round(captureRect.height)
+      };
+
+      await webContents.executeJavaScript(
+        `
+          (() => {
+            const replacement = ${JSON.stringify(replacement)};
+            const block = document.querySelector(
+              \`[data-nexus-export-math-index="\${replacement.index}"]\`
+            );
+            if (!block) {
+              return false;
+            }
+
+            const image = document.createElement("img");
+            image.src = replacement.src;
+            image.alt = replacement.alt;
+            image.width = replacement.width;
+            image.height = replacement.height;
+            block.classList.add("nexus-export-math-png");
+            block.replaceChildren(image);
+            return true;
+          })();
+        `,
+        true
+      );
+    }
+  } finally {
+    exportWindow.setContentSize(originalContentSize[0], originalContentSize[1]);
+  }
+}
+
+async function renderMathPngImagesInExportHtml(html) {
+  if (!hasExportMathPlaceholder(html)) {
+    return html;
+  }
+
+  let exportWindow;
+  try {
+    exportWindow = createExportWindow();
+    await withTimeout(
+      loadExportHtmlFromTemporaryFile(exportWindow, html),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "HTML export page load for math"
+    );
+    await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
+    await withTimeout(
+      replaceRenderedMathBlocksWithPngImages(exportWindow),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "Math PNG replacement"
+    );
+    return await withTimeout(
+      serializeRenderedExportHtml(exportWindow.webContents),
+      htmlMermaidPngEnhancementTimeoutMs,
+      "HTML export serialization (math)"
+    );
+  } finally {
+    if (exportWindow && !exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
+  }
+}
+
+async function tryEnhanceExportHtmlWithMathPngs(html, warningContext) {
+  if (!hasExportMathPlaceholder(html)) {
+    return html;
+  }
+
+  try {
+    return await renderMathPngImagesInExportHtml(html);
+  } catch (enhanceError) {
+    const message = enhanceError instanceof Error ? enhanceError.message : String(enhanceError);
+    console.warn(`${warningContext}: ${message}`);
+    return html;
+  }
+}
+
 async function exportHtmlFromPayload(window, payload) {
   const { currentPath, markdown, options } = payload ?? {};
 
@@ -1865,9 +2143,13 @@ async function exportWordFromPayload(window, payload) {
           ...options,
           codeBlockNewlinesAsBreaks: true
         });
-        const renderedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
+        const mermaidEnhancedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
           html,
           "Export Word kept baseline HTML after Mermaid PNG enhancement failure"
+        );
+        const renderedHtml = await tryEnhanceExportHtmlWithMathPngs(
+          mermaidEnhancedHtml,
+          "Export Word kept HTML after math PNG enhancement failure"
         );
         const wordHtml = convertWordAsidesToSingleCellTables(
           inlineWordTableHeaderStyles(

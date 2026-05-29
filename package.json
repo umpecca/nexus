@@ -79,6 +79,7 @@
     "@turbodocx/html-to-docx": "^1.21.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "katex": "^0.16.22",
     "lucide-react": "^0.468.0",
     "marked": "^16.4.2",
     "mermaid": "^11.14.0",

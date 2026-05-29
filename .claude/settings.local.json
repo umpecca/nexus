@@ -7,7 +7,8 @@
       "Bash(node --check electron/main.cjs)",
       "Bash(node --check electron/preload.cjs)",
       "Bash(node --check electron/mcp-server.cjs)",
-      "PowerShell(node -e \"const d = require\\('@turbodocx/html-to-docx'\\); console.log\\(typeof d\\);\")"
+      "PowerShell(node -e \"const d = require\\('@turbodocx/html-to-docx'\\); console.log\\(typeof d\\);\")",
+      "Bash(node -e \"const p = require\\('./node_modules/katex/package.json'\\); console.log\\(p.version, '|', p.main, '|', p.module || ''\\);\")"
     ]
   }
 }

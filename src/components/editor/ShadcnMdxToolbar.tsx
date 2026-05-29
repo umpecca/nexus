@@ -30,6 +30,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import InsertImageImport from "./InsertImageImport";
+import InsertKatexBlock from "./InsertKatexBlock";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
 import InsertMermaidDiagram from "./InsertMermaidDiagram";
 import { Button } from "../ui/button";
@@ -295,6 +296,7 @@ function RichTextRibbonCommands() {
           <InsertCodeBlock />
           <Separator orientation="vertical" />
           <InsertMermaidDiagram />
+          <InsertKatexBlock />
           <InsertLocalJavaScriptRunner />
           <ConditionalContents
             options={[

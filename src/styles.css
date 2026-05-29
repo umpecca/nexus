@@ -1405,6 +1405,52 @@ button:hover {
   white-space: pre-wrap;
 }
 
+.nexus-math-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  overflow: auto;
+  padding: 0.8rem;
+}
+
+.nexus-math-rendered {
+  display: flex;
+  justify-content: center;
+  min-width: min-content;
+}
+
+.nexus-math-rendered .katex-display {
+  margin: 0;
+}
+
+.nexus-math-rendered .katex {
+  color: var(--ink);
+  font-size: 1.1em;
+}
+
+.nexus-math-empty,
+.nexus-math-title {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.nexus-math-block-error {
+  background: var(--danger-bg);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.nexus-math-error {
+  color: var(--danger);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding: 0;

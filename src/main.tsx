@@ -28,6 +28,7 @@ import "@fontsource/jetbrains-mono/latin-700.css";
 import "@fontsource/roboto-mono/latin-400.css";
 import "@fontsource/roboto-mono/latin-400-italic.css";
 import "@fontsource/roboto-mono/latin-700.css";
+import "katex/dist/katex.min.css";
 import "./styles.css";
 import App from "./App";
 
