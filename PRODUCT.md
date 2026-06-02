@@ -60,10 +60,14 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
 - Local Markdown file open and save workflows through the Electron app menu.
 - HTML and PDF document export workflows through the Electron File menu.
+- A Publish as Web workflow that uploads the self-contained HTML rendering of the current document to a user-specified SFTP server, with credentials entered per publish and never stored.
+- A QuickConnect publishing target that sends the same self-contained HTML rendering to a user-configured HTTP endpoint with a bearer token, intended for a simple self-hostable web server.
 - A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout with optional responsive content wrapping.
+- A collapsible editor outline sidebar that lists the current document's headings as a clickable, depth-indented tree for jumping to sections in rich-text mode.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
 - A clean blank untitled document on every app launch and in every new editor window.
 - An optional embedded Model Context Protocol (MCP) server, off by default, that exposes the focused editor document to external AI clients (such as Claude Desktop via an mcp-remote shim, or ChatGPT custom connectors) when the user enables it from the preferences modal.
+- An optional ngrok tunnel, off by default, that uses the user's installed ngrok CLI to expose the enabled MCP server through a public ngrok URL so remote AI clients can reach it without opening an inbound network port on the user's machine.
 - A read-only MCP tool surface for listing open editor windows and reading the active document.
 - A write MCP tool surface for replacing the active document content, gated by an in-app shadcn-styled diff confirmation modal that the user must approve or reject for every individual write call.
 - Per-OS-profile MCP server enabled/disabled, port number, authentication mode (bearer token or none), and randomly generated bearer token preferences stored locally.
@@ -75,9 +79,13 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Inline AI controls.
 - MCP tools beyond reading the active document and replacing its full contents (partial patches, multi-window batched edits, file open/save through MCP, image or attachment write tools).
 - Outbound MCP client behavior (Nexus calling other MCP servers).
-- Remote network exposure of the MCP server (only `127.0.0.1` binding is supported).
+- Direct remote network binding of the MCP server (the server still binds `127.0.0.1` only; remote reachability is available only through the optional, user-enabled ngrok tunnel, which forwards to the loopback port without binding a non-loopback address).
+- A bundled ngrok library, account, or authtoken (the user installs the ngrok CLI and configures their own authtoken with it; Nexus does not bundle ngrok or provision ngrok accounts).
 - Multi-user collaboration.
 - Cloud sync.
+- Web publishing transports other than SFTP and the QuickConnect HTTP push (no FTP, cloud object storage, or managed hosting providers in v1).
+- Stored SFTP passwords, key passphrases, or remembered host keys (SFTP credentials are entered per publish and host keys are confirmed per publish in v1).
+- A bundled QuickConnect receiving server (Nexus only sends the HTTP push; the server that accepts and serves the pages is provided separately).
 - Full Git integration.
 - Advanced presentation export formats beyond HTML and PDF.
 - Microsoft Word (.docx) export (previously attempted in T_099–T_102 and removed in T_103 because the round-tripped HTML lost its body content during DOCX conversion; may be revisited later).
@@ -87,8 +95,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - The first version targets a native desktop shell using Electron, React, and MDXEditor.
 - The app should work locally first and avoid remote services by default.
-- Privacy is a default assumption: document content stays local unless a future explicit integration sends it elsewhere.
+- Privacy is a default assumption: document content stays local unless the user takes an explicit action that sends it elsewhere. The publishing features are such actions: Publish as Web transmits content to an SFTP server only when the user configures and confirms a publish, and it never stores the credentials used to do so; Publish as HTML over QuickConnect transmits content to a user-configured HTTP endpoint and, by explicit user choice for convenience, stores its bearer token in local settings in plaintext. The optional MCP ngrok tunnel makes the enabled MCP server reachable from the public internet only while the user turns it on; it runs the user's installed ngrok CLI and relies on the authtoken configured in the ngrok CLI, so Nexus does not store an ngrok authtoken. The MCP server still binds loopback, and bearer-token authentication plus the write-confirmation dialog continue to apply.
 - Unused vendored framework dependencies should not remain in the app tree.
+- The optional MCP ngrok tunnel depends on the externally-installed ngrok CLI rather than a bundled ngrok library, consistent with the preference for minimal bundled dependencies; users who do not enable the tunnel need not install ngrok.
 - Inline AI and changed-lines review are intentionally deferred until the core editor workflow is stable.
 - The project is early-stage, so the scaffold should favor clarity over architectural depth.
 
@@ -105,6 +114,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Create or edit a Markdown document quickly.
 - Keep content readable while editing.
 - Avoid extra document-management controls while drafting.
+- Navigate quickly between sections of a long document.
+- Publish a finished document to a personal web server, over SFTP or a simple HTTP endpoint, without leaving the editor.
 
 ### 3.3 User Stories
 
@@ -145,6 +156,60 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Given I enable the MCP server from the preferences modal
 - When an authenticated MCP client calls a write tool
 - Then the editor shows a shadcn-styled diff confirmation modal and the write only applies after I click Approve
+
+- Given the MCP server is enabled and I turn on the ngrok tunnel with a valid authtoken
+- When the tunnel connects
+- Then the settings dialog shows a public URL I can give to a remote AI client, and that client reaches the same bearer-token-protected, write-confirmed MCP server
+
+**Story 4**
+> As a writer working on a long document,  
+> I want an outline of the document's headings,  
+> so that I can jump directly to a section without scrolling through the whole document.
+
+#### Acceptance Criteria
+- Given a document with headings  
+- When I open the outline sidebar  
+- Then I see the headings listed in document order and indented by heading level
+
+- Given the outline sidebar is open  
+- When I click a heading entry  
+- Then the editor scrolls to that heading
+
+**Story 5**
+> As a writer with my own web server,  
+> I want to publish my finished document as a single web page,  
+> so that I can share a link without exporting a file and uploading it by hand.
+
+#### Acceptance Criteria
+- Given an open document  
+- When I choose Publish as Web and enter my SFTP connection details  
+- Then the system shows the server's host-key fingerprint and only continues after I accept it
+
+- Given I have accepted the host key  
+- When the upload completes  
+- Then the self-contained HTML page exists on the server at the chosen remote path
+
+- Given I have configured a public base URL  
+- When the upload completes  
+- Then the system shows the resulting page URL with a control to copy it
+
+**Story 6**
+> As a writer running my own lightweight publishing server,  
+> I want to push my document to an HTTP endpoint with a saved token,  
+> so that I can publish quickly without re-entering connection details each time.
+
+#### Acceptance Criteria
+- Given I have configured a QuickConnect URL, path, and bearer token  
+- When I choose Publish as HTML over QuickConnect  
+- Then the dialog is pre-filled with my saved URL, path, and token
+
+- Given valid QuickConnect settings and a reachable server  
+- When I publish  
+- Then the system sends the rendered page to the endpoint and confirms success
+
+- Given the server rejects the request or cannot be reached  
+- When I publish  
+- Then the system shows the HTTP status or error instead of appearing to succeed
 
 ### 3.4 Functional Requirements
 
@@ -197,6 +262,14 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall store the selected paper/plain editor view locally using a key scoped to the current OS profile name.
 - The system shall allow the user to turn responsive content wrapping on or off while using the plain rich-text editor view.
 - The system shall store the selected plain-view responsive content wrapping preference locally using a key scoped to the current OS profile name.
+- The system shall provide a collapsible outline sidebar that lists the current document's headings.
+- The system shall display outline entries indented to reflect each heading's level from H1 through H6.
+- The system shall update the outline entries when the document's headings change.
+- The system shall scroll the editor to the corresponding heading when the user selects an outline entry in rich-text mode.
+- The system shall allow the user to toggle the outline sidebar visibility from the editor toolbar.
+- The system shall hide the outline sidebar in source and diff editing modes.
+- The system shall show an empty-state message in the outline sidebar when the current document has no headings.
+- The system shall store the outline sidebar visibility preference locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper size locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper orientation locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper margins locally using a key scoped to the current OS profile name.
@@ -223,6 +296,34 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall export PDFs using the selected paper margins.
 - The system shall generate PDFs from the rendered rich export HTML through a direct hidden-window print flow.
 - The system shall report a PDF export failure instead of writing a plain text PDF when direct rich PDF generation is unavailable.
+- The system shall provide an Electron File/Publish as Web menu item placed near the export actions.
+- The system shall render the current document to the same self-contained HTML output used by HTML export when publishing as web.
+- The system shall open a publish dialog that collects the SFTP host, port, username, authentication method, remote directory, remote filename, and an optional public base URL.
+- The system shall require the user to enter SFTP credentials on every publish.
+- The system shall never store SFTP passwords, private-key passphrases, or private-key file contents in local storage, on disk, or in logs.
+- The system shall allow the user to authenticate with either a password or a private key referenced by file path.
+- The system shall request the private-key passphrase, when one is needed, on each publish without storing it.
+- The system shall persist only non-secret connection fields (host, port, username, remote directory, and optional public base URL) per OS profile to pre-fill the publish dialog.
+- The system shall display the SFTP server's host-key fingerprint in OpenSSH-style SHA256 form and require the user to accept it before sending any document data.
+- The system shall abort the publish without uploading when the user rejects the host-key fingerprint.
+- The system shall prompt for host-key acceptance on every publish and shall not remember previously accepted hosts in this version.
+- The system shall default the remote filename to a slug derived from the document title or frontmatter and allow the user to edit it before publishing.
+- The system shall upload the self-contained HTML page to the chosen remote directory and filename over SFTP.
+- The system shall show the resulting page URL with a copy-to-clipboard control after a successful publish when a public base URL is configured.
+- The system shall indicate that a successful SFTP upload does not by itself guarantee the file is served over HTTP.
+- The system shall report publish failures, including connection, authentication, and upload errors, without changing the document.
+- The system shall not change the current file path, saved baseline, or dirty state when publishing as web.
+- The system shall provide an Electron File/Publish as HTML over QuickConnect menu item placed next to the SFTP publish item.
+- The system shall render the current document to the same self-contained HTML output when publishing over QuickConnect.
+- The system shall send the QuickConnect publish as an HTTP POST of the rendered HTML to a user-configured endpoint URL.
+- The system shall include the user's bearer token in the QuickConnect request and a user-configured path in the request.
+- The system shall open a QuickConnect publish dialog with fields for the endpoint URL, the path, and the bearer token.
+- The system shall persist the QuickConnect URL, path, and bearer token per OS profile to pre-fill the dialog.
+- The system shall treat a successful HTTP response as a completed publish and a non-success HTTP response as a publish failure that reports the status.
+- The system shall show the resulting page URL with a copy control when the QuickConnect server returns one.
+- The system shall bound the QuickConnect request with a network timeout so a hung request does not freeze publishing.
+- The system shall not change the current file path, saved baseline, or dirty state when publishing over QuickConnect.
+- The system shall support SFTP and the QuickConnect HTTP push as the only web publishing transports in this version.
 - The system shall resolve local relative Markdown image paths against the opened document folder during HTML and PDF export.
 - The system shall embed supported local Markdown images as base64 data URLs during HTML export.
 - The system shall render fenced Mermaid diagrams as base64 SVG image data URLs during HTML export and as static SVG diagrams during PDF export.
@@ -286,6 +387,20 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall return an explicit rejection result to the MCP client when no editor window can host the confirmation dialog.
 - The system shall stop accepting MCP connections immediately when the user disables the MCP server.
 - The system shall close listening sockets on application quit so that ports are released for the next launch.
+- The system shall provide an optional ngrok tunnel toggle in the MCP server section of the settings dialog, off by default and meaningful only while the MCP server is enabled.
+- The system shall start the ngrok tunnel by running the user's installed ngrok CLI as a background process when the MCP server is enabled and the ngrok toggle is on.
+- The system shall rely on the ngrok CLI's own configuration for the authtoken and shall not store an ngrok authtoken in Nexus settings.
+- The system shall report a clear message in the settings dialog when the ngrok CLI is not installed or no authtoken is configured, and shall leave the local MCP server running.
+- The system shall allow the user to point the tunnel at an explicit ngrok executable path via a settings checkbox and path field, and shall otherwise resolve the ngrok CLI from PATH.
+- The system shall provide an optional ngrok custom-domain field, stored per OS profile, that binds the tunnel to a reserved or custom domain when set.
+- The system shall fall back to a random ngrok URL and indicate the fallback when a configured custom domain cannot be bound.
+- The system shall forward the ngrok tunnel to the loopback MCP port without binding a non-loopback address on the user's machine.
+- The system shall display the public ngrok URL and the full public MCP endpoint URL (the public URL plus the `/mcp` path) with copy controls in the settings dialog while the tunnel is connected.
+- The system shall stop the ngrok tunnel when the MCP server is disabled, when the ngrok toggle is turned off, and when the application quits.
+- The system shall re-point the ngrok tunnel to the new port when the MCP port changes while the tunnel is on.
+- The system shall continue to require the configured MCP authentication and the write-confirmation dialog for requests that arrive over the ngrok tunnel.
+- The system shall display a prominent warning when the ngrok tunnel is enabled while the MCP authentication mode is none, and shall still allow the tunnel.
+- The system shall report ngrok tunnel start failures in the settings dialog and shall keep the local MCP server running when the tunnel fails to start.
 
 #### 3.4.x Specialized Logic or Modes (Optional)
 
@@ -300,11 +415,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 - List editing: pressing Enter on an empty bullet, numbered, or checklist item exits the list and creates a normal paragraph.
 - Paper view: rich-text editing can constrain the document body to the selected paper width with user-adjustable margins on a white editor background so element sizing better matches PDF output. This mode does not provide true Word-style pagination.
 - Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged; the user can toggle whether plain view wraps to the full application width or to a centered readable column without adding page-level horizontal scrolling.
+- Publish as Web: a File menu action renders the current document to the same self-contained HTML output as HTML export (inline images, fonts, and diagrams) and uploads that single file to a user-specified SFTP server. The publish dialog collects the host, port, username, authentication method (password or private-key file), remote directory, remote filename, and an optional public base URL; only the non-secret fields are stored per OS profile to pre-fill future publishes. Credentials are entered every publish and never stored. Before any document data is sent, the user must review and accept the server's host-key fingerprint (OpenSSH-style SHA256 form); rejecting cancels the publish. The remote filename defaults to a slug derived from the document title or frontmatter and is editable. After a successful upload, the dialog shows the resulting page URL with a copy control when a public base URL is configured, and notes that SFTP upload alone does not guarantee HTTP serving. Publishing does not change the document's file path, saved baseline, or dirty state.
+- Publish as Web over QuickConnect: a second File menu action renders the same self-contained HTML and sends it as an HTTP POST to a user-configured endpoint URL, with the rendered HTML as the request body, a bearer token for authorization, and a user-configured path conveyed in the request. The QuickConnect dialog collects the URL, path, and bearer token, and all three are saved per OS profile to pre-fill future publishes (the bearer token is saved by user choice for convenience, unlike the never-stored SFTP credentials). A successful HTTP response confirms the publish; the dialog shows a returned page URL with a copy control when the server provides one, and reports the HTTP status when the request is rejected. A network timeout bounds the request. QuickConnect is intended for a simple self-hostable server that accepts these pushes and serves the pages. SFTP and QuickConnect are the only publishing transports in this version.
+- Outline sidebar: an optional, collapsible panel beside the rich-text editor lists the current document's headings as a depth-indented, clickable tree. Selecting an entry scrolls the rich-text editor to that heading. The outline tracks heading changes, shows an empty-state message when no headings exist, is hidden in source and diff modes so those modes keep the full editor area, and its open/closed state is stored per OS profile. v1 renders headings as an indented list by level and does not provide per-node expand/collapse or active-section tracking.
 - App theme: the settings dialog lets the user choose a Light, Dark, or System app theme. The selected theme is stored per OS profile, System tracks the desktop color-scheme setting, dark mode uses a restrained neutral palette with visible editor carets and toolbar icons, and document export output remains light for predictable PDF/HTML results.
 - Editable page background: rich-text, source, diff, and plain-view editor backgrounds match the toolbar background color for visual continuity.
 - Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output, use the selected paper size, orientation, and margins for PDF page setup, print PDFs through the direct hidden-window rich export path, report failure instead of silently downgrading any export, and use native save dialogs without changing the active document. HTML export is self-contained for supported local images, Mermaid diagrams, and bundled web font assets by writing them as base64 data URLs.
 - The app shall not provide a separate custom visual/source tab bar.
-- MCP server: a local HTTP-based Model Context Protocol server runs inside the Electron main process while enabled. Transport is Streamable HTTP at `http://127.0.0.1:{port}/mcp` with a single POST endpoint that accepts JSON-RPC requests and returns JSON-RPC responses. Authentication mode is either a static bearer token shown in the preferences modal (default) or no authentication (opt-in, intended for trusted single-user environments). In either mode, the listener stays bound to `127.0.0.1` and the write confirmation dialog still gates every replace_document call. The tool surface is intentionally narrow: list windows, read document, replace document. Read tools execute immediately against the focused renderer (or specified window). The write tool routes through the target renderer's confirmation dialog and resolves with the user's decision before responding to the MCP client. The server is intended for local AI assistants on the same machine, not network exposure.
+- MCP server: a local HTTP-based Model Context Protocol server runs inside the Electron main process while enabled. Transport is Streamable HTTP at `http://127.0.0.1:{port}/mcp` with a single POST endpoint that accepts JSON-RPC requests and returns JSON-RPC responses. Authentication mode is either a static bearer token shown in the preferences modal (default) or no authentication (opt-in, intended for trusted single-user environments). In either mode, the listener stays bound to `127.0.0.1` and the write confirmation dialog still gates every replace_document call. The tool surface is intentionally narrow: list windows, read document, replace document. Read tools execute immediately against the focused renderer (or specified window). The write tool routes through the target renderer's confirmation dialog and resolves with the user's decision before responding to the MCP client. The server is intended for local AI assistants on the same machine. Remote reachability is opt-in only through the ngrok tunnel below.
+- MCP ngrok tunnel: an optional, off-by-default tunnel that exposes the enabled MCP server to remote AI clients through a public ngrok URL by running the user's installed ngrok CLI as a background process. The authtoken is not stored in Nexus; the user configures it once with the ngrok CLI (`ngrok config add-authtoken <token>`) and Nexus relies on the ngrok CLI's own configuration. The user may optionally supply a reserved or custom ngrok domain; when a domain is set it is used, and when it cannot be bound the tunnel falls back to a random URL and reports that the domain was not used. The user may also point the tunnel at an explicit ngrok executable path (via a checkbox and path field) for non-standard install locations; with the checkbox off, or on but empty, the ngrok CLI is resolved from PATH. When the ngrok CLI is missing or no authtoken is configured, the settings dialog shows a clear message and the local MCP server keeps running. When the MCP server is enabled and the tunnel is turned on, Nexus runs the ngrok CLI to forward to the loopback MCP port; the ngrok agent connects outbound to ngrok's service, so no inbound port is opened and the MCP server keeps binding `127.0.0.1`. The settings dialog shows the public URL and the public `/mcp` endpoint URL with copy controls while connected. Bearer-token authentication and the write-confirmation dialog still apply over the tunnel. Enabling the tunnel while the authentication mode is none shows a prominent warning but is allowed. The tunnel stops when the MCP server is disabled, the toggle is turned off, or the app quits, and re-points when the MCP port changes. Tunnel start failures are reported and leave the local server running.
 
 ### 3.5 Non-Functional / Experience Requirements
 
@@ -339,6 +458,10 @@ Markdown is effective for structured writing, but many users still need a calm e
 21. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
 22. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
 23. Optionally enable the MCP server from Settings/Preferences, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it.
+24. Optionally turn on the ngrok tunnel in the MCP server settings, enter an ngrok authtoken, and copy the displayed public MCP endpoint URL into a remote AI client to reach the same authenticated, write-confirmed server.
+25. Use the editor toolbar outline toggle to show a sidebar of the document's headings, and click a heading to jump to that section.
+26. Use File/Publish as Web to render the current document as a self-contained web page, enter SFTP connection details, accept the server's host-key fingerprint, and upload the page; copy the resulting URL when a public base URL is configured.
+27. Use File/Publish as HTML over QuickConnect to send the same self-contained web page to a configured HTTP endpoint with a saved URL, path, and bearer token; copy the resulting URL when the server returns one.
 
 ## 5. UI / Design Notes (Optional)
 
@@ -347,6 +470,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep document actions in the native Electron app menu.
 - Keep document actions scoped to the focused editor window so multiple open documents remain independent.
 - Keep HTML export and PDF export actions in the native File menu near Save actions.
+- Keep the Publish as Web action in the native File menu near the export actions, and use a compact shadcn-styled dialog for connection details, host-key confirmation, and the published URL result.
+- Keep the Publish as HTML over QuickConnect action next to the SFTP publish action, and use a compact shadcn-styled dialog with just the URL, path, and bearer token plus the published URL result.
+- Keep the ngrok tunnel controls inside the existing MCP server section of the settings dialog, with the toggle, authtoken field, connected public URL and public MCP endpoint URL, and the no-authentication exposure warning grouped with the other MCP settings.
 - Keep the built-in demo document action in the native File menu near Open, because it replaces the current editor buffer rather than editing content in place.
 - Keep undo and redo actions in the native Electron Edit menu rather than duplicating them in the editor toolbar.
 - Keep manual Refresh available from the native Edit menu.
@@ -363,6 +489,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep the rich-text toolbar visible while scrolling long documents without allowing it to overlap document content; in source and diff modes, let the compact right-side view controls intentionally overlap the editor content at the top-right.
 - On Windows, show a subtle top separator on the editor toolbar so it visually matches the bottom separator below the native menu.
 - Avoid modal-first workflows for common actions.
+- Keep the outline sidebar as a compact shadcn-styled panel beside the editor that follows the light/dark theme, can be toggled from the editor toolbar, and does not introduce a new top-level document action bar.
 
 ## 6. Edge Cases
 
@@ -407,7 +534,31 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Closing the only editor window while a confirmation dialog is open should reject the pending MCP write rather than leaving the client waiting indefinitely.
 - Disabling the MCP server while a tool call is in flight should close the connection and resolve the pending call with a rejection.
 - An MCP request without a bearer token, with the wrong token, or with the wrong content type should receive an explicit 401/400 response instead of being silently dropped while the authentication mode is bearer-token.
-- An MCP request that arrives while the authentication mode is none should be processed without checking the Authorization header, but the loopback-only binding and write confirmation dialog should still apply.
+- An MCP request that arrives while the authentication mode is none should be processed without checking the Authorization header, but the write confirmation dialog should still apply.
+- A missing ngrok CLI (not installed or not on PATH) should fail the tunnel start with a clear install message and leave the local MCP server running. On macOS, where a desktop-launched app does not inherit the shell PATH, the system shall also look in the common Homebrew locations before reporting the CLI as missing.
+- A missing or invalid ngrok authtoken in the ngrok CLI configuration should fail the tunnel start with a message pointing to `ngrok config add-authtoken`, and leave the local MCP server running.
+- A configured ngrok custom domain that is unavailable should fall back to a random URL with a clear notice rather than failing the tunnel.
+- An ngrok background process that exits unexpectedly should be reflected as a disconnected tunnel without affecting the local MCP server.
+- Turning off the MCP server while the ngrok tunnel is connected should stop the tunnel.
+- Changing the MCP port while the ngrok tunnel is connected should re-point the tunnel to the new port.
+- Enabling the ngrok tunnel while the MCP authentication mode is none should show a prominent public-exposure warning but still connect.
+- Quitting the application while the ngrok tunnel is connected should close the tunnel so it does not linger after exit.
+- Documents with no headings should show a clear empty-state message in the outline sidebar instead of an empty panel.
+- The outline sidebar should hide while editing in source or diff mode and reappear when returning to rich-text mode if it was open.
+- Settings storage can be unavailable or invalid; the app should keep the outline sidebar hidden by default.
+- Documents with repeated heading text should still scroll to the specific heading occurrence selected in the outline.
+- A publish that cannot reach or connect to the SFTP server should report the failure clearly and leave the document unchanged.
+- A publish with an incorrect password, passphrase, or private key should report an authentication failure without storing the entered secret.
+- Rejecting the host-key fingerprint should cancel the publish before any document data is sent.
+- Publishing to a missing or non-writable remote directory should report the error rather than appear to succeed.
+- Publishing an untitled document should still produce a valid remote filename, derived or entered by the user, before uploading.
+- A network interruption during upload should report the failure and should not change the document's file path, saved baseline, or dirty state.
+- A successful SFTP upload should not imply the page is reachable over HTTP unless the user's server is configured to serve that directory.
+- A QuickConnect publish to an unreachable or slow endpoint should fail on the network timeout rather than freezing the editor.
+- A QuickConnect publish that receives a non-success HTTP response (for example, 401 for a bad token, 404 for a wrong URL, or a 5xx server error) should report that status to the user.
+- A QuickConnect publish with an empty URL or empty path should be reported as invalid before any request is sent.
+- Publishing an untitled document over QuickConnect should still require or derive a path.
+- A large document with embedded images should still publish over QuickConnect within the request timeout, or fail clearly if it does not.
 
 ## 7. Future Iterations / Open Questions
 
@@ -420,6 +571,16 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Expand the MCP tool surface with partial patch / find-replace tools, save and save-as tools, and image/attachment-aware tools once the read+replace baseline proves out.
 - Add an MCP audit log or activity panel so users can see recent tool calls and decisions.
 - Add stdio MCP transport via a separate launcher binary for clients (such as current Claude Desktop) that do not yet support HTTP/Streamable transport directly.
+- Remember and reuse a stable ngrok domain, and offer optional encrypted storage for the ngrok authtoken instead of plaintext local settings.
+- Add an MCP tunnel activity indicator or log so users can see when the server is publicly reachable and by which URL.
+- Highlight the active section in the outline based on the editor's scroll position.
+- Support outline navigation while editing in source mode.
+- Add per-node expand/collapse and drag-to-reorder for outline headings.
+- Optionally remember accepted SFTP host keys (known-hosts style) so the fingerprint prompt only appears on first connect or when the key changes.
+- Optionally store non-secret publish targets as named profiles, and integrate OS keychain storage for credentials if users ask for saved logins.
+- Add additional publishing transports (for example, cloud object storage or managed hosting) beyond SFTP and QuickConnect.
+- Provide a reference QuickConnect receiving server and an in-app setup flow for adding documents to it.
+- Offer optional encrypted storage for the QuickConnect bearer token instead of plaintext local settings.
 
 ## 8. Notes for LLM-Assisted Development (Optional)
 

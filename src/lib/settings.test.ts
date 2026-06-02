@@ -56,6 +56,7 @@ describe("settings helpers", () => {
       themePreference: DEFAULT_EDITOR_THEME_PREFERENCE,
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
+      outlineVisible: false,
       showInvisibleCharacters: false,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
@@ -69,7 +70,23 @@ describe("settings helpers", () => {
         enabled: false,
         port: 39125,
         authMode: "bearer",
-        bearerToken: ""
+        bearerToken: "",
+        ngrokEnabled: false,
+        ngrokDomain: "",
+        ngrokUseCustomPath: false,
+        ngrokPath: ""
+      },
+      publishTarget: {
+        host: "",
+        port: 22,
+        username: "",
+        remoteDirectory: "",
+        publicBaseUrl: ""
+      },
+      quickConnect: {
+        url: "",
+        path: "",
+        token: ""
       }
     });
   });
@@ -96,6 +113,7 @@ describe("settings helpers", () => {
       themePreference: "system",
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
+      outlineVisible: false,
       showInvisibleCharacters: false,
       pageSize: "Letter",
       pageOrientation: "portrait",
@@ -109,7 +127,23 @@ describe("settings helpers", () => {
         enabled: false,
         port: 39125,
         authMode: "bearer",
-        bearerToken: ""
+        bearerToken: "",
+        ngrokEnabled: false,
+        ngrokDomain: "",
+        ngrokUseCustomPath: false,
+        ngrokPath: ""
+      },
+      publishTarget: {
+        host: "",
+        port: 22,
+        username: "",
+        remoteDirectory: "",
+        publicBaseUrl: ""
+      },
+      quickConnect: {
+        url: "",
+        path: "",
+        token: ""
       }
     });
   });
@@ -277,6 +311,34 @@ describe("settings helpers", () => {
     expect(loadSettings("default").responsiveContentWrappingEnabled).toBe(true);
   });
 
+  it("defaults the outline sidebar to hidden", () => {
+    expect(createDefaultSettings().outlineVisible).toBe(false);
+  });
+
+  it("loads a saved enabled outline sidebar setting", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineVisible: true,
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").outlineVisible).toBe(true);
+  });
+
+  it("falls back to a hidden outline sidebar when stored setting is invalid", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineVisible: "nope",
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").outlineVisible).toBe(false);
+  });
+
   it("falls back to the default font size when stored font size is invalid", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
@@ -369,6 +431,158 @@ describe("settings helpers", () => {
     });
   });
 
+  it("defaults the publish target to empty fields on port 22", () => {
+    expect(createDefaultSettings().publishTarget).toEqual({
+      host: "",
+      port: 22,
+      username: "",
+      remoteDirectory: "",
+      publicBaseUrl: ""
+    });
+  });
+
+  it("loads a valid saved publish target", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        publishTarget: {
+          host: "example.com",
+          port: 2222,
+          username: "deploy",
+          remoteDirectory: "/var/www/html",
+          publicBaseUrl: "https://example.com/"
+        }
+      })
+    });
+
+    expect(loadSettings("default").publishTarget).toEqual({
+      host: "example.com",
+      port: 2222,
+      username: "deploy",
+      remoteDirectory: "/var/www/html",
+      publicBaseUrl: "https://example.com/"
+    });
+  });
+
+  it("sanitizes an invalid stored publish target", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        publishTarget: {
+          host: 123,
+          port: 70000,
+          username: null,
+          remoteDirectory: "  /srv/site  ",
+          publicBaseUrl: 42
+        }
+      })
+    });
+
+    expect(loadSettings("default").publishTarget).toEqual({
+      host: "",
+      port: 22,
+      username: "",
+      remoteDirectory: "/srv/site",
+      publicBaseUrl: ""
+    });
+  });
+
+  it("defaults the QuickConnect target to empty fields", () => {
+    expect(createDefaultSettings().quickConnect).toEqual({
+      url: "",
+      path: "",
+      token: ""
+    });
+  });
+
+  it("loads a valid saved QuickConnect target", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        quickConnect: {
+          url: "https://example.com/quickconnect",
+          path: "docs/my-doc.html",
+          token: "secret-token"
+        }
+      })
+    });
+
+    expect(loadSettings("default").quickConnect).toEqual({
+      url: "https://example.com/quickconnect",
+      path: "docs/my-doc.html",
+      token: "secret-token"
+    });
+  });
+
+  it("sanitizes an invalid stored QuickConnect target", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        quickConnect: {
+          url: 123,
+          path: "  docs/x.html  ",
+          token: null
+        }
+      })
+    });
+
+    expect(loadSettings("default").quickConnect).toEqual({
+      url: "",
+      path: "docs/x.html",
+      token: ""
+    });
+  });
+
+  it("loads saved ngrok tunnel MCP settings", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        mcpServer: {
+          enabled: true,
+          port: 40000,
+          authMode: "bearer",
+          bearerToken: "tok",
+          ngrokEnabled: true,
+          ngrokDomain: "mcp.example.ngrok.app",
+          ngrokUseCustomPath: true,
+          ngrokPath: "/opt/homebrew/bin/ngrok"
+        }
+      })
+    });
+
+    const mcp = loadSettings("default").mcpServer;
+    expect(mcp.ngrokEnabled).toBe(true);
+    expect(mcp.ngrokDomain).toBe("mcp.example.ngrok.app");
+    expect(mcp.ngrokUseCustomPath).toBe(true);
+    expect(mcp.ngrokPath).toBe("/opt/homebrew/bin/ngrok");
+  });
+
+  it("sanitizes invalid ngrok MCP settings to safe defaults", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        mcpServer: {
+          ngrokEnabled: "yes",
+          ngrokDomain: 456,
+          ngrokUseCustomPath: "nope",
+          ngrokPath: 789
+        }
+      })
+    });
+
+    const mcp = loadSettings("default").mcpServer;
+    expect(mcp.ngrokEnabled).toBe(false);
+    expect(mcp.ngrokDomain).toBe("");
+    expect(mcp.ngrokUseCustomPath).toBe(false);
+    expect(mcp.ngrokPath).toBe("");
+  });
+
   it("saves the selected paper size", () => {
     const storage = installLocalStorage();
 
@@ -379,6 +593,7 @@ describe("settings helpers", () => {
       themePreference: "dark",
       paperViewEnabled: false,
       responsiveContentWrappingEnabled: false,
+      outlineVisible: true,
       showInvisibleCharacters: false,
       pageSize: "A4",
       pageOrientation: "landscape",
@@ -392,7 +607,23 @@ describe("settings helpers", () => {
         enabled: false,
         port: 39125,
         authMode: "bearer",
-        bearerToken: ""
+        bearerToken: "",
+        ngrokEnabled: false,
+        ngrokDomain: "",
+        ngrokUseCustomPath: false,
+        ngrokPath: ""
+      },
+      publishTarget: {
+        host: "",
+        port: 22,
+        username: "",
+        remoteDirectory: "",
+        publicBaseUrl: ""
+      },
+      quickConnect: {
+        url: "",
+        path: "",
+        token: ""
       }
     });
 
@@ -405,6 +636,7 @@ describe("settings helpers", () => {
         themePreference: "dark",
         paperViewEnabled: false,
         responsiveContentWrappingEnabled: false,
+        outlineVisible: true,
         showInvisibleCharacters: false,
         pageSize: "A4",
         pageOrientation: "landscape",
@@ -418,7 +650,23 @@ describe("settings helpers", () => {
           enabled: false,
           port: 39125,
           authMode: "bearer",
-          bearerToken: ""
+          bearerToken: "",
+          ngrokEnabled: false,
+          ngrokDomain: "",
+          ngrokUseCustomPath: false,
+          ngrokPath: ""
+        },
+        publishTarget: {
+          host: "",
+          port: 22,
+          username: "",
+          remoteDirectory: "",
+          publicBaseUrl: ""
+        },
+        quickConnect: {
+          url: "",
+          path: "",
+          token: ""
         }
       })
     );

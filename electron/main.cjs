@@ -3,10 +3,13 @@ const fs = require("node:fs/promises");
 const { existsSync, watch } = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL, fileURLToPath } = require("node:url");
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
 const htmlToDocx = require("@turbodocx/html-to-docx");
+const crypto = require("node:crypto");
+const SftpClient = require("ssh2-sftp-client");
 
 const mcpServer = require("./mcp-server.cjs");
+const ngrokTunnel = require("./ngrok-tunnel.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
 const appIconPath = path.join(__dirname, "..", "nexus.png");
@@ -20,6 +23,9 @@ const mcpWindowRecords = new Map();
 let mcpFocusedWindowId = null;
 let mcpPendingWriteCounter = 0;
 const mcpPendingWrites = new Map();
+
+let sftpPendingHostKeyCounter = 0;
+const sftpPendingHostKeys = new Map();
 
 function findMcpWindowByWindowId(windowId) {
   for (const record of mcpWindowRecords.values()) {
@@ -1749,6 +1755,7 @@ async function renderMermaidInExportHtml(html, options = {}) {
 
 async function renderMarkdownSelfContainedHtml(markdown, currentPath, options = {}) {
   const html = await renderMarkdownExportHtml(markdown, currentPath, {
+    excludeFrontmatter: true,
     fontFamily: options.fontFamily,
     fontSizePixels: options.fontSizePixels,
     inlineFontAssets: true,
@@ -1756,16 +1763,13 @@ async function renderMarkdownSelfContainedHtml(markdown, currentPath, options = 
     paragraphSpacingPixels: options.paragraphSpacingPixels
   });
 
-  try {
-    return await renderMermaidInExportHtml(html, {
-      diagramsAsImages: true,
-      loadFromTemporaryFile: true
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`Export HTML kept rendered Markdown HTML after Mermaid render failure: ${message}`);
-    return html;
-  }
+  // Use the same timeout-guarded Mermaid PNG enhancement that HTML export relies on. The older
+  // inline-SVG path had no timeout and could hang the hidden render window indefinitely, which
+  // stalled publishing for any document containing a Mermaid diagram.
+  return tryEnhanceExportHtmlWithMermaidPngs(
+    html,
+    "Publish kept baseline HTML after Mermaid enhancement failure"
+  );
 }
 
 async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
@@ -1850,6 +1854,21 @@ async function showExportErrorForWindow(window, format, error) {
 
 async function showExportError(event, format, error) {
   await showExportErrorForWindow(BrowserWindow.fromWebContents(event.sender), format, error);
+}
+
+async function showPublishErrorForWindow(window, detail) {
+  const options = {
+    type: "error",
+    title: "Publish Failed",
+    message: "Nexus could not publish this document to the SFTP server.",
+    detail: detail || "The document could not be published."
+  };
+
+  if (window && !window.isDestroyed()) {
+    await dialog.showMessageBox(window, options);
+  } else {
+    await dialog.showMessageBox(options);
+  }
 }
 
 async function showSaveDialogForWindow(window, options) {
@@ -2215,6 +2234,263 @@ async function copyHtmlFromPayload(window, payload) {
   }
 }
 
+function formatHostKeyFingerprint(hostKey) {
+  // OpenSSH-style SHA256 fingerprint: base64 of the SHA-256 digest with padding removed.
+  const digest = crypto.createHash("sha256").update(hostKey).digest("base64").replace(/=+$/, "");
+  return `SHA256:${digest}`;
+}
+
+function requestSftpHostKeyConfirmation(window, payload) {
+  return new Promise((resolve) => {
+    if (!window || window.isDestroyed()) {
+      resolve(false);
+      return;
+    }
+
+    sftpPendingHostKeyCounter += 1;
+    const requestId = `sftp-hostkey-${sftpPendingHostKeyCounter}`;
+    sftpPendingHostKeys.set(requestId, { resolve, webContentsId: window.webContents.id });
+
+    try {
+      console.log(`[publish] sending host-key prompt to renderer (requestId=${requestId})`);
+      window.webContents.send("sftp:confirm-host-key", {
+        requestId,
+        host: payload.host,
+        port: payload.port,
+        fingerprint: payload.fingerprint
+      });
+    } catch (error) {
+      console.log("[publish] failed to send host-key prompt:", error && error.message);
+      sftpPendingHostKeys.delete(requestId);
+      resolve(false);
+    }
+  });
+}
+
+function normalizeRemoteDirectory(remoteDirectory) {
+  const trimmed = String(remoteDirectory ?? "").trim().replace(/\\+/g, "/");
+  if (!trimmed) {
+    return ".";
+  }
+
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  return withoutTrailingSlash || "/";
+}
+
+function joinRemotePath(remoteDirectory, remoteFilename) {
+  const dir = normalizeRemoteDirectory(remoteDirectory);
+  const file = String(remoteFilename ?? "").trim().replace(/^\/+/, "");
+
+  if (dir === ".") {
+    return file;
+  }
+  if (dir === "/") {
+    return `/${file}`;
+  }
+  return `${dir}/${file}`;
+}
+
+function composePublishedUrl(publicBaseUrl, remoteFilename) {
+  const base = String(publicBaseUrl ?? "").trim();
+  if (!base) {
+    return null;
+  }
+
+  const file = String(remoteFilename ?? "").trim().replace(/^\/+/, "");
+  return `${base.replace(/\/+$/, "")}/${file}`;
+}
+
+async function publishMarkdownOverSftp(window, payload) {
+  const { currentPath, markdown, options, connection, auth } = payload ?? {};
+  const conn = connection ?? {};
+  const host = String(conn.host ?? "").trim();
+  const username = String(conn.username ?? "").trim();
+  const remoteFilename = String(conn.remoteFilename ?? "").trim();
+  const port =
+    Number.isInteger(conn.port) && conn.port >= 1 && conn.port <= 65535 ? conn.port : 22;
+
+  if (!host) {
+    throw new Error("An SFTP host is required to publish.");
+  }
+  if (!username) {
+    throw new Error("An SFTP username is required to publish.");
+  }
+  if (!remoteFilename) {
+    throw new Error("A remote filename is required to publish.");
+  }
+
+  console.log(`[publish] request for ${username}@${host}:${port} -> ${remoteFilename}`);
+
+  // Reuse the existing self-contained HTML export so images, fonts, and Mermaid travel inline.
+  // Bound the render so a stalled hidden Mermaid/render window cannot freeze the publish forever.
+  console.log("[publish] rendering self-contained HTML...");
+  const html = await withTimeout(
+    renderMarkdownSelfContainedHtml(markdown, currentPath, options ?? {}),
+    30000,
+    "Publish HTML render"
+  );
+  console.log(`[publish] HTML rendered (${html.length} bytes); opening SFTP connection...`);
+
+  let hostKeyRejected = false;
+  const connectConfig = {
+    host,
+    port,
+    username,
+    // Give the user time to review and accept the host-key fingerprint prompt before ssh2
+    // abandons the handshake, but keep it bounded so a broken round trip cannot hang forever.
+    readyTimeout: 120000,
+    // ssh2 hands us the raw host-key buffer; verify it through the renderer prompt before connecting.
+    hostVerifier: (hostKey, verify) => {
+      const fingerprint = formatHostKeyFingerprint(hostKey);
+      console.log(`[publish] host key presented (${fingerprint}); awaiting user confirmation...`);
+      requestSftpHostKeyConfirmation(window, { host, port, fingerprint }).then((accepted) => {
+        console.log(`[publish] host key ${accepted ? "ACCEPTED" : "REJECTED"} by user`);
+        if (!accepted) {
+          hostKeyRejected = true;
+        }
+        verify(accepted);
+      });
+    }
+  };
+
+  if (auth && auth.kind === "key") {
+    const privateKeyPath = String(auth.privateKeyPath ?? "").trim();
+    if (!privateKeyPath) {
+      throw new Error("A private key file is required for key authentication.");
+    }
+    connectConfig.privateKey = await fs.readFile(privateKeyPath);
+    if (typeof auth.passphrase === "string" && auth.passphrase.length > 0) {
+      connectConfig.passphrase = auth.passphrase;
+    }
+  } else {
+    const password = auth && typeof auth.password === "string" ? auth.password : "";
+    if (!password) {
+      throw new Error("A password is required for password authentication.");
+    }
+    connectConfig.password = password;
+  }
+
+  const client = new SftpClient();
+  try {
+    try {
+      await client.connect(connectConfig);
+    } catch (error) {
+      if (hostKeyRejected) {
+        return { canceled: true };
+      }
+      throw error;
+    }
+
+    console.log("[publish] SFTP connected; preparing remote directory...");
+    const remoteDir = normalizeRemoteDirectory(conn.remoteDirectory);
+    if (remoteDir !== "." && remoteDir !== "/") {
+      const exists = await client.exists(remoteDir);
+      if (!exists) {
+        await client.mkdir(remoteDir, true);
+      }
+    }
+
+    const remotePath = joinRemotePath(conn.remoteDirectory, remoteFilename);
+    await client.put(Buffer.from(html, "utf8"), remotePath);
+    console.log(`[publish] upload complete -> ${remotePath}`);
+
+    return {
+      published: true,
+      remotePath,
+      url: composePublishedUrl(conn.publicBaseUrl, remoteFilename)
+    };
+  } finally {
+    try {
+      await client.end();
+    } catch {
+      // Connection teardown failures must not mask the publish result.
+    }
+  }
+}
+
+function parseQuickConnectResultUrl(bodyText) {
+  const trimmed = String(bodyText ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed.url === "string" && parsed.url.trim()) {
+      return parsed.url.trim();
+    }
+  } catch {
+    // Body is not JSON; fall through to the plain-URL check.
+  }
+
+  if (/^https?:\/\/\S+$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+async function publishMarkdownOverQuickConnect(payload) {
+  const { currentPath, markdown, options, connection } = payload ?? {};
+  const conn = connection ?? {};
+  const url = String(conn.url ?? "").trim();
+  const targetPath = String(conn.path ?? "").trim();
+  const token = String(conn.token ?? "");
+
+  if (!url) {
+    throw new Error("A QuickConnect URL is required to publish.");
+  }
+  if (!targetPath) {
+    throw new Error("A QuickConnect path is required to publish.");
+  }
+
+  console.log(`[publish] QuickConnect POST to ${url} (path=${targetPath})`);
+
+  // Reuse the same self-contained HTML render used by SFTP publish and HTML export.
+  console.log("[publish] rendering self-contained HTML...");
+  const html = await withTimeout(
+    renderMarkdownSelfContainedHtml(markdown, currentPath, options ?? {}),
+    30000,
+    "Publish HTML render"
+  );
+  console.log(`[publish] HTML rendered (${html.length} bytes); sending HTTP POST...`);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        Authorization: `Bearer ${token}`,
+        "X-QuickConnect-Path": targetPath
+      },
+      body: html,
+      signal: AbortSignal.timeout(30000)
+    });
+  } catch (error) {
+    if (error && error.name === "TimeoutError") {
+      throw new Error("The QuickConnect request timed out.");
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not reach the QuickConnect server: ${message}`);
+  }
+
+  let bodyText = "";
+  try {
+    bodyText = await response.text();
+  } catch {
+    bodyText = "";
+  }
+
+  if (!response.ok) {
+    const snippet = bodyText ? ` - ${bodyText.slice(0, 200)}` : "";
+    throw new Error(`The QuickConnect server responded ${response.status} ${response.statusText}${snippet}`);
+  }
+
+  console.log(`[publish] QuickConnect succeeded (${response.status})`);
+  return { published: true, url: parseQuickConnectResultUrl(bodyText) };
+}
+
 function getComparableFilePath(filePath) {
   const resolvedFilePath = path.resolve(filePath);
   return process.platform === "win32" ? resolvedFilePath.toLowerCase() : resolvedFilePath;
@@ -2449,6 +2725,7 @@ function requestAppQuit() {
 
 function createWindow(options = {}) {
   const { filePath } = options;
+  const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
     title: "Nexus",
     width: 1280,
@@ -2457,6 +2734,11 @@ function createWindow(options = {}) {
     minHeight: 640,
     backgroundColor: "#f6f2ea",
     icon: getAppIconPath(),
+    // Custom in-app titlebar (see src/components/titlebar). On macOS we keep the
+    // native traffic lights via "hidden"; on Windows/Linux we go fully frameless.
+    ...(isMac
+      ? { titleBarStyle: "hidden", trafficLightPosition: { x: 12, y: 11 } }
+      : { frame: false }),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -2469,6 +2751,15 @@ function createWindow(options = {}) {
   const webContentsId = window.webContents.id;
 
   closeStates.set(window, { allowed: false, pending: false });
+
+  // Keep the custom titlebar's maximize/restore button in sync with the window state.
+  const sendMaximizeState = () => {
+    if (!window.isDestroyed()) {
+      window.webContents.send("window:maximize-changed", window.isMaximized());
+    }
+  };
+  window.on("maximize", sendMaximizeState);
+  window.on("unmaximize", sendMaximizeState);
 
   if (filePath) {
     pendingInitialFiles.set(webContentsId, readMarkdownFile(filePath));
@@ -2496,6 +2787,13 @@ function createWindow(options = {}) {
     pendingInitialFiles.delete(webContentsId);
     closeStates.delete(window);
 
+    for (const [requestId, pending] of sftpPendingHostKeys.entries()) {
+      if (pending.webContentsId === webContentsId) {
+        pending.resolve(false);
+        sftpPendingHostKeys.delete(requestId);
+      }
+    }
+
     const record = mcpWindowRecords.get(webContentsId);
     if (record) {
       mcpWindowRecords.delete(webContentsId);
@@ -2517,6 +2815,42 @@ function createWindow(options = {}) {
 
   window.webContents.on("context-menu", (_event, params) => {
     showEditorContextMenu(window, params);
+  });
+
+  // Open web links (e.g. the link popover's "open" button, which calls window.open)
+  // in the user's default browser instead of spawning a new Electron window.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^(https?|mailto):/i.test(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  // Never let an external link navigate the app window away from its own document;
+  // route external web links to the default browser instead.
+  window.webContents.on("will-navigate", (event, url) => {
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      return;
+    }
+
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      return;
+    }
+
+    let current = null;
+    try {
+      current = new URL(window.webContents.getURL());
+    } catch {
+      current = null;
+    }
+
+    if (!current || target.host !== current.host) {
+      event.preventDefault();
+      void shell.openExternal(url);
+    }
   });
 
   if (isDev) {
@@ -2567,11 +2901,23 @@ function runEditCommand(window, command) {
   if (command === "paste") {
     window.webContents.paste();
   }
+
+  if (command === "undo") {
+    window.webContents.undo();
+  }
+
+  if (command === "redo") {
+    window.webContents.redo();
+  }
 }
 
 const menuState = {
   editorZoomPercent: 100,
-  showInvisibleCharacters: false
+  showInvisibleCharacters: false,
+  outlineVisible: false,
+  pageOrientation: "portrait",
+  responsiveContentWrappingEnabled: true,
+  paperViewEnabled: true
 };
 
 function buildMenu() {
@@ -2667,6 +3013,14 @@ function buildMenu() {
           click: () => sendMenuAction("exportPdf")
         },
         {
+          label: "Publish as HTML over SFTP…",
+          click: () => sendMenuAction("publishWeb")
+        },
+        {
+          label: "Publish as HTML over QuickConnect…",
+          click: () => sendMenuAction("publishQuickConnect")
+        },
+        {
           type: "separator"
         },
         {
@@ -2754,6 +3108,28 @@ function buildMenu() {
           type: "checkbox",
           checked: menuState.showInvisibleCharacters,
           click: () => sendMenuAction("toggleShowInvisibles")
+        },
+        {
+          type: "separator"
+        },
+        {
+          label: "Show Outline",
+          type: "checkbox",
+          checked: menuState.outlineVisible,
+          click: () => sendMenuAction("toggleOutline")
+        },
+        {
+          label: "Landscape Orientation",
+          type: "checkbox",
+          checked: menuState.pageOrientation === "landscape",
+          click: () => sendMenuAction("togglePageOrientation")
+        },
+        {
+          label: "Responsive Wrapping",
+          type: "checkbox",
+          checked: menuState.responsiveContentWrappingEnabled,
+          enabled: !menuState.paperViewEnabled,
+          click: () => sendMenuAction("toggleResponsiveWrapping")
         }
       ]
     },
@@ -3057,6 +3433,75 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
   }
 });
 
+ipcMain.handle("sftp:publish", async (event, payload) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+
+  try {
+    const result = await publishMarkdownOverSftp(window, payload);
+    if (result.canceled) {
+      return { ok: false, canceled: true };
+    }
+    return { ok: true, remotePath: result.remotePath, url: result.url ?? null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log("[publish] FAILED:", message);
+    await showPublishErrorForWindow(window, message);
+    return { ok: false, error: message };
+  }
+});
+
+ipcMain.handle("quickconnect:publish", async (event, payload) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+
+  try {
+    const result = await publishMarkdownOverQuickConnect(payload);
+    return { ok: true, url: result.url ?? null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log("[publish] QuickConnect FAILED:", message);
+    await showPublishErrorForWindow(window, message);
+    return { ok: false, error: message };
+  }
+});
+
+ipcMain.on("sftp:host-key-decision", (_event, payload) => {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  const { requestId, decision } = payload;
+  if (typeof requestId !== "string") {
+    return;
+  }
+
+  const pending = sftpPendingHostKeys.get(requestId);
+  if (!pending) {
+    console.log(`[publish] host-key decision for unknown requestId=${requestId} (ignored)`);
+    return;
+  }
+
+  console.log(`[publish] host-key decision received: ${decision} (requestId=${requestId})`);
+  sftpPendingHostKeys.delete(requestId);
+  pending.resolve(decision === "accept");
+});
+
+ipcMain.handle("dialog:select-private-key", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const options = {
+    title: "Select Private Key",
+    properties: ["openFile"]
+  };
+  const result = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  return { canceled: false, filePath: path.resolve(result.filePaths[0]) };
+});
+
 ipcMain.handle("image:select-local", async () => {
   const result = await selectImageFile();
   if (result.canceled) {
@@ -3095,6 +3540,45 @@ ipcMain.handle("image:resolve-preview", (_event, payload) => {
 ipcMain.handle("edit:command", (event, command) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   runEditCommand(window, command);
+});
+
+ipcMain.handle("window:minimize", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window && !window.isDestroyed()) {
+    window.minimize();
+  }
+});
+
+ipcMain.handle("window:toggle-maximize", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  if (window.isMaximized()) {
+    window.unmaximize();
+  } else {
+    window.maximize();
+  }
+});
+
+ipcMain.handle("window:close", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window && !window.isDestroyed()) {
+    window.close();
+  }
+});
+
+ipcMain.handle("window:is-maximized", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  return Boolean(window && !window.isDestroyed() && window.isMaximized());
+});
+
+ipcMain.handle("window:new", () => {
+  createWindow();
+});
+
+ipcMain.handle("app:quit", () => {
+  requestAppQuit();
 });
 
 ipcMain.handle("clipboard:write-html", (_event, payload) => {
@@ -3212,13 +3696,45 @@ ipcMain.handle("mcp:configure", async (_event, config) => {
       : 39125;
   const nextAuthMode = config.authMode === "none" ? "none" : "bearer";
   const nextToken = typeof config.bearerToken === "string" ? config.bearerToken : "";
+  const nextNgrokEnabled = typeof config.ngrokEnabled === "boolean" ? config.ngrokEnabled : false;
+  const nextNgrokDomain = typeof config.ngrokDomain === "string" ? config.ngrokDomain.trim() : "";
+  const nextNgrokUseCustomPath =
+    typeof config.ngrokUseCustomPath === "boolean" ? config.ngrokUseCustomPath : false;
+  const nextNgrokPath = typeof config.ngrokPath === "string" ? config.ngrokPath.trim() : "";
+  // Use the explicit path only when the user opted in and provided one; otherwise resolve from PATH.
+  const nextNgrokCommand = nextNgrokUseCustomPath && nextNgrokPath ? nextNgrokPath : "ngrok";
 
-  return mcpServer.configure({
+  const result = await mcpServer.configure({
     enabled: nextEnabled,
     port: nextPort,
     authMode: nextAuthMode,
     bearerToken: nextToken
   });
+
+  // Manage the optional ngrok tunnel based on the live server state. A tunnel failure
+  // must not affect the local MCP server result.
+  const shouldTunnel = result.ok && result.listening && nextNgrokEnabled;
+  if (shouldTunnel) {
+    await ngrokTunnel.ensureTunnel({
+      port: result.port ?? nextPort,
+      domain: nextNgrokDomain,
+      command: nextNgrokCommand
+    });
+  } else {
+    await ngrokTunnel.stopTunnel();
+  }
+
+  const tunnelState = ngrokTunnel.getTunnelState();
+  return {
+    ...result,
+    ngrok: {
+      enabled: nextNgrokEnabled,
+      connected: tunnelState.connected,
+      url: tunnelState.url,
+      error: tunnelState.error,
+      domainFallback: Boolean(tunnelState.domainFallback)
+    }
+  };
 });
 
 ipcMain.on("mcp:register-window", (event, payload) => {
@@ -3338,6 +3854,30 @@ ipcMain.on("menu:set-state", (_event, state) => {
     changed = true;
   }
 
+  if (typeof state.outlineVisible === "boolean" &&
+      state.outlineVisible !== menuState.outlineVisible) {
+    menuState.outlineVisible = state.outlineVisible;
+    changed = true;
+  }
+
+  if ((state.pageOrientation === "portrait" || state.pageOrientation === "landscape") &&
+      state.pageOrientation !== menuState.pageOrientation) {
+    menuState.pageOrientation = state.pageOrientation;
+    changed = true;
+  }
+
+  if (typeof state.responsiveContentWrappingEnabled === "boolean" &&
+      state.responsiveContentWrappingEnabled !== menuState.responsiveContentWrappingEnabled) {
+    menuState.responsiveContentWrappingEnabled = state.responsiveContentWrappingEnabled;
+    changed = true;
+  }
+
+  if (typeof state.paperViewEnabled === "boolean" &&
+      state.paperViewEnabled !== menuState.paperViewEnabled) {
+    menuState.paperViewEnabled = state.paperViewEnabled;
+    changed = true;
+  }
+
   if (changed) {
     buildMenu();
   }
@@ -3413,4 +3953,5 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   rejectAllPendingMcpWrites("app-quit");
   void mcpServer.stop();
+  void ngrokTunnel.stopTunnel();
 });

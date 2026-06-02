@@ -8,7 +8,17 @@
       "Bash(node --check electron/preload.cjs)",
       "Bash(node --check electron/mcp-server.cjs)",
       "PowerShell(node -e \"const d = require\\('@turbodocx/html-to-docx'\\); console.log\\(typeof d\\);\")",
-      "Bash(node -e \"const p = require\\('./node_modules/katex/package.json'\\); console.log\\(p.version, '|', p.main, '|', p.module || ''\\);\")"
+      "Bash(node -e \"const p = require\\('./node_modules/katex/package.json'\\); console.log\\(p.version, '|', p.main, '|', p.module || ''\\);\")",
+      "Bash(npx vitest *)",
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "Bash(node _sftp_smoke.cjs)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(ngrok version *)",
+      "Bash(node _ngrok_probe.cjs)",
+      "Bash(npm uninstall *)",
+      "Bash(node --check electron/ngrok-tunnel.cjs)",
+      "Bash(xargs grep -l \"window.electron\\\\|window.nexus\")"
     ]
   }
 }

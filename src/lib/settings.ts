@@ -74,6 +74,42 @@ export type McpServerSettings = {
   port: number;
   authMode: McpAuthMode;
   bearerToken: string;
+  /** Optional ngrok tunnel that exposes the loopback MCP server publicly. Off by default. */
+  ngrokEnabled: boolean;
+  /** Optional reserved/custom ngrok domain; used when set, otherwise a random URL is assigned. */
+  ngrokDomain: string;
+  /** When true, spawn the ngrok binary at ngrokPath instead of resolving it from PATH. */
+  ngrokUseCustomPath: boolean;
+  /** Explicit path to the ngrok executable; used only when ngrokUseCustomPath is true and non-empty. */
+  ngrokPath: string;
+};
+
+export const PUBLISH_TARGET_DEFAULT_PORT = 22;
+export const PUBLISH_TARGET_MIN_PORT = 1;
+export const PUBLISH_TARGET_MAX_PORT = 65535;
+
+/**
+ * Non-secret SFTP publish target fields persisted per OS profile to pre-fill the
+ * Publish as Web dialog. Secrets (password, passphrase, private-key contents) are
+ * never stored here.
+ */
+export type PublishTargetSettings = {
+  host: string;
+  port: number;
+  username: string;
+  remoteDirectory: string;
+  publicBaseUrl: string;
+};
+
+/**
+ * QuickConnect HTTP publish target persisted per OS profile to pre-fill the
+ * QuickConnect dialog. Unlike the SFTP target, the bearer token IS persisted here
+ * by explicit user choice for one-click publishing.
+ */
+export type QuickConnectSettings = {
+  url: string;
+  path: string;
+  token: string;
 };
 
 export type EditorFontFamily = (typeof EDITOR_FONT_OPTIONS)[number]["value"];
@@ -90,11 +126,14 @@ export type UserSettings = {
   themePreference: EditorThemePreference;
   paperViewEnabled: boolean;
   responsiveContentWrappingEnabled: boolean;
+  outlineVisible: boolean;
   showInvisibleCharacters: boolean;
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
   pageMargins: EditorPageMargins;
   mcpServer: McpServerSettings;
+  publishTarget: PublishTargetSettings;
+  quickConnect: QuickConnectSettings;
 };
 
 const SETTINGS_KEY_PREFIX = "nexus:settings:v1";
@@ -168,6 +207,10 @@ function sanitizeShowInvisibleCharacters(value: unknown) {
   return typeof value === "boolean" ? value : false;
 }
 
+function sanitizeOutlineVisible(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
 export function createDefaultPageMargins(): EditorPageMargins {
   return {
     top: DEFAULT_EDITOR_PAGE_MARGIN_INCHES,
@@ -219,7 +262,11 @@ export function createDefaultMcpServerSettings(): McpServerSettings {
     enabled: false,
     port: MCP_SERVER_DEFAULT_PORT,
     authMode: "bearer",
-    bearerToken: ""
+    bearerToken: "",
+    ngrokEnabled: false,
+    ngrokDomain: "",
+    ngrokUseCustomPath: false,
+    ngrokPath: ""
   };
 }
 
@@ -230,7 +277,12 @@ export function sanitizeMcpServerSettings(value: unknown): McpServerSettings {
     enabled: typeof source.enabled === "boolean" ? source.enabled : false,
     port: sanitizeMcpServerPort(source.port),
     authMode: sanitizeMcpAuthMode(source.authMode),
-    bearerToken: sanitizeMcpBearerToken(source.bearerToken)
+    bearerToken: sanitizeMcpBearerToken(source.bearerToken),
+    ngrokEnabled: typeof source.ngrokEnabled === "boolean" ? source.ngrokEnabled : false,
+    ngrokDomain: typeof source.ngrokDomain === "string" ? source.ngrokDomain.trim() : "",
+    ngrokUseCustomPath:
+      typeof source.ngrokUseCustomPath === "boolean" ? source.ngrokUseCustomPath : false,
+    ngrokPath: typeof source.ngrokPath === "string" ? source.ngrokPath.trim() : ""
   };
 }
 
@@ -254,6 +306,66 @@ export function generateMcpBearerToken(): string {
   return token;
 }
 
+export function sanitizePublishTargetPort(value: unknown): number {
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= PUBLISH_TARGET_MIN_PORT &&
+    value <= PUBLISH_TARGET_MAX_PORT
+  ) {
+    return value;
+  }
+
+  return PUBLISH_TARGET_DEFAULT_PORT;
+}
+
+function sanitizePublishTargetString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function createDefaultPublishTarget(): PublishTargetSettings {
+  return {
+    host: "",
+    port: PUBLISH_TARGET_DEFAULT_PORT,
+    username: "",
+    remoteDirectory: "",
+    publicBaseUrl: ""
+  };
+}
+
+export function sanitizePublishTarget(value: unknown): PublishTargetSettings {
+  const source =
+    typeof value === "object" && value !== null ? (value as Partial<PublishTargetSettings>) : {};
+
+  return {
+    host: sanitizePublishTargetString(source.host),
+    port: sanitizePublishTargetPort(source.port),
+    username: sanitizePublishTargetString(source.username),
+    remoteDirectory: sanitizePublishTargetString(source.remoteDirectory),
+    publicBaseUrl: sanitizePublishTargetString(source.publicBaseUrl)
+  };
+}
+
+export function createDefaultQuickConnect(): QuickConnectSettings {
+  return {
+    url: "",
+    path: "",
+    token: ""
+  };
+}
+
+export function sanitizeQuickConnect(value: unknown): QuickConnectSettings {
+  const source =
+    typeof value === "object" && value !== null ? (value as Partial<QuickConnectSettings>) : {};
+
+  return {
+    url: sanitizePublishTargetString(source.url),
+    path: sanitizePublishTargetString(source.path),
+    token: sanitizePublishTargetString(source.token)
+  };
+}
+
 export function sanitizeEditorPageMargins(value: unknown): EditorPageMargins {
   const margins = typeof value === "object" && value !== null ? value : {};
 
@@ -273,11 +385,14 @@ export function createDefaultSettings(): UserSettings {
     themePreference: DEFAULT_EDITOR_THEME_PREFERENCE,
     paperViewEnabled: true,
     responsiveContentWrappingEnabled: true,
+    outlineVisible: false,
     showInvisibleCharacters: false,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
     pageMargins: createDefaultPageMargins(),
-    mcpServer: createDefaultMcpServerSettings()
+    mcpServer: createDefaultMcpServerSettings(),
+    publishTarget: createDefaultPublishTarget(),
+    quickConnect: createDefaultQuickConnect()
   };
 }
 
@@ -306,13 +421,16 @@ export function loadSettings(profileName: string): UserSettings {
       responsiveContentWrappingEnabled: sanitizeResponsiveContentWrappingEnabled(
         parsed.responsiveContentWrappingEnabled
       ),
+      outlineVisible: sanitizeOutlineVisible(parsed.outlineVisible),
       showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)
         ? parsed.pageOrientation
         : DEFAULT_EDITOR_PAGE_ORIENTATION,
       pageMargins: sanitizeEditorPageMargins(parsed.pageMargins),
-      mcpServer: sanitizeMcpServerSettings(parsed.mcpServer)
+      mcpServer: sanitizeMcpServerSettings(parsed.mcpServer),
+      publishTarget: sanitizePublishTarget(parsed.publishTarget),
+      quickConnect: sanitizeQuickConnect(parsed.quickConnect)
     };
   } catch {
     return createDefaultSettings();

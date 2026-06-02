@@ -1,6 +1,6 @@
 export {};
 
-type NexusMenuAction =
+export type NexusMenuAction =
   | "new"
   | "open"
   | "loadDemo"
@@ -16,15 +16,24 @@ type NexusMenuAction =
   | "zoomOut"
   | "resetZoom"
   | "toggleShowInvisibles"
+  | "toggleOutline"
+  | "togglePageOrientation"
+  | "toggleResponsiveWrapping"
   | "settings"
   | "about"
-  | "copyHtml";
+  | "copyHtml"
+  | "publishWeb"
+  | "publishQuickConnect";
 
 type NexusMenuState = {
   editorZoomPercent?: number;
   showInvisibleCharacters?: boolean;
+  outlineVisible?: boolean;
+  pageOrientation?: "portrait" | "landscape";
+  responsiveContentWrappingEnabled?: boolean;
+  paperViewEnabled?: boolean;
 };
-type NexusEditCommand = "cut" | "copy" | "paste";
+type NexusEditCommand = "cut" | "copy" | "paste" | "undo" | "redo";
 
 type OpenMarkdownResult =
   | { canceled: true }
@@ -77,11 +86,23 @@ type ConfigureMcpServerInput = {
   port: number;
   authMode: "bearer" | "none";
   bearerToken: string;
+  ngrokEnabled: boolean;
+  ngrokDomain: string;
+  ngrokUseCustomPath: boolean;
+  ngrokPath: string;
+};
+
+export type McpNgrokStatus = {
+  enabled: boolean;
+  connected: boolean;
+  url: string | null;
+  error: string | null;
+  domainFallback: boolean;
 };
 
 type ConfigureMcpServerResult =
-  | { ok: true; listening: boolean; port?: number }
-  | { ok: false; listening?: false; error: string };
+  | { ok: true; listening: boolean; port?: number; ngrok: McpNgrokStatus }
+  | { ok: false; listening?: false; error: string; ngrok?: McpNgrokStatus };
 
 type RegisterMcpWindowInput = {
   windowId: string;
@@ -111,6 +132,60 @@ type McpConfirmWriteEvent = {
 };
 
 type McpWriteDecision = "approve" | "reject";
+
+type PublishWebConnection = {
+  host: string;
+  port: number;
+  username: string;
+  remoteDirectory: string;
+  remoteFilename: string;
+  publicBaseUrl: string;
+};
+
+type PublishWebAuth =
+  | { kind: "password"; password: string }
+  | { kind: "key"; privateKeyPath: string; passphrase?: string };
+
+type PublishWebInput = {
+  transport: "sftp";
+  currentPath: string | undefined;
+  markdown: string;
+  options?: ExportMarkdownHtmlOptions;
+  connection: PublishWebConnection;
+  auth: PublishWebAuth;
+};
+
+type PublishWebResult =
+  | { ok: true; remotePath: string; url: string | null }
+  | { ok: false; canceled: true }
+  | { ok: false; error: string };
+
+type SelectPrivateKeyResult = { canceled: true } | { canceled: false; filePath: string };
+
+type QuickConnectInput = {
+  transport: "quickconnect";
+  currentPath: string | undefined;
+  markdown: string;
+  options?: ExportMarkdownHtmlOptions;
+  connection: {
+    url: string;
+    path: string;
+    token: string;
+  };
+};
+
+type QuickConnectResult =
+  | { ok: true; url: string | null }
+  | { ok: false; error: string };
+
+type ConfirmHostKeyEvent = {
+  requestId: string;
+  host: string;
+  port: number;
+  fingerprint: string;
+};
+
+type HostKeyDecision = "accept" | "reject";
 
 declare global {
   interface Window {
@@ -162,6 +237,18 @@ declare global {
       unregisterMcpWindow(): void;
       onMcpConfirmWrite(callback: (event: McpConfirmWriteEvent) => void): () => void;
       resolveMcpWrite(requestId: string, decision: McpWriteDecision): void;
+      publishWeb(payload: PublishWebInput): Promise<PublishWebResult>;
+      publishQuickConnect(payload: QuickConnectInput): Promise<QuickConnectResult>;
+      selectPrivateKeyFile(): Promise<SelectPrivateKeyResult>;
+      onConfirmHostKey(callback: (event: ConfirmHostKeyEvent) => void): () => void;
+      resolveHostKey(requestId: string, decision: HostKeyDecision): void;
+      minimizeWindow(): Promise<void>;
+      toggleMaximizeWindow(): Promise<void>;
+      closeWindow(): Promise<void>;
+      isWindowMaximized(): Promise<boolean>;
+      onWindowMaximizeChange(callback: (isMaximized: boolean) => void): () => void;
+      newWindow(): Promise<void>;
+      quitApp(): Promise<void>;
     };
   }
 }

@@ -17,6 +17,7 @@ import type {
   McpAuthMode,
   McpServerSettings
 } from "../../lib/settings";
+import type { McpNgrokStatus } from "../../electron";
 import {
   EDITOR_FONT_OPTIONS,
   EDITOR_FONT_SIZE_MAX_PIXELS,
@@ -44,6 +45,7 @@ type SettingsDialogProps = {
   fontFamily: EditorFontFamily;
   fontSizePixels: number;
   mcpServer: McpServerSettings;
+  mcpNgrokStatus: McpNgrokStatus | null;
   onFontFamilyChange: (fontFamily: EditorFontFamily) => void;
   onFontSizePixelsChange: (fontSizePixels: number) => void;
   onMcpServerChange: (next: McpServerSettings) => void;
@@ -86,6 +88,7 @@ function SettingsDialog({
   fontFamily,
   fontSizePixels,
   mcpServer,
+  mcpNgrokStatus,
   onFontFamilyChange,
   onFontSizePixelsChange,
   onMcpServerChange,
@@ -157,6 +160,45 @@ function SettingsDialog({
 
   const mcpConnectionUrl = mcpServer.enabled
     ? `http://${MCP_SERVER_DEFAULT_HOST}:${mcpServer.port}/mcp`
+    : "";
+
+  function handleMcpNgrokEnabledChange(nextEnabled: boolean) {
+    onMcpServerChange({
+      ...mcpServer,
+      ngrokEnabled: nextEnabled
+    });
+  }
+
+  function handleMcpNgrokDomainChange(nextDomain: string) {
+    onMcpServerChange({
+      ...mcpServer,
+      ngrokDomain: nextDomain
+    });
+  }
+
+  function handleMcpNgrokUseCustomPathChange(nextUseCustomPath: boolean) {
+    onMcpServerChange({
+      ...mcpServer,
+      ngrokUseCustomPath: nextUseCustomPath
+    });
+  }
+
+  function handleMcpNgrokPathChange(nextPath: string) {
+    onMcpServerChange({
+      ...mcpServer,
+      ngrokPath: nextPath
+    });
+  }
+
+  function copyToClipboard(value: string) {
+    if (value && navigator?.clipboard?.writeText) {
+      void navigator.clipboard.writeText(value);
+    }
+  }
+
+  const ngrokPublicUrl = mcpNgrokStatus?.connected ? mcpNgrokStatus.url ?? "" : "";
+  const ngrokPublicMcpUrl = ngrokPublicUrl
+    ? `${ngrokPublicUrl.replace(/\/+$/, "")}/mcp`
     : "";
   function handleFontSizeChange(value: string) {
     const nextFontSize = Number.parseFloat(value);
@@ -413,6 +455,115 @@ function SettingsDialog({
                     Regenerate token
                   </Button>
                 </div>
+              </>
+            )}
+
+            {mcpServer.enabled && (
+              <>
+                <label className="nexus-settings-field">
+                  <span className="nexus-settings-label">Expose via ngrok tunnel</span>
+                  <input
+                    type="checkbox"
+                    checked={mcpServer.ngrokEnabled}
+                    onChange={(event) => handleMcpNgrokEnabledChange(event.target.checked)}
+                  />
+                </label>
+
+                {mcpServer.ngrokEnabled && (
+                  <>
+                    <p className="nexus-settings-help">
+                      The tunnel runs your installed ngrok CLI to forward a public ngrok URL to the
+                      loopback MCP server. The ngrok agent connects outbound, so no inbound port is
+                      opened. Requires the ngrok CLI on your PATH and an authtoken configured once
+                      with <code>ngrok config add-authtoken &lt;token&gt;</code>; Nexus does not store
+                      the authtoken.
+                    </p>
+
+                    <label className="nexus-settings-field">
+                      <span className="nexus-settings-label">Use a custom ngrok path</span>
+                      <input
+                        type="checkbox"
+                        checked={mcpServer.ngrokUseCustomPath}
+                        onChange={(event) =>
+                          handleMcpNgrokUseCustomPathChange(event.target.checked)
+                        }
+                      />
+                    </label>
+
+                    {mcpServer.ngrokUseCustomPath && (
+                      <label className="nexus-settings-field">
+                        <span className="nexus-settings-label">ngrok executable path</span>
+                        <input
+                          className="nexus-settings-input"
+                          type="text"
+                          autoComplete="off"
+                          placeholder="/opt/homebrew/bin/ngrok"
+                          value={mcpServer.ngrokPath}
+                          onChange={(event) => handleMcpNgrokPathChange(event.target.value)}
+                        />
+                      </label>
+                    )}
+
+                    {mcpServer.authMode === "none" && (
+                      <p className="nexus-settings-warning">
+                        The tunnel will expose an unauthenticated MCP server to the public internet.
+                        Anyone with the URL can call read tools; writes still require approval. Use
+                        bearer-token authentication instead unless you understand the risk.
+                      </p>
+                    )}
+
+                    <label className="nexus-settings-field">
+                      <span className="nexus-settings-label">Custom domain (optional)</span>
+                      <input
+                        className="nexus-settings-input"
+                        type="text"
+                        autoComplete="off"
+                        placeholder="mcp.example.ngrok.app"
+                        value={mcpServer.ngrokDomain}
+                        onChange={(event) => handleMcpNgrokDomainChange(event.target.value)}
+                      />
+                    </label>
+                    <p className="nexus-settings-help">
+                      Use a reserved or custom domain from your ngrok account. Leave blank for a
+                      random URL. If the domain is unavailable, Nexus falls back to a random URL.
+                    </p>
+
+                    {mcpServer.ngrokDomain.trim() && mcpNgrokStatus?.domainFallback && (
+                      <p className="nexus-settings-warning">
+                        The requested domain was not available, so a temporary ngrok URL is in use.
+                        Confirm the domain is reserved on your ngrok account.
+                      </p>
+                    )}
+
+                    {mcpNgrokStatus?.error && (
+                      <p className="nexus-settings-warning">Tunnel error: {mcpNgrokStatus.error}</p>
+                    )}
+
+                    {ngrokPublicMcpUrl && (
+                      <>
+                        <label className="nexus-settings-field">
+                          <span className="nexus-settings-label">Public MCP endpoint</span>
+                          <input
+                            className="nexus-settings-input"
+                            readOnly
+                            type="text"
+                            value={ngrokPublicMcpUrl}
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                        </label>
+                        <div className="nexus-settings-mcp-actions">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => copyToClipboard(ngrokPublicMcpUrl)}
+                          >
+                            Copy public URL
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
               </>
             )}
           </fieldset>

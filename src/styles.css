@@ -215,9 +215,104 @@ button:hover {
 
 .editor-column {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
-  width: 100%;
+  min-width: 0;
+}
+
+.nexus-outline {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 16rem;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nexus-outline-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.nexus-outline-header-icon {
+  height: 15px;
+  width: 15px;
+}
+
+.nexus-outline-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nexus-outline-empty {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0.85rem 0.85rem;
+}
+
+.nexus-outline-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem 0.4rem 0.85rem;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.nexus-outline-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.32rem 0.5rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-outline-item:hover {
+  background: var(--toolbar-hover);
+  border-color: transparent;
+}
+
+.nexus-outline-item:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.nexus-outline-item-level-1 {
+  font-weight: 600;
+}
+
+.nexus-outline-item-level-2 {
+  font-weight: 500;
+}
+
+.nexus-outline-item-level-4,
+.nexus-outline-item-level-5,
+.nexus-outline-item-level-6 {
+  color: var(--muted);
 }
 
 .editor-surface {
@@ -246,6 +341,23 @@ button:hover {
   min-height: 0;
   min-width: 0;
   width: 100%;
+}
+
+/* Outline overlays the editor's left edge, starting below the toolbar, so the
+   toolbar spans the full width and isn't squeezed by the sidebar. The outline only
+   renders in rich-text mode, where the toolbar is a fixed 64px bar. */
+.editor-surface > .nexus-outline {
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  top: 64px;
+  width: 16rem;
+  z-index: 15;
+}
+
+/* Make room so editor content isn't hidden behind the overlaid outline. */
+.editor-surface.editor-surface-with-outline .mdxeditor-rich-text-editor {
+  padding-left: 16rem;
 }
 
 .nexus-context-menu-content {
@@ -292,6 +404,205 @@ button:hover {
 .nexus-context-menu-shortcut {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+/* ── Custom window titlebar ───────────────────────────────────────────── */
+.nexus-titlebar {
+  -webkit-app-region: drag;
+  align-items: center;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  height: 38px;
+  justify-content: space-between;
+  position: relative;
+  user-select: none;
+  z-index: 60;
+}
+
+.nexus-titlebar-left,
+.nexus-titlebar-right {
+  -webkit-app-region: no-drag;
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.nexus-titlebar-left {
+  padding-left: 0.35rem;
+}
+
+/* macOS: leave room for the native traffic lights (menu/controls render in the OS chrome). */
+.nexus-titlebar[data-platform="darwin"] {
+  padding-left: 78px;
+}
+
+.nexus-titlebar-title {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 0.4rem;
+  left: 50%;
+  max-width: 40vw;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.nexus-titlebar-title-text {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-titlebar-dirty {
+  background: var(--accent);
+  border-radius: 9999px;
+  flex: 0 0 auto;
+  height: 6px;
+  width: 6px;
+}
+
+.nexus-window-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  height: 38px;
+}
+
+.nexus-window-control {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  cursor: default;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+  width: 46px;
+}
+
+.nexus-window-control:hover {
+  background: var(--toolbar-hover);
+}
+
+.nexus-window-control:focus-visible {
+  outline: 2px solid var(--focus-ring-strong);
+  outline-offset: -2px;
+}
+
+.nexus-window-control svg {
+  height: 16px;
+  width: 16px;
+}
+
+.nexus-window-control-close:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* ── Titlebar menu bar (File / Edit / View / Settings / Help) ──────────── */
+.nexus-menubar {
+  -webkit-app-region: no-drag;
+  align-items: center;
+  display: flex;
+  gap: 0.1rem;
+}
+
+.nexus-menubar-trigger {
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  cursor: default;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.28rem 0.55rem;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.nexus-menubar-trigger:hover {
+  background: var(--toolbar-hover);
+}
+
+.nexus-menubar-trigger[data-state="open"] {
+  background: var(--toolbar-active);
+  color: var(--toolbar-icon-active);
+}
+
+.nexus-menubar-content {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: var(--context-shadow);
+  min-width: 13rem;
+  padding: 0.25rem;
+  z-index: 120;
+}
+
+.nexus-menubar-item {
+  align-items: center;
+  border-radius: calc(var(--radius) - 4px);
+  color: var(--ink);
+  cursor: default;
+  display: flex;
+  font-size: 0.85rem;
+  gap: 1.5rem;
+  justify-content: space-between;
+  line-height: 1;
+  min-height: 1.9rem;
+  outline: none;
+  padding: 0.45rem 0.55rem;
+  user-select: none;
+}
+
+.nexus-menubar-item[data-highlighted] {
+  background: var(--toolbar-hover);
+}
+
+.nexus-menubar-item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.nexus-menubar-checkbox-item {
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding-left: 0.4rem;
+}
+
+.nexus-menubar-item-indicator {
+  align-items: center;
+  display: inline-flex;
+  height: 1rem;
+  justify-content: center;
+  width: 1rem;
+}
+
+.nexus-menubar-item-indicator svg {
+  height: 14px;
+  width: 14px;
+}
+
+.nexus-menubar-separator {
+  background: var(--line);
+  height: 1px;
+  margin: 0.25rem -0.25rem;
+}
+
+.nexus-menubar-shortcut {
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .nexus-dialog-overlay {
@@ -572,6 +883,126 @@ button:hover {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.nexus-publish-dialog {
+  max-width: 540px;
+}
+
+.nexus-publish-form {
+  display: grid;
+  gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+}
+
+.nexus-publish-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.nexus-publish-field-wide {
+  min-width: 0;
+}
+
+.nexus-publish-auth-toggle {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.nexus-publish-key-row {
+  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.nexus-publish-help {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.nexus-publish-error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--danger);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nexus-publish-hostkey {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.nexus-publish-hostkey-title {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.nexus-publish-fingerprint {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.85rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 0.6rem 0.7rem;
+  white-space: pre-wrap;
+}
+
+.nexus-publish-hostkey-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.nexus-publish-result {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.nexus-publish-result-title {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.nexus-publish-result-path {
+  color: var(--muted);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.nexus-publish-url-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.nexus-publish-url {
+  color: var(--accent);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
 }
 
 .nexus-settings-preview {

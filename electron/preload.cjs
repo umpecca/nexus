@@ -4,6 +4,7 @@ const menuActionChannel = "menu:action";
 const closeRequestChannel = "app:request-close";
 const externalFileChangeChannel = "file:external-change";
 const mcpConfirmWriteChannel = "mcp:confirm-write";
+const sftpConfirmHostKeyChannel = "sftp:confirm-host-key";
 
 contextBridge.exposeInMainWorld("nexus", {
   platform: process.platform,
@@ -104,5 +105,45 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   resolveMcpWrite(requestId, decision) {
     ipcRenderer.send("mcp:write-decision", { requestId, decision });
+  },
+  publishWeb(payload) {
+    return ipcRenderer.invoke("sftp:publish", payload);
+  },
+  publishQuickConnect(payload) {
+    return ipcRenderer.invoke("quickconnect:publish", payload);
+  },
+  selectPrivateKeyFile() {
+    return ipcRenderer.invoke("dialog:select-private-key");
+  },
+  onConfirmHostKey(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(sftpConfirmHostKeyChannel, listener);
+    return () => ipcRenderer.removeListener(sftpConfirmHostKeyChannel, listener);
+  },
+  resolveHostKey(requestId, decision) {
+    ipcRenderer.send("sftp:host-key-decision", { requestId, decision });
+  },
+  minimizeWindow() {
+    return ipcRenderer.invoke("window:minimize");
+  },
+  toggleMaximizeWindow() {
+    return ipcRenderer.invoke("window:toggle-maximize");
+  },
+  closeWindow() {
+    return ipcRenderer.invoke("window:close");
+  },
+  isWindowMaximized() {
+    return ipcRenderer.invoke("window:is-maximized");
+  },
+  onWindowMaximizeChange(callback) {
+    const listener = (_event, isMaximized) => callback(isMaximized);
+    ipcRenderer.on("window:maximize-changed", listener);
+    return () => ipcRenderer.removeListener("window:maximize-changed", listener);
+  },
+  newWindow() {
+    return ipcRenderer.invoke("window:new");
+  },
+  quitApp() {
+    return ipcRenderer.invoke("app:quit");
   }
 });

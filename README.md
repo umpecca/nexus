@@ -7,3 +7,10 @@ Nexus is an application for creating/editing Markdown files. The goal is to have
 - native application based on web technologies using [Electron](https://www.electronjs.org/)
 - [react](https://react.dev/)
 - [mdxeditor](https://mdxeditor.dev/)
+
+## Publishing
+
+Nexus can publish a document as a self-contained HTML page to your own server,
+either over SFTP or over a simple HTTP endpoint called QuickConnect. If you want
+to build a server that accepts QuickConnect pushes, see the
+[QuickConnect Publishing Specification](docs/quickconnect.md).

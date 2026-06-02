@@ -34,6 +34,7 @@ import {
   saveSettings
 } from "./lib/settings";
 import type { EditorThemePreference } from "./lib/settings";
+import type { McpNgrokStatus, NexusMenuAction } from "./electron";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
@@ -41,6 +42,20 @@ import FileChangedDialog from "./components/editor/FileChangedDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
+import OutlineSidebar from "./components/editor/OutlineSidebar";
+import { Titlebar } from "./components/titlebar/Titlebar";
+import { extractOutline } from "./lib/outline";
+import PublishWebDialog from "./components/publish/PublishWebDialog";
+import type {
+  PendingHostKey,
+  PublishResult,
+  PublishSubmitValues
+} from "./components/publish/PublishWebDialog";
+import QuickConnectDialog from "./components/publish/QuickConnectDialog";
+import type {
+  QuickConnectFields,
+  QuickConnectPublishResult
+} from "./components/publish/QuickConnectDialog";
 import { katexCodeBlockDescriptor } from "./components/editor/KatexCodeBlock";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
@@ -94,6 +109,15 @@ function getDocumentName(filePath: string) {
   return parts[parts.length - 1] || filePath;
 }
 
+function slugifyForFilename(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return slug || "untitled";
+}
+
 function formatWindowTitle(filePath: string | undefined, isDirty: boolean) {
   const dirtyPrefix = isDirty ? "*" : "";
 
@@ -141,15 +165,18 @@ function DiffViewController({ request }: { request: number }) {
 }
 
 function ViewModeTracker({
-  viewModeRef
+  viewModeRef,
+  onModeChange
 }: {
   viewModeRef: React.MutableRefObject<ViewMode>;
+  onModeChange: (mode: ViewMode) => void;
 }) {
   const [mode] = useCellValues(viewMode$);
 
   useEffect(() => {
     viewModeRef.current = mode;
-  }, [mode, viewModeRef]);
+    onModeChange(mode);
+  }, [mode, onModeChange, viewModeRef]);
 
   return null;
 }
@@ -243,6 +270,7 @@ function App() {
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [mcpNgrokStatus, setMcpNgrokStatus] = useState<McpNgrokStatus | null>(null);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
     useState<ExternalFileChangePrompt | null>(null);
   const [pendingMcpWrite, setPendingMcpWrite] = useState<
@@ -250,6 +278,12 @@ function App() {
   >(null);
   const [parseError, setParseError] = useState<ParseErrorInfo | null>(null);
   const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
+  const [editorViewMode, setEditorViewMode] = useState<ViewMode>("rich-text");
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
+  const [pendingHostKey, setPendingHostKey] = useState<
+    (PendingHostKey & { requestId: string }) | null
+  >(null);
   const editorRef = useRef<MDXEditorMethods>(null);
   const editorSurfaceRef = useRef<HTMLDivElement>(null);
   const editorScrollSnapshotRef = useRef<ScrollSnapshot>({ ratio: 0, top: 0 });
@@ -281,14 +315,32 @@ function App() {
     loadDocument,
     openSettings: () => setSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
+    openPublishWeb: () => setPublishOpen(true),
+    openPublishQuickConnect: () => setQuickConnectOpen(true),
     toggleShowInvisibles: () =>
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
       })),
+    toggleOutline: () =>
+      setSettings((current) => ({
+        ...current,
+        outlineVisible: !current.outlineVisible
+      })),
+    togglePageOrientation: () =>
+      setSettings((current) => ({
+        ...current,
+        pageOrientation: current.pageOrientation === "landscape" ? "portrait" : "landscape"
+      })),
+    toggleResponsiveWrapping: () =>
+      setSettings((current) => ({
+        ...current,
+        responsiveContentWrappingEnabled: !current.responsiveContentWrappingEnabled
+      })),
     copyDocumentAsHtml
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
+  const titlebarFileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : null;
   const editorSurfaceClassName = [
     "editor-surface",
     settings.paperViewEnabled ? "editor-surface-paper" : "editor-surface-plain",
@@ -322,6 +374,21 @@ function App() {
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
   const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
   const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
+  const outlineHeadings = useMemo(() => extractOutline(markdown), [markdown]);
+  const showOutlineSidebar = settings.outlineVisible && editorViewMode === "rich-text";
+  const defaultPublishFilename = useMemo(() => {
+    if (filePath) {
+      const base = getDocumentName(filePath).replace(/\.[^.]+$/, "");
+      return `${slugifyForFilename(base)}.html`;
+    }
+
+    const firstHeading = outlineHeadings[0]?.text;
+    if (firstHeading) {
+      return `${slugifyForFilename(firstHeading)}.html`;
+    }
+
+    return "untitled.html";
+  }, [filePath, outlineHeadings]);
   const imagePreviewHandler = useMemo(() => {
     return (imageSource: string) => {
       return window.nexus?.resolveImagePreview(filePath, imageSource) ?? Promise.resolve(imageSource);
@@ -367,6 +434,43 @@ function App() {
     });
   }, []);
 
+  const scrollOutlineHeadingIntoView = useCallback((headingIndex: number) => {
+    const root = editorSurfaceRef.current;
+    if (!root) {
+      return;
+    }
+
+    const richTextEditor = root.querySelector<HTMLElement>(".mdxeditor-rich-text-editor");
+    const headingScope = richTextEditor ?? root;
+    const headings = Array.from(
+      headingScope.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")
+    );
+    const target = headings[headingIndex];
+    if (!target) {
+      return;
+    }
+
+    const scrollElement =
+      getEditorScrollElements(root).find(
+        (element) => element.contains(target) && element.scrollHeight > element.clientHeight
+      ) ?? getActiveEditorScrollElement(root);
+
+    if (!scrollElement) {
+      target.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+
+    const containerRect = scrollElement.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const comfort = Math.min(24, scrollElement.clientHeight * 0.1);
+    const targetTop = scrollElement.scrollTop + (targetRect.top - containerRect.top) - comfort;
+
+    scrollElement.scrollTo({
+      behavior: "smooth",
+      top: Math.max(0, targetTop)
+    });
+  }, []);
+
   filePathRef.current = filePath;
   menuHandlersRef.current = {
     createNewDocument,
@@ -388,10 +492,27 @@ function App() {
     loadDocument,
     openSettings: () => setSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
+    openPublishWeb: () => setPublishOpen(true),
+    openPublishQuickConnect: () => setQuickConnectOpen(true),
     toggleShowInvisibles: () =>
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
+      })),
+    toggleOutline: () =>
+      setSettings((current) => ({
+        ...current,
+        outlineVisible: !current.outlineVisible
+      })),
+    togglePageOrientation: () =>
+      setSettings((current) => ({
+        ...current,
+        pageOrientation: current.pageOrientation === "landscape" ? "portrait" : "landscape"
+      })),
+    toggleResponsiveWrapping: () =>
+      setSettings((current) => ({
+        ...current,
+        responsiveContentWrappingEnabled: !current.responsiveContentWrappingEnabled
       })),
     copyDocumentAsHtml
   };
@@ -439,25 +560,58 @@ function App() {
   }, [profileName, settings]);
 
   useEffect(() => {
-    void window.nexus?.configureMcpServer({
-      enabled: settings.mcpServer.enabled,
-      port: settings.mcpServer.port,
-      authMode: settings.mcpServer.authMode,
-      bearerToken: settings.mcpServer.bearerToken
-    });
+    let isCurrent = true;
+
+    async function configureMcp() {
+      const result = await window.nexus?.configureMcpServer({
+        enabled: settings.mcpServer.enabled,
+        port: settings.mcpServer.port,
+        authMode: settings.mcpServer.authMode,
+        bearerToken: settings.mcpServer.bearerToken,
+        ngrokEnabled: settings.mcpServer.ngrokEnabled,
+        ngrokDomain: settings.mcpServer.ngrokDomain,
+        ngrokUseCustomPath: settings.mcpServer.ngrokUseCustomPath,
+        ngrokPath: settings.mcpServer.ngrokPath
+      });
+
+      if (isCurrent) {
+        setMcpNgrokStatus(result?.ngrok ?? null);
+      }
+    }
+
+    void configureMcp();
+
+    return () => {
+      isCurrent = false;
+    };
   }, [
     settings.mcpServer.enabled,
     settings.mcpServer.port,
     settings.mcpServer.authMode,
-    settings.mcpServer.bearerToken
+    settings.mcpServer.bearerToken,
+    settings.mcpServer.ngrokEnabled,
+    settings.mcpServer.ngrokDomain,
+    settings.mcpServer.ngrokUseCustomPath,
+    settings.mcpServer.ngrokPath
   ]);
 
   useEffect(() => {
     window.nexus?.setMenuState({
       editorZoomPercent,
-      showInvisibleCharacters: settings.showInvisibleCharacters
+      showInvisibleCharacters: settings.showInvisibleCharacters,
+      outlineVisible: settings.outlineVisible,
+      pageOrientation: settings.pageOrientation,
+      responsiveContentWrappingEnabled: settings.responsiveContentWrappingEnabled,
+      paperViewEnabled: settings.paperViewEnabled
     });
-  }, [editorZoomPercent, settings.showInvisibleCharacters]);
+  }, [
+    editorZoomPercent,
+    settings.showInvisibleCharacters,
+    settings.outlineVisible,
+    settings.pageOrientation,
+    settings.responsiveContentWrappingEnabled,
+    settings.paperViewEnabled
+  ]);
 
   useEffect(() => {
     const updateResolvedTheme = () => {
@@ -551,6 +705,16 @@ function App() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
+    return window.nexus.onConfirmHostKey((payload) => {
+      setPendingHostKey(payload);
+    });
+  }, []);
+
   function approvePendingMcpWrite() {
     setPendingMcpWrite((pending) => {
       if (!pending) {
@@ -573,6 +737,89 @@ function App() {
 
       window.nexus?.resolveMcpWrite(pending.requestId, "reject");
       return null;
+    });
+  }
+
+  async function handlePublishSubmit(values: PublishSubmitValues): Promise<PublishResult> {
+    // Persist only the non-secret connection fields so the next publish is pre-filled.
+    setSettings((current) => ({
+      ...current,
+      publishTarget: {
+        host: values.connection.host,
+        port: values.connection.port,
+        username: values.connection.username,
+        remoteDirectory: values.connection.remoteDirectory,
+        publicBaseUrl: values.connection.publicBaseUrl
+      }
+    }));
+
+    if (!window.nexus) {
+      return { ok: false, error: "Publishing is only available in the desktop app." };
+    }
+
+    const result = await window.nexus.publishWeb({
+      transport: "sftp",
+      currentPath: filePath,
+      markdown: getCurrentMarkdown(),
+      options: {
+        fontFamily: settings.fontFamily,
+        fontSizePixels: settings.fontSizePixels,
+        paragraphSpacingPixels: settings.paragraphSpacingPixels
+      },
+      connection: values.connection,
+      auth: values.auth
+    });
+
+    // The publish has settled; drop any host-key prompt that is still showing.
+    setPendingHostKey(null);
+    return result;
+  }
+
+  function acceptHostKey() {
+    setPendingHostKey((current) => {
+      if (current) {
+        window.nexus?.resolveHostKey(current.requestId, "accept");
+      }
+      return null;
+    });
+  }
+
+  function rejectHostKey() {
+    setPendingHostKey((current) => {
+      if (current) {
+        window.nexus?.resolveHostKey(current.requestId, "reject");
+      }
+      return null;
+    });
+  }
+
+  async function handleQuickConnectSubmit(
+    values: QuickConnectFields
+  ): Promise<QuickConnectPublishResult> {
+    // Persist url, path, and token (token saved by explicit user choice) for next time.
+    setSettings((current) => ({
+      ...current,
+      quickConnect: {
+        url: values.url,
+        path: values.path,
+        token: values.token
+      }
+    }));
+
+    if (!window.nexus) {
+      return { ok: false, error: "Publishing is only available in the desktop app." };
+    }
+
+    return window.nexus.publishQuickConnect({
+      transport: "quickconnect",
+      currentPath: filePath,
+      markdown: getCurrentMarkdown(),
+      options: {
+        fontFamily: settings.fontFamily,
+        fontSizePixels: settings.fontSizePixels,
+        paragraphSpacingPixels: settings.paragraphSpacingPixels
+      },
+      connection: values
     });
   }
 
@@ -1213,6 +1460,81 @@ function App() {
     };
   }, []);
 
+  const dispatchMenuAction = useCallback((action: NexusMenuAction) => {
+    const h = menuHandlersRef.current;
+    switch (action) {
+      case "new":
+        void h.createNewDocument();
+        break;
+      case "open":
+        void h.openDocument();
+        break;
+      case "loadDemo":
+        void h.loadDemoDocument();
+        break;
+      case "save":
+        void h.saveDocument();
+        break;
+      case "saveAs":
+        void h.saveDocumentAs();
+        break;
+      case "exportHtml":
+        void h.exportDocumentAsHtml();
+        break;
+      case "exportWord":
+        void h.exportDocumentAsWord();
+        break;
+      case "exportPdf":
+        void h.exportDocumentAsPdf();
+        break;
+      case "refresh":
+        void h.refreshDocumentFromDisk();
+        break;
+      case "comparePreviousVersion":
+        h.compareWithPreviousVersion();
+        break;
+      case "find":
+        h.openFindPanel();
+        break;
+      case "zoomIn":
+        h.zoomEditorIn();
+        break;
+      case "zoomOut":
+        h.zoomEditorOut();
+        break;
+      case "resetZoom":
+        h.resetEditorZoom();
+        break;
+      case "toggleShowInvisibles":
+        h.toggleShowInvisibles();
+        break;
+      case "toggleOutline":
+        h.toggleOutline();
+        break;
+      case "togglePageOrientation":
+        h.togglePageOrientation();
+        break;
+      case "toggleResponsiveWrapping":
+        h.toggleResponsiveWrapping();
+        break;
+      case "settings":
+        h.openSettings();
+        break;
+      case "about":
+        h.openAbout();
+        break;
+      case "copyHtml":
+        void h.copyDocumentAsHtml();
+        break;
+      case "publishWeb":
+        h.openPublishWeb();
+        break;
+      case "publishQuickConnect":
+        h.openPublishQuickConnect();
+        break;
+    }
+  }, []);
+
   useEffect(() => {
     if (!window.nexus) {
       return;
@@ -1233,65 +1555,7 @@ function App() {
       menuHandlersRef.current.loadDocument(result.markdown, result.filePath);
     }
 
-    const removeMenuActionListener = window.nexus.onMenuAction((action) => {
-      const h = menuHandlersRef.current;
-      switch (action) {
-        case "new":
-          void h.createNewDocument();
-          break;
-        case "open":
-          void h.openDocument();
-          break;
-        case "loadDemo":
-          void h.loadDemoDocument();
-          break;
-        case "save":
-          void h.saveDocument();
-          break;
-        case "saveAs":
-          void h.saveDocumentAs();
-          break;
-        case "exportHtml":
-          void h.exportDocumentAsHtml();
-          break;
-        case "exportWord":
-          void h.exportDocumentAsWord();
-          break;
-        case "exportPdf":
-          void h.exportDocumentAsPdf();
-          break;
-        case "refresh":
-          void h.refreshDocumentFromDisk();
-          break;
-        case "comparePreviousVersion":
-          h.compareWithPreviousVersion();
-          break;
-        case "find":
-          h.openFindPanel();
-          break;
-        case "zoomIn":
-          h.zoomEditorIn();
-          break;
-        case "zoomOut":
-          h.zoomEditorOut();
-          break;
-        case "resetZoom":
-          h.resetEditorZoom();
-          break;
-        case "toggleShowInvisibles":
-          h.toggleShowInvisibles();
-          break;
-        case "settings":
-          h.openSettings();
-          break;
-        case "about":
-          h.openAbout();
-          break;
-        case "copyHtml":
-          void h.copyDocumentAsHtml();
-          break;
-      }
-    });
+    const removeMenuActionListener = window.nexus.onMenuAction(dispatchMenuAction);
 
     const removeCloseRequestListener = window.nexus.onCloseRequest(() => {
       void menuHandlersRef.current.handleCloseRequest();
@@ -1346,9 +1610,30 @@ function App() {
 
   return (
     <main className={appShellClassName} data-theme={resolvedTheme}>
+      <Titlebar
+        dispatchMenuAction={dispatchMenuAction}
+        fileName={titlebarFileName}
+        isDirty={isDirty}
+        outlineVisible={settings.outlineVisible}
+        pageOrientation={settings.pageOrientation}
+        paperViewEnabled={settings.paperViewEnabled}
+        responsiveContentWrappingEnabled={settings.responsiveContentWrappingEnabled}
+        showInvisibleCharacters={settings.showInvisibleCharacters}
+      />
       <section className="workspace">
         <div className="editor-column">
-          <div className={editorSurfaceClassName} ref={editorSurfaceRef} style={editorStyle}>
+          <div
+            className={
+              showOutlineSidebar
+                ? `${editorSurfaceClassName} editor-surface-with-outline`
+                : editorSurfaceClassName
+            }
+            ref={editorSurfaceRef}
+            style={editorStyle}
+          >
+            {showOutlineSidebar ? (
+              <OutlineSidebar headings={outlineHeadings} onSelect={scrollOutlineHeadingIntoView} />
+            ) : null}
             <EditorContextMenu>
               <MDXEditor
                 key={`editor-${settings.showInvisibleCharacters}`}
@@ -1414,26 +1699,16 @@ function App() {
                           onActiveMatchChange={scrollFindMatchIntoView}
                           openRequest={pendingFindRequest}
                         />
-                        <ViewModeTracker viewModeRef={currentViewModeRef} />
+                        <ViewModeTracker
+                          viewModeRef={currentViewModeRef}
+                          onModeChange={setEditorViewMode}
+                        />
                         <ParseErrorTracker onErrorChange={setParseError} />
                         <ShadcnMdxToolbar
-                          onPageOrientationChange={(pageOrientation) =>
-                            setSettings((current) => ({ ...current, pageOrientation }))
-                          }
                           onPaperViewChange={(paperViewEnabled) =>
                             setSettings((current) => ({ ...current, paperViewEnabled }))
                           }
-                          onResponsiveContentWrappingChange={(responsiveContentWrappingEnabled) =>
-                            setSettings((current) => ({
-                              ...current,
-                              responsiveContentWrappingEnabled
-                            }))
-                          }
-                          pageOrientation={settings.pageOrientation}
                           paperViewEnabled={settings.paperViewEnabled}
-                          responsiveContentWrappingEnabled={
-                            settings.responsiveContentWrappingEnabled
-                          }
                         />
                       </>
                     ),
@@ -1469,6 +1744,7 @@ function App() {
         fontFamily={settings.fontFamily}
         fontSizePixels={settings.fontSizePixels}
         mcpServer={settings.mcpServer}
+        mcpNgrokStatus={mcpNgrokStatus}
         onFontFamilyChange={(fontFamily) => setSettings((current) => ({ ...current, fontFamily }))}
         onFontSizePixelsChange={(fontSizePixels) =>
           setSettings((current) => ({ ...current, fontSizePixels }))
@@ -1508,6 +1784,26 @@ function App() {
         proposedMarkdown={pendingMcpWrite?.markdown ?? ""}
         onApprove={approvePendingMcpWrite}
         onReject={rejectPendingMcpWrite}
+      />
+      <PublishWebDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        initialConnection={settings.publishTarget}
+        defaultRemoteFilename={defaultPublishFilename}
+        pendingHostKey={pendingHostKey}
+        onAcceptHostKey={acceptHostKey}
+        onRejectHostKey={rejectHostKey}
+        onSubmit={handlePublishSubmit}
+        onSelectPrivateKey={async () => {
+          const result = await window.nexus?.selectPrivateKeyFile();
+          return result && !result.canceled ? result.filePath : null;
+        }}
+      />
+      <QuickConnectDialog
+        open={quickConnectOpen}
+        onOpenChange={setQuickConnectOpen}
+        initialValues={settings.quickConnect}
+        onSubmit={handleQuickConnectSubmit}
       />
     </main>
   );
