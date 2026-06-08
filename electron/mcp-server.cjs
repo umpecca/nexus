@@ -41,6 +41,62 @@ const READ_ONLY_TOOLS = [
       },
       additionalProperties: false
     }
+  },
+  {
+    name: "nexus_get_outline",
+    description:
+      "Return the heading outline of the focused Nexus editor window (or the window identified by windowId). Each entry has the heading level (1-6), text, a unique GitHub-style slug, a zero-based ordinal index, and a 1-based source line number. Use this to understand document structure before reading or editing a specific part.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_get_section",
+    description:
+      "Return the Markdown of a single section of the focused Nexus editor window (or the window identified by windowId), from a heading through the line before the next heading of the same or higher level (deeper subsections are included). Identify the section by exactly one of: 'index' (the heading ordinal from nexus_get_outline), 'slug', or 'heading' text. When no section matches, returns found=false with the list of available headings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        index: { type: "integer", minimum: 0 },
+        slug: { type: "string" },
+        heading: { type: "string" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_search_document",
+    description:
+      "Search the Markdown of the focused Nexus editor window (or the window identified by windowId) and return matches with 1-based line and column numbers plus a line preview. 'query' is a literal substring unless 'isRegex' is true; matching is case-insensitive unless 'caseSensitive' is true. Results are capped at 'maxResults' (default 200, max 1000); 'total' reports the full count and 'truncated' indicates more matches exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        query: { type: "string" },
+        isRegex: { type: "boolean" },
+        caseSensitive: { type: "boolean" },
+        maxResults: { type: "integer", minimum: 1, maximum: 1000 }
+      },
+      required: ["query"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_get_selection",
+    description:
+      "Return the text the user currently has selected in the focused Nexus editor window (or the window identified by windowId), along with the editor mode (rich-text, source, or diff) and whether a non-empty selection exists. Use this to operate on exactly what the user has highlighted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" }
+      },
+      additionalProperties: false
+    }
   }
 ];
 
@@ -144,6 +200,12 @@ function toolErrorContent(message) {
   };
 }
 
+function noWindowMessage(windowId) {
+  return windowId
+    ? `No Nexus editor window matches windowId "${windowId}".`
+    : "No focused Nexus editor window is available.";
+}
+
 async function dispatchToolCall(name, args, requestContext) {
   if (!host) {
     return toolErrorContent("Nexus MCP host is not initialized.");
@@ -158,13 +220,104 @@ async function dispatchToolCall(name, args, requestContext) {
     const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
     const document = host.getDocument(windowId);
     if (!document) {
-      return toolErrorContent(
-        windowId
-          ? `No Nexus editor window matches windowId "${windowId}".`
-          : "No focused Nexus editor window is available."
-      );
+      return toolErrorContent(noWindowMessage(windowId));
     }
     return toolTextContent(document);
+  }
+
+  if (name === "nexus_get_outline") {
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    if (typeof host.getOutline !== "function") {
+      return toolErrorContent("nexus_get_outline is not supported by this Nexus version.");
+    }
+    const outline = host.getOutline(windowId);
+    if (!outline) {
+      return toolErrorContent(noWindowMessage(windowId));
+    }
+    return toolTextContent(outline);
+  }
+
+  if (name === "nexus_get_section") {
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    if (typeof host.getSection !== "function") {
+      return toolErrorContent("nexus_get_section is not supported by this Nexus version.");
+    }
+
+    const selector = {};
+    if (Number.isInteger(args?.index)) {
+      selector.index = args.index;
+    }
+    if (typeof args?.slug === "string" && args.slug.length > 0) {
+      selector.slug = args.slug;
+    }
+    if (typeof args?.heading === "string" && args.heading.length > 0) {
+      selector.heading = args.heading;
+    }
+
+    if (selector.index === undefined && selector.slug === undefined && selector.heading === undefined) {
+      return toolErrorContent(
+        "nexus_get_section requires one of 'index', 'slug', or 'heading' to identify the section."
+      );
+    }
+
+    const section = host.getSection(windowId, selector);
+    if (!section) {
+      return toolErrorContent(noWindowMessage(windowId));
+    }
+    return toolTextContent(section);
+  }
+
+  if (name === "nexus_search_document") {
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    if (typeof host.searchDocument !== "function") {
+      return toolErrorContent("nexus_search_document is not supported by this Nexus version.");
+    }
+
+    const query = typeof args?.query === "string" ? args.query : "";
+    if (query.length === 0) {
+      return toolErrorContent("nexus_search_document requires a non-empty 'query' string.");
+    }
+
+    let result;
+    try {
+      result = host.searchDocument(windowId, {
+        query,
+        isRegex: Boolean(args?.isRegex),
+        caseSensitive: Boolean(args?.caseSensitive),
+        maxResults: args?.maxResults
+      });
+    } catch (error) {
+      return toolErrorContent(error instanceof Error ? error.message : String(error));
+    }
+
+    if (!result) {
+      return toolErrorContent(noWindowMessage(windowId));
+    }
+    return toolTextContent(result);
+  }
+
+  if (name === "nexus_get_selection") {
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    if (typeof host.getSelection !== "function") {
+      return toolErrorContent("nexus_get_selection is not supported by this Nexus version.");
+    }
+
+    const selection = await host.getSelection(windowId);
+    if (!selection) {
+      return toolErrorContent(noWindowMessage(windowId));
+    }
+    if (selection.ok === false) {
+      if (selection.reason === "no-window") {
+        return toolErrorContent(noWindowMessage(windowId));
+      }
+      if (selection.reason === "timeout") {
+        return toolErrorContent("Timed out waiting for the Nexus editor window to report its selection.");
+      }
+      return toolErrorContent(
+        selection.message || `Could not read the editor selection (${selection.reason ?? "unknown"}).`
+      );
+    }
+    return toolTextContent(selection);
   }
 
   if (name === "nexus_replace_document") {

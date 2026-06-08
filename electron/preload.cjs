@@ -1,9 +1,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const menuActionChannel = "menu:action";
+const openRecentChannel = "menu:open-recent";
 const closeRequestChannel = "app:request-close";
 const externalFileChangeChannel = "file:external-change";
 const mcpConfirmWriteChannel = "mcp:confirm-write";
+const mcpRequestSelectionChannel = "mcp:request-selection";
 const sftpConfirmHostKeyChannel = "sftp:confirm-host-key";
 
 contextBridge.exposeInMainWorld("nexus", {
@@ -12,6 +14,11 @@ contextBridge.exposeInMainWorld("nexus", {
     const listener = (_event, action) => callback(action);
     ipcRenderer.on(menuActionChannel, listener);
     return () => ipcRenderer.removeListener(menuActionChannel, listener);
+  },
+  onOpenRecentFile(callback) {
+    const listener = (_event, filePath) => callback(filePath);
+    ipcRenderer.on(openRecentChannel, listener);
+    return () => ipcRenderer.removeListener(openRecentChannel, listener);
   },
   onCloseRequest(callback) {
     const listener = () => callback();
@@ -44,6 +51,9 @@ contextBridge.exposeInMainWorld("nexus", {
   openMarkdownFile() {
     return ipcRenderer.invoke("file:open");
   },
+  openRecentFile(filePath) {
+    return ipcRenderer.invoke("recent:open", filePath);
+  },
   getInitialOpenFile() {
     return ipcRenderer.invoke("file:get-initial-open-file");
   },
@@ -71,8 +81,8 @@ contextBridge.exposeInMainWorld("nexus", {
   exportMarkdownAsPdf(currentPath, markdown, options) {
     return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown, options });
   },
-  selectLocalImage() {
-    return ipcRenderer.invoke("image:select-local");
+  selectLocalImage(documentPath) {
+    return ipcRenderer.invoke("image:select-local", { documentPath });
   },
   selectBase64Image() {
     return ipcRenderer.invoke("image:select-base64");
@@ -106,11 +116,25 @@ contextBridge.exposeInMainWorld("nexus", {
   resolveMcpWrite(requestId, decision) {
     ipcRenderer.send("mcp:write-decision", { requestId, decision });
   },
+  onMcpRequestSelection(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(mcpRequestSelectionChannel, listener);
+    return () => ipcRenderer.removeListener(mcpRequestSelectionChannel, listener);
+  },
+  resolveMcpSelection(requestId, selection) {
+    ipcRenderer.send("mcp:selection-result", { requestId, selection });
+  },
   publishWeb(payload) {
     return ipcRenderer.invoke("sftp:publish", payload);
   },
   publishQuickConnect(payload) {
     return ipcRenderer.invoke("quickconnect:publish", payload);
+  },
+  getQuickConnectToken(profileName) {
+    return ipcRenderer.invoke("quickconnect:get-token", profileName);
+  },
+  setQuickConnectToken(profileName, token) {
+    return ipcRenderer.invoke("quickconnect:set-token", { profileName, token });
   },
   selectPrivateKeyFile() {
     return ipcRenderer.invoke("dialog:select-private-key");

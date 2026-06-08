@@ -1,13 +1,11 @@
 import {
   BlockTypeSelect,
   BoldItalicUnderlineToggles,
-  ChangeAdmonitionType,
   ChangeCodeMirrorLanguage,
   CodeToggle,
   ConditionalContents,
   CreateLink,
   HighlightToggle,
-  InsertAdmonition,
   InsertCodeBlock,
   InsertFrontmatter,
   InsertTable,
@@ -18,6 +16,7 @@ import {
   viewMode$
 } from "@mdxeditor/editor";
 import type { EditorInFocus, ViewMode } from "@mdxeditor/editor";
+import type { ContainerDirective } from "mdast-util-directive";
 import {
   Code2,
   FileText,
@@ -26,29 +25,44 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
+import ChangeCalloutType from "./ChangeCalloutType";
+import CleanUpFormatting from "./CleanUpFormatting";
+import InsertAdmonition from "./InsertAdmonition";
+import InsertGithubAlert from "./InsertGithubAlert";
 import InsertImageImport from "./InsertImageImport";
 import InsertKatexBlock from "./InsertKatexBlock";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
 import InsertMermaidDiagram from "./InsertMermaidDiagram";
+import InsertTableOfContents from "./InsertTableOfContents";
 import { Button } from "../ui/button";
 import { ButtonGroup } from "../ui/button-group";
 import { Separator } from "../ui/separator";
+import { isAdmonitionType } from "../../lib/admonition";
+import { isGithubAlertDirective } from "../../lib/githubAlerts";
 
 type DirectiveNode = {
   getType: () => string;
-  getMdastNode: () => { name?: string };
+  getMdastNode: () => ContainerDirective;
 };
 
-function whenInAdmonition(editorInFocus: EditorInFocus | null) {
+/**
+ * True while the caret sits inside a callout — either a `:::` admonition or a GitHub `> [!TYPE]` alert.
+ * Both render as Lexical directive nodes; an alert is recognised by its `data.githubAlert` provenance
+ * flag, an admonition by its name. Drives both the change-type control (shown) and the insert buttons
+ * (hidden), so you can convert a callout in place but not nest another inside it.
+ */
+function whenInCallout(editorInFocus: EditorInFocus | null) {
   const node = editorInFocus?.rootNode as DirectiveNode | null | undefined;
 
   if (!node || node.getType() !== "directive") {
     return false;
   }
 
-  return ["note", "tip", "danger", "info", "caution"].includes(
-    node.getMdastNode().name ?? ""
-  );
+  const mdastNode = node.getMdastNode();
+  // Capture `name` before the guard call: `isGithubAlertDirective` narrows `mdastNode` to `never` in the
+  // right-hand operand of the `||`, so reading `mdastNode.name` there would not type-check.
+  const name = mdastNode.name;
+  return isGithubAlertDirective(mdastNode) || isAdmonitionType(name);
 }
 
 function ToolbarButtonGroup({
@@ -178,7 +192,13 @@ function PaperViewToggle({
   );
 }
 
-function RichTextRibbonCommands() {
+function RichTextRibbonCommands({
+  documentPath,
+  onInsertTableOfContents
+}: {
+  documentPath?: string;
+  onInsertTableOfContents: () => void;
+}) {
   return (
     <>
       <ToolbarButtonGroup aria-label="Text formatting" wide>
@@ -205,8 +225,8 @@ function RichTextRibbonCommands() {
                   <ConditionalContents
                     options={[
                       {
-                        when: whenInAdmonition,
-                        contents: () => <ChangeAdmonitionType />
+                        when: whenInCallout,
+                        contents: () => <ChangeCalloutType />
                       },
                       {
                         fallback: () => <BlockTypeSelect />
@@ -223,13 +243,14 @@ function RichTextRibbonCommands() {
       <ToolbarButtonGroup aria-label="Links and media" wide>
         <ToolbarRow>
           <CreateLink />
-          <InsertImageImport />
+          <InsertImageImport documentPath={documentPath} />
         </ToolbarRow>
       </ToolbarButtonGroup>
 
       <ToolbarButtonGroup aria-label="Insert blocks" wide>
         <ToolbarRow>
           <InsertTable />
+          <InsertTableOfContents onInsert={onInsertTableOfContents} />
           <InsertThematicBreak />
           <InsertCodeBlock />
           <Separator orientation="vertical" />
@@ -239,8 +260,13 @@ function RichTextRibbonCommands() {
           <ConditionalContents
             options={[
               {
-                when: (editorInFocus) => !whenInAdmonition(editorInFocus),
-                contents: () => <InsertAdmonition />
+                when: (editorInFocus) => !whenInCallout(editorInFocus),
+                contents: () => (
+                  <>
+                    <InsertAdmonition />
+                    <InsertGithubAlert />
+                  </>
+                )
               }
             ]}
           />
@@ -252,15 +278,26 @@ function RichTextRibbonCommands() {
 }
 
 function ViewRibbonCommands({
+  currentMode,
+  onCleanUpFormatting,
   onPaperViewChange,
   paperViewEnabled
 }: {
+  currentMode: ViewMode;
+  onCleanUpFormatting: () => void;
   onPaperViewChange: (enabled: boolean) => void;
   paperViewEnabled: boolean;
 }) {
   return (
     <ToolbarButtonGroup className="nexus-shadcn-toolbar-group-modes" aria-label="View controls" wide>
       <div className="nexus-shadcn-toolbar-mode-controls">
+        {/* Clean up formatting acts on the raw Markdown, so it is offered only in source mode. */}
+        {currentMode === "source" ? (
+          <>
+            <CleanUpFormatting onCleanUp={onCleanUpFormatting} />
+            <Separator orientation="vertical" />
+          </>
+        ) : null}
         <EditorModeControls />
         <Separator orientation="vertical" />
         <PaperViewToggle enabled={paperViewEnabled} onChange={onPaperViewChange} />
@@ -270,9 +307,15 @@ function ViewRibbonCommands({
 }
 
 function ShadcnMdxToolbar({
+  documentPath,
+  onCleanUpFormatting,
+  onInsertTableOfContents,
   onPaperViewChange,
   paperViewEnabled
 }: {
+  documentPath?: string;
+  onCleanUpFormatting: () => void;
+  onInsertTableOfContents: () => void;
   onPaperViewChange: (enabled: boolean) => void;
   paperViewEnabled: boolean;
 }) {
@@ -289,8 +332,15 @@ function ShadcnMdxToolbar({
   return (
     <div className={toolbarClassName}>
       <div className="nexus-shadcn-toolbar-scroll">
-        {isRichText ? <RichTextRibbonCommands /> : null}
+        {isRichText ? (
+          <RichTextRibbonCommands
+            documentPath={documentPath}
+            onInsertTableOfContents={onInsertTableOfContents}
+          />
+        ) : null}
         <ViewRibbonCommands
+          currentMode={currentMode}
+          onCleanUpFormatting={onCleanUpFormatting}
           onPaperViewChange={onPaperViewChange}
           paperViewEnabled={paperViewEnabled}
         />

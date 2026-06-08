@@ -1,15 +1,19 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
-const { existsSync, watch } = require("node:fs");
+const { existsSync, watch, readFileSync } = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL, fileURLToPath } = require("node:url");
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, shell } = require("electron");
 const htmlToDocx = require("@turbodocx/html-to-docx");
 const crypto = require("node:crypto");
 const SftpClient = require("ssh2-sftp-client");
 
 const mcpServer = require("./mcp-server.cjs");
 const ngrokTunnel = require("./ngrok-tunnel.cjs");
+const recentFilesStore = require("./recentFiles.cjs");
+const headingSlugger = require("./headingSlugger.cjs");
+const mcpDocumentTools = require("./mcpDocumentTools.cjs");
+const imagePaths = require("./imagePaths.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
 const appIconPath = path.join(__dirname, "..", "nexus.png");
@@ -23,6 +27,8 @@ const mcpWindowRecords = new Map();
 let mcpFocusedWindowId = null;
 let mcpPendingWriteCounter = 0;
 const mcpPendingWrites = new Map();
+let mcpPendingSelectionCounter = 0;
+const mcpPendingSelections = new Map();
 
 let sftpPendingHostKeyCounter = 0;
 const sftpPendingHostKeys = new Map();
@@ -58,10 +64,12 @@ function mcpListWindows() {
   }));
 }
 
+function resolveMcpWindowRecord(windowId) {
+  return windowId ? findMcpWindowByWindowId(windowId) : findMcpFocusedWindow();
+}
+
 function mcpGetDocument(windowId) {
-  const record = windowId
-    ? findMcpWindowByWindowId(windowId)
-    : findMcpFocusedWindow();
+  const record = resolveMcpWindowRecord(windowId);
 
   if (!record) {
     return null;
@@ -76,6 +84,117 @@ function mcpGetDocument(windowId) {
   };
 }
 
+function mcpGetOutline(windowId) {
+  const record = resolveMcpWindowRecord(windowId);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    windowId: record.windowId,
+    title: record.title || "Untitled",
+    filePath: record.filePath || null,
+    headings: mcpDocumentTools.buildDocumentOutline(record.markdown ?? "")
+  };
+}
+
+function mcpGetSection(windowId, selector) {
+  const record = resolveMcpWindowRecord(windowId);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    windowId: record.windowId,
+    filePath: record.filePath || null,
+    ...mcpDocumentTools.getDocumentSection(record.markdown ?? "", selector || {})
+  };
+}
+
+function mcpSearchDocument(windowId, options) {
+  const record = resolveMcpWindowRecord(windowId);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    windowId: record.windowId,
+    filePath: record.filePath || null,
+    ...mcpDocumentTools.searchDocument(record.markdown ?? "", options || {})
+  };
+}
+
+function normalizeSelectionResult(selection) {
+  if (!selection || typeof selection !== "object") {
+    return { ok: true, mode: "unknown", hasSelection: false, text: "" };
+  }
+
+  return {
+    ok: true,
+    mode: typeof selection.mode === "string" ? selection.mode : "unknown",
+    hasSelection: Boolean(selection.hasSelection),
+    text: typeof selection.text === "string" ? selection.text : ""
+  };
+}
+
+function finishMcpSelection(requestId, value) {
+  const pending = mcpPendingSelections.get(requestId);
+  if (!pending) {
+    return;
+  }
+
+  mcpPendingSelections.delete(requestId);
+  clearTimeout(pending.timeout);
+  pending.resolve(value);
+}
+
+function mcpRequestSelection(windowId) {
+  return new Promise((resolve) => {
+    const record = resolveMcpWindowRecord(windowId);
+    if (!record) {
+      resolve({ ok: false, reason: "no-window" });
+      return;
+    }
+
+    const window = BrowserWindow.fromId(record.browserWindowId);
+    if (!window || window.isDestroyed()) {
+      mcpWindowRecords.delete(record.webContentsId);
+      resolve({ ok: false, reason: "no-window" });
+      return;
+    }
+
+    mcpPendingSelectionCounter += 1;
+    const requestId = `mcp-selection-${mcpPendingSelectionCounter}`;
+    const timeout = setTimeout(() => {
+      finishMcpSelection(requestId, { ok: false, reason: "timeout" });
+    }, 5000);
+
+    mcpPendingSelections.set(requestId, {
+      resolve,
+      timeout,
+      webContentsId: record.webContentsId
+    });
+
+    try {
+      window.webContents.send("mcp:request-selection", { requestId });
+    } catch (error) {
+      finishMcpSelection(requestId, {
+        ok: false,
+        reason: "send-failed",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+}
+
+function rejectPendingMcpSelectionsForWebContents(webContentsId) {
+  for (const [requestId, pending] of mcpPendingSelections.entries()) {
+    if (pending.webContentsId === webContentsId) {
+      finishMcpSelection(requestId, { ok: false, reason: "window-closed" });
+    }
+  }
+}
+
 function rejectAllPendingMcpWrites(reason) {
   for (const pending of mcpPendingWrites.values()) {
     pending.resolve({ applied: false, reason });
@@ -86,6 +205,10 @@ function rejectAllPendingMcpWrites(reason) {
 mcpServer.setHost({
   listWindows: mcpListWindows,
   getDocument: mcpGetDocument,
+  getOutline: mcpGetOutline,
+  getSection: mcpGetSection,
+  searchDocument: mcpSearchDocument,
+  getSelection: mcpRequestSelection,
   rejectAllPendingWrites: rejectAllPendingMcpWrites,
   requestReplaceDocument: ({ windowId, markdown, clientLabel }) => {
     return new Promise((resolve) => {
@@ -304,6 +427,9 @@ async function getOpenableFilePaths(args) {
 async function readMarkdownFile(filePath) {
   const resolvedFilePath = path.resolve(filePath);
   const markdown = await fs.readFile(resolvedFilePath, "utf8");
+  // Any successful read means this file is now the active document (open dialog, watched
+  // re-read, recent-file open, or OS file handoff), so record it in the recent-files list.
+  addRecentFile(resolvedFilePath);
   return { canceled: false, filePath: resolvedFilePath, markdown };
 }
 
@@ -954,7 +1080,7 @@ ${pdfPrintStyle}
       border-radius: 4px;
       padding: 0.12em 0.3em;
       font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-      font-size: 0.92em;
+      font-size: 0.9em;
     }
 
     pre {
@@ -1798,6 +1924,17 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
       `<pre class="nexus-export-mermaid-source">${escapeHtmlText(token.text)}</pre>`,
       "</figure>"
     ].join("");
+  };
+
+  // Give every heading a GitHub-style id slug so in-document table-of-contents links
+  // (`[Heading](#slug)`) resolve in exported and published HTML. One slugger instance per render
+  // assigns slugs in document order, keeping dedupe (`-1`, `-2`, ...) aligned with the renderer-side
+  // TOC builder in `src/lib/toc.ts`. Slugs only contain `[\p{L}\p{N}_-]`, so they are attribute-safe.
+  const slugHeadingId = headingSlugger.createHeadingSlugger();
+  renderer.heading = function (token) {
+    const id = slugHeadingId(token.text);
+    const text = this.parser.parseInline(token.tokens);
+    return `<h${token.depth} id="${escapeHtmlAttribute(id)}">${text}</h${token.depth}>\n`;
   };
 
   const marked = new Marked({
@@ -2803,6 +2940,7 @@ function createWindow(options = {}) {
           mcpPendingWrites.delete(requestId);
         }
       }
+      rejectPendingMcpSelectionsForWebContents(webContentsId);
       if (mcpFocusedWindowId === record.windowId) {
         mcpFocusedWindowId = null;
       }
@@ -2920,6 +3058,100 @@ const menuState = {
   paperViewEnabled: true
 };
 
+const RECENT_FILES_LIMIT = recentFilesStore.DEFAULT_RECENT_FILES_LIMIT;
+const recentFilesOptions = { limit: RECENT_FILES_LIMIT, comparePath: getComparableFilePath };
+let recentFiles = [];
+
+function getRecentFilesStorePath() {
+  return path.join(app.getPath("userData"), "recent-files.json");
+}
+
+function loadRecentFiles() {
+  try {
+    const raw = readFileSync(getRecentFilesStorePath(), "utf8");
+    recentFiles = recentFilesStore.sanitizeRecentFiles(JSON.parse(raw), recentFilesOptions);
+  } catch {
+    // Missing or corrupt store: start from an empty list rather than failing menu construction.
+    recentFiles = [];
+  }
+}
+
+async function persistRecentFiles() {
+  try {
+    const filePath = getRecentFilesStorePath();
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(recentFiles), "utf8");
+  } catch {
+    // Persisting recents is best-effort; never let a disk error break opening or saving.
+  }
+}
+
+function addRecentFile(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) {
+    return;
+  }
+
+  const next = recentFilesStore.addRecentFile(recentFiles, filePath, recentFilesOptions);
+  const unchanged =
+    next.length === recentFiles.length && next.every((entry, index) => entry === recentFiles[index]);
+  if (unchanged) {
+    return;
+  }
+
+  recentFiles = next;
+  app.addRecentDocument(next[0]);
+  void persistRecentFiles();
+  buildMenu();
+}
+
+function removeRecentFile(filePath) {
+  const next = recentFilesStore.removeRecentFile(recentFiles, filePath, recentFilesOptions);
+  if (next.length === recentFiles.length) {
+    return;
+  }
+
+  recentFiles = next;
+  void persistRecentFiles();
+  buildMenu();
+}
+
+function clearRecentFiles() {
+  if (recentFiles.length === 0) {
+    return;
+  }
+
+  recentFiles = [];
+  app.clearRecentDocuments();
+  void persistRecentFiles();
+  buildMenu();
+}
+
+function sendOpenRecentFile(filePath) {
+  const window = BrowserWindow.getFocusedWindow();
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("menu:open-recent", filePath);
+    return;
+  }
+
+  // No focused window (e.g. the macOS menu bar with every window closed): open in a new window.
+  void openFilesInNewWindows([filePath]);
+}
+
+function buildRecentFilesSubmenu() {
+  if (recentFiles.length === 0) {
+    return [{ label: "No Recent Files", enabled: false }];
+  }
+
+  const items = recentFiles.map((filePath) => ({
+    label: path.basename(filePath),
+    toolTip: filePath,
+    click: () => sendOpenRecentFile(filePath)
+  }));
+
+  items.push({ type: "separator" }, { label: "Clear Recent", click: () => clearRecentFiles() });
+  return items;
+}
+
 function buildMenu() {
   const template = [
     {
@@ -2942,6 +3174,10 @@ function buildMenu() {
           label: "Open",
           accelerator: "CmdOrCtrl+O",
           click: () => sendMenuAction("open")
+        },
+        {
+          label: "Open Recent",
+          submenu: buildRecentFilesSubmenu()
         },
         {
           label: "Load Demo Document",
@@ -3048,6 +3284,11 @@ function buildMenu() {
           label: "Find",
           accelerator: "CmdOrCtrl+F",
           click: () => sendMenuAction("find")
+        },
+        {
+          label: "Replace",
+          accelerator: "CmdOrCtrl+H",
+          click: () => sendMenuAction("replace")
         },
         {
           type: "separator"
@@ -3334,6 +3575,37 @@ ipcMain.handle("file:read", async (event, filePath) => {
   return result;
 });
 
+ipcMain.handle("recent:open", async (event, filePath) => {
+  if (typeof filePath !== "string" || filePath.length === 0) {
+    return { canceled: true };
+  }
+
+  try {
+    const result = await readMarkdownFile(filePath);
+    await refreshWatchedFileSignature(event.sender.id, result.filePath);
+    return result;
+  } catch (error) {
+    // The recent entry points at a file that can no longer be read; drop it and tell the user.
+    removeRecentFile(filePath);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const message = error instanceof Error ? error.message : "The file could not be opened.";
+    const options = {
+      type: "error",
+      title: "Open Failed",
+      message: "Nexus could not open this file.",
+      detail: message
+    };
+
+    if (window && !window.isDestroyed()) {
+      await dialog.showMessageBox(window, options);
+    } else {
+      await dialog.showMessageBox(options);
+    }
+
+    return { canceled: true };
+  }
+});
+
 ipcMain.handle("file:watch", async (event, filePath) => {
   if (typeof filePath !== "string" || filePath.length === 0) {
     throw new Error("A file path is required to watch the document.");
@@ -3373,6 +3645,7 @@ ipcMain.handle("file:saveAs", async (event, payload) => {
   markInternalWrite(event.sender.id, result.filePath);
   await fs.writeFile(result.filePath, markdown ?? "", "utf8");
   await refreshWatchedFileSignature(event.sender.id, result.filePath);
+  addRecentFile(result.filePath);
   return { canceled: false, filePath: result.filePath };
 });
 
@@ -3464,6 +3737,79 @@ ipcMain.handle("quickconnect:publish", async (event, payload) => {
   }
 });
 
+// The QuickConnect bearer token is a secret, so it is never written to localStorage in plaintext.
+// The renderer hands it to the main process, which encrypts it at rest with the OS-provided secure
+// storage (Electron safeStorage: DPAPI on Windows, Keychain on macOS, libsecret on Linux) and
+// persists the ciphertext in a per-profile map under userData.
+function getQuickConnectTokenStorePath() {
+  return path.join(app.getPath("userData"), "quickconnect-tokens.json");
+}
+
+function quickConnectProfileKey(profileName) {
+  return typeof profileName === "string" && profileName.trim() ? profileName.trim() : "default";
+}
+
+async function readQuickConnectTokenStore() {
+  try {
+    const raw = await fs.readFile(getQuickConnectTokenStorePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    // Missing or corrupt store: start from an empty map rather than failing the lookup.
+    return {};
+  }
+}
+
+async function writeQuickConnectTokenStore(store) {
+  const filePath = getQuickConnectTokenStorePath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(store), "utf8");
+}
+
+ipcMain.handle("quickconnect:get-token", async (_event, profileName) => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return "";
+  }
+
+  const store = await readQuickConnectTokenStore();
+  const encoded = store[quickConnectProfileKey(profileName)];
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    return "";
+  }
+
+  try {
+    return safeStorage.decryptString(Buffer.from(encoded, "base64"));
+  } catch {
+    // A token encrypted under a different OS user/key cannot be read back here; treat as absent.
+    return "";
+  }
+});
+
+ipcMain.handle("quickconnect:set-token", async (_event, payload) => {
+  const profileKey = quickConnectProfileKey(payload?.profileName);
+  const token = typeof payload?.token === "string" ? payload.token : "";
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+  const store = await readQuickConnectTokenStore();
+
+  // An empty token clears any stored entry, regardless of encryption support.
+  if (!token) {
+    if (Object.prototype.hasOwnProperty.call(store, profileKey)) {
+      delete store[profileKey];
+      await writeQuickConnectTokenStore(store);
+    }
+    return { stored: false, encryptionAvailable };
+  }
+
+  // Never fall back to plaintext on disk: the whole point is encryption at rest.
+  if (!encryptionAvailable) {
+    return { stored: false, encryptionAvailable: false };
+  }
+
+  store[profileKey] = safeStorage.encryptString(token).toString("base64");
+  await writeQuickConnectTokenStore(store);
+  return { stored: true, encryptionAvailable: true };
+});
+
 ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
@@ -3502,16 +3848,19 @@ ipcMain.handle("dialog:select-private-key", async (event) => {
   return { canceled: false, filePath: path.resolve(result.filePaths[0]) };
 });
 
-ipcMain.handle("image:select-local", async () => {
+ipcMain.handle("image:select-local", async (_event, payload) => {
   const result = await selectImageFile();
   if (result.canceled) {
     return result;
   }
 
+  // Anchor the inserted reference to the document's folder when it is saved, so the markdown keeps a
+  // portable relative path; untitled buffers fall back to an absolute file:// URL inside the helper.
+  const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
   return {
     canceled: false,
     filePath: result.filePath,
-    src: pathToFileURL(result.filePath).href
+    src: imagePaths.toMarkdownImageSource(documentPath, result.filePath)
   };
 });
 
@@ -3806,6 +4155,8 @@ ipcMain.on("mcp:unregister-window", (event) => {
     }
   }
 
+  rejectPendingMcpSelectionsForWebContents(record.webContentsId);
+
   if (mcpFocusedWindowId === record.windowId) {
     mcpFocusedWindowId = null;
   }
@@ -3832,6 +4183,19 @@ ipcMain.on("mcp:write-decision", (_event, payload) => {
   } else {
     pending.resolve({ applied: false, reason: "user-rejected" });
   }
+});
+
+ipcMain.on("mcp:selection-result", (_event, payload) => {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  const { requestId, selection } = payload;
+  if (typeof requestId !== "string") {
+    return;
+  }
+
+  finishMcpSelection(requestId, normalizeSelectionResult(selection));
 });
 
 ipcMain.on("menu:set-state", (_event, state) => {
@@ -3906,6 +4270,7 @@ app.whenReady().then(async () => {
     app.dock?.setIcon(iconPath);
   }
 
+  loadRecentFiles();
   buildMenu();
   const initialFilePaths = [
     ...(await getOpenableFilePaths(process.argv)),

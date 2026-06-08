@@ -34,7 +34,7 @@ function isRemoteImageUrl(value: string) {
   return /^https?:\/\/\S+$/i.test(value.trim());
 }
 
-function InsertImageImport() {
+function InsertImageImport({ documentPath }: { documentPath?: string }) {
   const insertImage = usePublisher(insertImage$);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<ImageImportMode>("local");
@@ -72,7 +72,9 @@ function InsertImageImport() {
 
   async function chooseLocalImage() {
     resetTransientState();
-    const result = await window.nexus?.selectLocalImage();
+    // Pass the document path so a saved document gets a relative `src`; untitled docs send undefined
+    // and the main process keeps the absolute file:// URL.
+    const result = await window.nexus?.selectLocalImage(documentPath);
     if (!result || result.canceled) {
       return;
     }

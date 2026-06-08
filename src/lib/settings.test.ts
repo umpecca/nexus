@@ -8,11 +8,13 @@ import {
   DEFAULT_EDITOR_PAGE_SIZE,
   DEFAULT_EDITOR_PARAGRAPH_SPACING_PIXELS,
   DEFAULT_EDITOR_THEME_PREFERENCE,
+  DEFAULT_OUTLINE_WIDTH_PIXELS,
   EDITOR_FONT_OPTIONS,
   EDITOR_PAGE_ORIENTATION_OPTIONS,
   EDITOR_THEME_OPTIONS,
   getSettingsStorageKey,
   loadSettings,
+  readLegacyQuickConnectToken,
   resetSettings,
   saveSettings
 } from "./settings";
@@ -57,6 +59,7 @@ describe("settings helpers", () => {
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
       outlineVisible: false,
+      outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
       showInvisibleCharacters: false,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
@@ -85,8 +88,7 @@ describe("settings helpers", () => {
       },
       quickConnect: {
         url: "",
-        path: "",
-        token: ""
+        path: ""
       }
     });
   });
@@ -114,6 +116,7 @@ describe("settings helpers", () => {
       paperViewEnabled: true,
       responsiveContentWrappingEnabled: true,
       outlineVisible: false,
+      outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
       showInvisibleCharacters: false,
       pageSize: "Letter",
       pageOrientation: "portrait",
@@ -142,8 +145,7 @@ describe("settings helpers", () => {
       },
       quickConnect: {
         url: "",
-        path: "",
-        token: ""
+        path: ""
       }
     });
   });
@@ -339,6 +341,54 @@ describe("settings helpers", () => {
     expect(loadSettings("default").outlineVisible).toBe(false);
   });
 
+  it("defaults the outline width to 256 pixels", () => {
+    expect(createDefaultSettings().outlineWidthPixels).toBe(DEFAULT_OUTLINE_WIDTH_PIXELS);
+  });
+
+  it("loads and rounds a valid saved outline width", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineWidthPixels: 320.6,
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").outlineWidthPixels).toBe(321);
+  });
+
+  it("clamps a saved outline width to the supported range", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineWidthPixels: 5000,
+        pageSize: "Letter"
+      })
+    });
+    expect(loadSettings("default").outlineWidthPixels).toBe(560);
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineWidthPixels: 40,
+        pageSize: "Letter"
+      })
+    });
+    expect(loadSettings("default").outlineWidthPixels).toBe(180);
+  });
+
+  it("falls back to the default outline width when stored value is not a number", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        outlineWidthPixels: "wide",
+        pageSize: "Letter"
+      })
+    });
+
+    expect(loadSettings("default").outlineWidthPixels).toBe(DEFAULT_OUTLINE_WIDTH_PIXELS);
+  });
+
   it("falls back to the default font size when stored font size is invalid", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
@@ -492,12 +542,11 @@ describe("settings helpers", () => {
   it("defaults the QuickConnect target to empty fields", () => {
     expect(createDefaultSettings().quickConnect).toEqual({
       url: "",
-      path: "",
-      token: ""
+      path: ""
     });
   });
 
-  it("loads a valid saved QuickConnect target", () => {
+  it("loads a saved QuickConnect target and drops any legacy plaintext token", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
         fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
@@ -512,8 +561,7 @@ describe("settings helpers", () => {
 
     expect(loadSettings("default").quickConnect).toEqual({
       url: "https://example.com/quickconnect",
-      path: "docs/my-doc.html",
-      token: "secret-token"
+      path: "docs/my-doc.html"
     });
   });
 
@@ -532,9 +580,53 @@ describe("settings helpers", () => {
 
     expect(loadSettings("default").quickConnect).toEqual({
       url: "",
-      path: "docs/x.html",
-      token: ""
+      path: "docs/x.html"
     });
+  });
+
+  it("reads a legacy plaintext QuickConnect token for migration", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        quickConnect: {
+          url: "https://example.com/quickconnect",
+          path: "docs/my-doc.html",
+          token: "legacy-secret"
+        }
+      })
+    });
+
+    expect(readLegacyQuickConnectToken("default")).toBe("legacy-secret");
+  });
+
+  it("returns an empty legacy QuickConnect token when none is stored", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        quickConnect: {
+          url: "https://example.com/quickconnect",
+          path: "docs/my-doc.html"
+        }
+      })
+    });
+
+    expect(readLegacyQuickConnectToken("default")).toBe("");
+  });
+
+  it("returns an empty legacy QuickConnect token for non-string values", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        quickConnect: { token: 123 }
+      })
+    });
+
+    expect(readLegacyQuickConnectToken("default")).toBe("");
+  });
+
+  it("returns an empty legacy QuickConnect token when storage is unavailable", () => {
+    expect(readLegacyQuickConnectToken("default")).toBe("");
   });
 
   it("loads saved ngrok tunnel MCP settings", () => {
@@ -594,6 +686,7 @@ describe("settings helpers", () => {
       paperViewEnabled: false,
       responsiveContentWrappingEnabled: false,
       outlineVisible: true,
+      outlineWidthPixels: 320,
       showInvisibleCharacters: false,
       pageSize: "A4",
       pageOrientation: "landscape",
@@ -622,8 +715,7 @@ describe("settings helpers", () => {
       },
       quickConnect: {
         url: "",
-        path: "",
-        token: ""
+        path: ""
       }
     });
 
@@ -637,6 +729,7 @@ describe("settings helpers", () => {
         paperViewEnabled: false,
         responsiveContentWrappingEnabled: false,
         outlineVisible: true,
+        outlineWidthPixels: 320,
         showInvisibleCharacters: false,
         pageSize: "A4",
         pageOrientation: "landscape",
@@ -665,8 +758,7 @@ describe("settings helpers", () => {
         },
         quickConnect: {
           url: "",
-          path: "",
-          token: ""
+          path: ""
         }
       })
     );

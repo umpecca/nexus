@@ -30,11 +30,12 @@ import {
   createDefaultSettings,
   getEditorPageSizeOption,
   loadSettings,
+  readLegacyQuickConnectToken,
   resetSettings,
   saveSettings
 } from "./lib/settings";
 import type { EditorThemePreference } from "./lib/settings";
-import type { McpNgrokStatus, NexusMenuAction } from "./electron";
+import type { McpEditorSelection, McpNgrokStatus, NexusMenuAction } from "./electron";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
@@ -44,7 +45,9 @@ import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
 import OutlineSidebar from "./components/editor/OutlineSidebar";
 import { Titlebar } from "./components/titlebar/Titlebar";
-import { extractOutline } from "./lib/outline";
+import { extractOutline, getActiveHeadingIndex, type OutlineHeading } from "./lib/outline";
+import { cleanupMarkdownFormatting } from "./lib/format";
+import { insertTableOfContentsIntoBuffer } from "./lib/toc";
 import PublishWebDialog from "./components/publish/PublishWebDialog";
 import type {
   PendingHostKey,
@@ -59,6 +62,8 @@ import type {
 import { katexCodeBlockDescriptor } from "./components/editor/KatexCodeBlock";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
+import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert";
+import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
@@ -226,6 +231,90 @@ function getScrollSnapshot(element: HTMLElement): ScrollSnapshot {
   };
 }
 
+type SourceEditorView = {
+  state: {
+    doc: {
+      length: number;
+      lines: number;
+      line: (lineNumber: number) => { from: number };
+      toString: () => string;
+    };
+  };
+  dispatch: (spec: { changes: { from: number; to: number; insert: string } }) => void;
+  lineBlockAt: (position: number) => { top: number };
+  scrollDOM: HTMLElement;
+};
+
+/**
+ * Reach the CodeMirror EditorView backing MDXEditor's source mode. MDXEditor does
+ * not expose it, so we read the view CodeMirror stores on the content DOM node.
+ * Deliberately defensive: any CodeMirror internals change degrades to "no
+ * source-mode outline positions" (and a setMarkdown fallback for the clean-up
+ * command) rather than throwing.
+ */
+function getSourceEditorView(root: HTMLElement): SourceEditorView | null {
+  const content = root.querySelector(".mdxeditor-source-editor .cm-content") as
+    | (HTMLElement & { cmTile?: { view?: SourceEditorView } })
+    | null;
+  const view = content?.cmTile?.view ?? null;
+  if (
+    !view ||
+    typeof view.lineBlockAt !== "function" ||
+    typeof view.dispatch !== "function" ||
+    !view.scrollDOM
+  ) {
+    return null;
+  }
+  return view;
+}
+
+/** Top offset (within the source scroller's content) of a 0-based heading line. */
+function getSourceHeadingTop(view: SourceEditorView, line: number): number {
+  const lineNumber = line + 1;
+  const { doc } = view.state;
+  if (lineNumber < 1 || lineNumber > doc.lines) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return view.lineBlockAt(doc.line(lineNumber).from).top;
+}
+
+/**
+ * Resolve each outline heading's top offset within the active scroll container for
+ * the current editor mode, plus that scroller. Rich-text reads the rendered heading
+ * elements (one per outline entry, in document order); source mode reads
+ * CodeMirror's height model so positions are correct even for virtualized
+ * (off-screen) lines. Returns null when the editor DOM for the mode is not ready.
+ */
+function getOutlineHeadingMetrics(
+  root: HTMLElement,
+  mode: ViewMode,
+  headings: OutlineHeading[]
+): { tops: number[]; scroller: HTMLElement } | null {
+  if (mode === "source") {
+    const view = getSourceEditorView(root);
+    const scroller = root.querySelector<HTMLElement>(".mdxeditor-source-editor .cm-scroller");
+    if (!view || !scroller) {
+      return null;
+    }
+    return { tops: headings.map((heading) => getSourceHeadingTop(view, heading.line)), scroller };
+  }
+
+  const richText = root.querySelector<HTMLElement>(".mdxeditor-rich-text-editor");
+  if (!richText) {
+    return null;
+  }
+
+  const elements = Array.from(richText.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+  const containerTop = richText.getBoundingClientRect().top;
+  const tops = headings.map((_heading, index) => {
+    const element = elements[index];
+    return element
+      ? element.getBoundingClientRect().top - containerTop + richText.scrollTop
+      : Number.POSITIVE_INFINITY;
+  });
+  return { tops, scroller: richText };
+}
+
 function applyScrollSnapshot(element: HTMLElement, snapshot: ScrollSnapshot) {
   const maxScrollTop = Math.max(element.scrollHeight - element.clientHeight, 0);
   element.scrollTop = maxScrollTop > 0 ? snapshot.ratio * maxScrollTop : snapshot.top;
@@ -262,9 +351,13 @@ function App() {
   const [diffMarkdown, setDiffMarkdown] = useState("");
   const [pendingDiffViewRequest, setPendingDiffViewRequest] = useState(0);
   const [pendingFindRequest, setPendingFindRequest] = useState(0);
+  const [pendingReplaceRequest, setPendingReplaceRequest] = useState(0);
   const [editorZoomPercent, setEditorZoomPercent] = useState(100);
   const [profileName, setProfileName] = useState("default");
   const [settings, setSettings] = useState(createDefaultSettings);
+  // The QuickConnect bearer token is held in memory only; it is persisted encrypted at rest by the
+  // main process (Electron safeStorage) rather than in localStorage with the other settings.
+  const [quickConnectToken, setQuickConnectToken] = useState("");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     resolveThemePreference(createDefaultSettings().themePreference)
   );
@@ -279,6 +372,7 @@ function App() {
   const [parseError, setParseError] = useState<ParseErrorInfo | null>(null);
   const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null);
   const [editorViewMode, setEditorViewMode] = useState<ViewMode>("rich-text");
+  const [activeHeadingIndex, setActiveHeadingIndex] = useState(0);
   const [publishOpen, setPublishOpen] = useState(false);
   const [quickConnectOpen, setQuickConnectOpen] = useState(false);
   const [pendingHostKey, setPendingHostKey] = useState<
@@ -295,9 +389,11 @@ function App() {
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
   const currentViewModeRef = useRef<ViewMode>("rich-text");
+  const outlineHeadingsRef = useRef<OutlineHeading[]>([]);
   const menuHandlersRef = useRef({
     createNewDocument,
     openDocument,
+    openRecentFile,
     loadDemoDocument,
     saveDocument,
     saveDocumentAs,
@@ -307,6 +403,7 @@ function App() {
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
     openFindPanel,
+    openReplacePanel,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -369,13 +466,17 @@ function App() {
     "--editor-page-margin-right": `${settings.pageMargins.right * editorZoomScale}in`,
     "--editor-page-margin-bottom": `${settings.pageMargins.bottom * editorZoomScale}in`,
     "--editor-page-margin-left": `${settings.pageMargins.left * editorZoomScale}in`,
-    "--editor-paragraph-spacing": `${settings.paragraphSpacingPixels * editorZoomScale}px`
+    "--editor-paragraph-spacing": `${settings.paragraphSpacingPixels * editorZoomScale}px`,
+    "--outline-width": `${settings.outlineWidthPixels}px`
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
   const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
   const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
   const outlineHeadings = useMemo(() => extractOutline(markdown), [markdown]);
-  const showOutlineSidebar = settings.outlineVisible && editorViewMode === "rich-text";
+  outlineHeadingsRef.current = outlineHeadings;
+  // The outline now follows the document in both rich-text and source mode; diff mode
+  // keeps the full editor width for side-by-side review.
+  const showOutlineSidebar = settings.outlineVisible && editorViewMode !== "diff";
   const defaultPublishFilename = useMemo(() => {
     if (filePath) {
       const base = getDocumentName(filePath).replace(/\.[^.]+$/, "");
@@ -434,10 +535,23 @@ function App() {
     });
   }, []);
 
-  const scrollOutlineHeadingIntoView = useCallback((headingIndex: number) => {
+  const scrollOutlineHeadingIntoView = useCallback((heading: OutlineHeading) => {
     const root = editorSurfaceRef.current;
     if (!root) {
       return;
+    }
+
+    if (currentViewModeRef.current === "source") {
+      const view = getSourceEditorView(root);
+      if (view) {
+        const top = getSourceHeadingTop(view, heading.line);
+        if (Number.isFinite(top)) {
+          const comfort = Math.min(24, view.scrollDOM.clientHeight * 0.1);
+          view.scrollDOM.scrollTo({ behavior: "smooth", top: Math.max(0, top - comfort) });
+        }
+        return;
+      }
+      // Fall through to the DOM-based path if the CodeMirror view is unavailable.
     }
 
     const richTextEditor = root.querySelector<HTMLElement>(".mdxeditor-rich-text-editor");
@@ -445,7 +559,7 @@ function App() {
     const headings = Array.from(
       headingScope.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")
     );
-    const target = headings[headingIndex];
+    const target = headings[heading.index];
     if (!target) {
       return;
     }
@@ -475,6 +589,7 @@ function App() {
   menuHandlersRef.current = {
     createNewDocument,
     openDocument,
+    openRecentFile,
     loadDemoDocument,
     saveDocument,
     saveDocumentAs,
@@ -484,6 +599,7 @@ function App() {
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
     openFindPanel,
+    openReplacePanel,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -544,8 +660,24 @@ function App() {
         return;
       }
 
+      // Capture any legacy plaintext token before setSettings triggers the save effect, which
+      // rewrites localStorage without it (the QuickConnect token is no longer persisted there).
+      const legacyToken = readLegacyQuickConnectToken(nextProfileName);
+
       setProfileName(nextProfileName);
       setSettings(loadSettings(nextProfileName));
+
+      // The token now lives only in the main-process encrypted store. Load it, migrating a legacy
+      // plaintext token into the encrypted store on the first launch after upgrading.
+      let token = (await window.nexus?.getQuickConnectToken(nextProfileName)) ?? "";
+      if (!token && legacyToken) {
+        token = legacyToken;
+        await window.nexus?.setQuickConnectToken(nextProfileName, legacyToken);
+      }
+
+      if (isMounted) {
+        setQuickConnectToken(token);
+      }
     }
 
     void initializeProfileSettings();
@@ -710,6 +842,17 @@ function App() {
       return;
     }
 
+    return window.nexus.onMcpRequestSelection((payload) => {
+      window.nexus?.resolveMcpSelection(payload.requestId, readEditorSelection());
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
     return window.nexus.onConfirmHostKey((payload) => {
       setPendingHostKey(payload);
     });
@@ -796,15 +939,18 @@ function App() {
   async function handleQuickConnectSubmit(
     values: QuickConnectFields
   ): Promise<QuickConnectPublishResult> {
-    // Persist url, path, and token (token saved by explicit user choice) for next time.
+    // Persist only the non-secret url and path in local settings for next time.
     setSettings((current) => ({
       ...current,
       quickConnect: {
         url: values.url,
-        path: values.path,
-        token: values.token
+        path: values.path
       }
     }));
+
+    // Keep the token in memory for this session and store it encrypted at rest via the main process.
+    setQuickConnectToken(values.token);
+    void window.nexus?.setQuickConnectToken(profileName, values.token);
 
     if (!window.nexus) {
       return { ok: false, error: "Publishing is only available in the desktop app." };
@@ -920,6 +1066,55 @@ function App() {
     setPendingFindRequest((current) => current + 1);
   }
 
+  function openReplacePanel() {
+    setPendingReplaceRequest((current) => current + 1);
+  }
+
+  function insertTableOfContents() {
+    const current = getCurrentMarkdown();
+    const next = insertTableOfContentsIntoBuffer(current);
+    if (next === current) {
+      return;
+    }
+
+    // Rewrite the whole buffer (TOC goes at the top), reusing the same programmatic-change guard
+    // the MCP write path uses so the edit is not misread as a stale onChange.
+    beginProgrammaticMarkdownChange(next);
+    editorRef.current?.setMarkdown(next);
+    setMarkdown(next);
+  }
+
+  function cleanUpFormatting() {
+    const current = getCurrentMarkdown();
+    const next = cleanupMarkdownFormatting(current);
+    if (next === current) {
+      return;
+    }
+
+    // The command is offered only in source mode. Replace the CodeMirror buffer in place instead of
+    // calling setMarkdown: setMarkdown re-runs MDXEditor's own Markdown serializer, which would undo
+    // the surgical cleanup (re-imposing `*` bullets, `***` breaks, escaping, etc.). Editing the
+    // source buffer directly keeps the cleaned text verbatim, and the source plugin still syncs the
+    // change into MDXEditor's markdown state. The onChange this triggers updates dirty tracking; we
+    // also set it here so React state is consistent immediately.
+    const sourceView = editorSurfaceRef.current
+      ? getSourceEditorView(editorSurfaceRef.current)
+      : null;
+    if (sourceView) {
+      sourceView.dispatch({
+        changes: { from: 0, to: sourceView.state.doc.length, insert: next }
+      });
+      setMarkdown(next);
+      return;
+    }
+
+    // Fallback when the CodeMirror view is unreachable: round-trip through the editor API. This
+    // re-serializes through MDXEditor, but keeps the command working.
+    beginProgrammaticMarkdownChange(next);
+    editorRef.current?.setMarkdown(next);
+    setMarkdown(next);
+  }
+
   function zoomEditorIn() {
     setEditorZoomPercent((current) =>
       clampEditorZoomPercent(current + EDITOR_ZOOM_STEP_PERCENT)
@@ -1030,6 +1225,24 @@ function App() {
 
   function getCurrentMarkdown() {
     return editorRef.current?.getMarkdown() ?? markdown;
+  }
+
+  function readEditorSelection(): McpEditorSelection {
+    const mode = currentViewModeRef.current ?? "rich-text";
+    const surface = editorSurfaceRef.current;
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+
+    if (!surface || !selection || selection.rangeCount === 0) {
+      return { ok: true, mode, hasSelection: false, text: "" };
+    }
+
+    // Only report selections that live inside the editor surface, so a selection in a dialog or
+    // elsewhere in the chrome is not leaked to the MCP client as the document selection.
+    const anchorNode = selection.anchorNode;
+    const withinEditor = anchorNode ? surface.contains(anchorNode) : false;
+    const text = withinEditor ? selection.toString() : "";
+
+    return { ok: true, mode, hasSelection: text.length > 0, text };
   }
 
   function focusInitialEmptyEditor() {
@@ -1282,6 +1495,20 @@ function App() {
     loadDocument(result.markdown, result.filePath);
   }
 
+  async function openRecentFile(filePath: string) {
+    const canReplace = await confirmDirtyBufferAction();
+    if (!canReplace) {
+      return;
+    }
+
+    const result = await window.nexus?.openRecentFile(filePath);
+    if (!result || result.canceled) {
+      return;
+    }
+
+    loadDocument(result.markdown, result.filePath);
+  }
+
   async function loadDemoDocument() {
     const canReplace = await confirmDirtyBufferAction();
     if (!canReplace) {
@@ -1460,6 +1687,94 @@ function App() {
     };
   }, []);
 
+  // Scroll-spy: highlight the outline entry for the section currently under the top
+  // of the editor viewport, in both rich-text and source mode. Re-runs when the mode
+  // or outline visibility changes; recomputes on scroll, resize, and editor DOM
+  // mutations (typing, mode swap) using the latest headings through a ref.
+  useEffect(() => {
+    if (!showOutlineSidebar) {
+      setActiveHeadingIndex((previous) => (previous === 0 ? previous : 0));
+      return;
+    }
+
+    const root = editorSurfaceRef.current;
+    if (!root) {
+      return;
+    }
+
+    let frame = 0;
+    const removeScrollListeners: Array<() => void> = [];
+
+    const recomputeActiveHeading = () => {
+      const metrics = getOutlineHeadingMetrics(
+        root,
+        currentViewModeRef.current,
+        outlineHeadingsRef.current
+      );
+      if (!metrics) {
+        return;
+      }
+
+      const { tops, scroller } = metrics;
+      const activationOffset = Math.min(120, scroller.clientHeight * 0.3);
+      const index = getActiveHeadingIndex(
+        tops,
+        {
+          scrollTop: scroller.scrollTop,
+          clientHeight: scroller.clientHeight,
+          scrollHeight: scroller.scrollHeight
+        },
+        activationOffset
+      );
+      if (index >= 0) {
+        setActiveHeadingIndex((previous) => (previous === index ? previous : index));
+      }
+    };
+
+    const scheduleRecompute = () => {
+      if (frame) {
+        return;
+      }
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        recomputeActiveHeading();
+      });
+    };
+
+    const bindScrollListeners = () => {
+      while (removeScrollListeners.length > 0) {
+        removeScrollListeners.pop()?.();
+      }
+      getEditorScrollElements(root).forEach((element) => {
+        element.addEventListener("scroll", scheduleRecompute, { passive: true });
+        removeScrollListeners.push(() => element.removeEventListener("scroll", scheduleRecompute));
+      });
+    };
+
+    bindScrollListeners();
+    scheduleRecompute();
+
+    // Rebind + recompute when the editor DOM changes: a mode switch mounts a new
+    // scroller, and edits move headings.
+    const observer = new MutationObserver(() => {
+      bindScrollListeners();
+      scheduleRecompute();
+    });
+    observer.observe(root, { attributes: true, childList: true, subtree: true });
+    window.addEventListener("resize", scheduleRecompute);
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", scheduleRecompute);
+      while (removeScrollListeners.length > 0) {
+        removeScrollListeners.pop()?.();
+      }
+    };
+  }, [showOutlineSidebar, editorViewMode]);
+
   const dispatchMenuAction = useCallback((action: NexusMenuAction) => {
     const h = menuHandlersRef.current;
     switch (action) {
@@ -1495,6 +1810,9 @@ function App() {
         break;
       case "find":
         h.openFindPanel();
+        break;
+      case "replace":
+        h.openReplacePanel();
         break;
       case "zoomIn":
         h.zoomEditorIn();
@@ -1557,6 +1875,10 @@ function App() {
 
     const removeMenuActionListener = window.nexus.onMenuAction(dispatchMenuAction);
 
+    const removeOpenRecentListener = window.nexus.onOpenRecentFile((filePath) => {
+      void menuHandlersRef.current.openRecentFile(filePath);
+    });
+
     const removeCloseRequestListener = window.nexus.onCloseRequest(() => {
       void menuHandlersRef.current.handleCloseRequest();
     });
@@ -1565,6 +1887,7 @@ function App() {
 
     return () => {
       removeMenuActionListener();
+      removeOpenRecentListener();
       removeCloseRequestListener();
     };
   }, []);
@@ -1580,6 +1903,12 @@ function App() {
       if (key === "f") {
         event.preventDefault();
         menuHandlersRef.current.openFindPanel();
+        return;
+      }
+
+      if (key === "h") {
+        event.preventDefault();
+        menuHandlersRef.current.openReplacePanel();
         return;
       }
 
@@ -1632,7 +1961,15 @@ function App() {
             style={editorStyle}
           >
             {showOutlineSidebar ? (
-              <OutlineSidebar headings={outlineHeadings} onSelect={scrollOutlineHeadingIntoView} />
+              <OutlineSidebar
+                headings={outlineHeadings}
+                width={settings.outlineWidthPixels}
+                activeIndex={activeHeadingIndex}
+                onSelect={scrollOutlineHeadingIntoView}
+                onResize={(outlineWidthPixels) =>
+                  setSettings((current) => ({ ...current, outlineWidthPixels }))
+                }
+              />
             ) : null}
             <EditorContextMenu>
               <MDXEditor
@@ -1652,7 +1989,10 @@ function App() {
                   imagePlugin({ imagePreviewHandler }),
                   tablePlugin(),
                   frontmatterPlugin(),
-                  directivesPlugin({ directiveDescriptors: [AdmonitionDirectiveDescriptor] }),
+                  directivesPlugin({
+                    directiveDescriptors: [githubAlertDirectiveDescriptor, AdmonitionDirectiveDescriptor]
+                  }),
+                  githubAlertsPlugin(),
                   codeBlockPlugin({
                     defaultCodeBlockLanguage: "txt",
                     codeBlockEditorDescriptors: [
@@ -1698,6 +2038,7 @@ function App() {
                         <FindTextPanel
                           onActiveMatchChange={scrollFindMatchIntoView}
                           openRequest={pendingFindRequest}
+                          replaceRequest={pendingReplaceRequest}
                         />
                         <ViewModeTracker
                           viewModeRef={currentViewModeRef}
@@ -1705,6 +2046,9 @@ function App() {
                         />
                         <ParseErrorTracker onErrorChange={setParseError} />
                         <ShadcnMdxToolbar
+                          documentPath={filePath}
+                          onCleanUpFormatting={cleanUpFormatting}
+                          onInsertTableOfContents={insertTableOfContents}
                           onPaperViewChange={(paperViewEnabled) =>
                             setSettings((current) => ({ ...current, paperViewEnabled }))
                           }
@@ -1802,7 +2146,7 @@ function App() {
       <QuickConnectDialog
         open={quickConnectOpen}
         onOpenChange={setQuickConnectOpen}
-        initialValues={settings.quickConnect}
+        initialValues={{ ...settings.quickConnect, token: quickConnectToken }}
         onSubmit={handleQuickConnectSubmit}
       />
     </main>

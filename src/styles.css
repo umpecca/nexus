@@ -266,6 +266,8 @@ button:hover {
   flex: 1;
   flex-direction: column;
   gap: 0.05rem;
+  /* Keep the scrollbar to the left of the resize handle so both stay usable. */
+  margin-right: 8px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -315,6 +317,53 @@ button:hover {
   color: var(--muted);
 }
 
+/* Scroll-spy: the entry for the section currently at the top of the editor viewport.
+   Placed after the level rules so the accent color also overrides muted deep levels. */
+.nexus-outline-item-active {
+  background: var(--toolbar-hover);
+  box-shadow: inset 2px 0 0 0 var(--accent);
+  color: var(--accent);
+}
+
+/* Drag handle pinned to the outline's right edge for horizontal resizing. */
+.nexus-outline-resizer {
+  bottom: 0;
+  cursor: col-resize;
+  position: absolute;
+  right: 0;
+  top: 0;
+  touch-action: none;
+  width: 8px;
+}
+
+.nexus-outline-resizer::after {
+  background: transparent;
+  bottom: 0;
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: background 120ms ease;
+  width: 2px;
+}
+
+.nexus-outline-resizer:hover::after,
+.nexus-outline-resizer:focus-visible::after {
+  background: var(--accent);
+}
+
+.nexus-outline-resizer:focus-visible {
+  outline: none;
+}
+
+/* While dragging the handle, keep the resize cursor everywhere and suppress
+   text selection so moving over the editor doesn't select content. */
+body.nexus-resizing-col,
+body.nexus-resizing-col * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 .editor-surface {
   background: var(--toolbar);
   border: 0;
@@ -344,20 +393,21 @@ button:hover {
 }
 
 /* Outline overlays the editor's left edge, starting below the toolbar, so the
-   toolbar spans the full width and isn't squeezed by the sidebar. The outline only
-   renders in rich-text mode, where the toolbar is a fixed 64px bar. */
+   toolbar spans the full width and isn't squeezed by the sidebar. It renders in
+   rich-text and source mode, where the toolbar is a fixed 64px bar. */
 .editor-surface > .nexus-outline {
   bottom: 0;
   left: 0;
   position: absolute;
   top: 64px;
-  width: 16rem;
+  width: var(--outline-width, 16rem);
   z-index: 15;
 }
 
 /* Make room so editor content isn't hidden behind the overlaid outline. */
-.editor-surface.editor-surface-with-outline .mdxeditor-rich-text-editor {
-  padding-left: 16rem;
+.editor-surface.editor-surface-with-outline .mdxeditor-rich-text-editor,
+.editor-surface.editor-surface-with-outline .mdxeditor-source-editor {
+  padding-left: var(--outline-width, 16rem);
 }
 
 .nexus-context-menu-content {
@@ -1369,11 +1419,35 @@ button:hover {
   z-index: 80;
 }
 
+.nexus-find-toggle {
+  align-self: center;
+  color: var(--muted);
+  flex-shrink: 0;
+  height: 28px;
+  min-height: 28px;
+  width: 28px;
+}
+
+.nexus-find-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.nexus-find-row {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+}
+
 .nexus-find-input {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 3px);
   color: var(--ink);
+  flex: 1 1 auto;
   font: inherit;
   height: 30px;
   min-width: min(15rem, 42vw);
@@ -1406,7 +1480,8 @@ button:hover {
   width: 28px;
 }
 
-.nexus-find-actions svg {
+.nexus-find-actions svg,
+.nexus-find-toggle svg {
   height: 14px;
   width: 14px;
 }
@@ -1695,6 +1770,10 @@ button:hover {
   overflow-x: auto;
 }
 
+.editor-surface .markdown-body code {
+  font-size: 0.9em;
+}
+
 .markdown-body table {
   max-width: 100%;
   width: 100%;
@@ -1702,11 +1781,85 @@ button:hover {
 
 .editor-surface .cm-editor {
   font-family: var(--editor-font-family);
-  font-size: var(--editor-font-size);
+  font-size: calc(var(--editor-font-size) * 0.9);
 }
 
 .markdown-body:focus {
   outline: none;
+}
+
+/*
+ * GitHub alert callouts (`> [!TIP]`). Rendered by githubAlertDirectiveDescriptor;
+ * each kind sets --nexus-gh-alert-accent, which drives the rule, title colour and
+ * a translucent tint that adapts to either theme.
+ */
+.nexus-gh-alert {
+  --nexus-gh-alert-accent: var(--muted);
+  margin: 0 0 var(--editor-paragraph-spacing, 16px);
+  padding: 0.6rem 1rem;
+  border-left: 0.25rem solid var(--nexus-gh-alert-accent);
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--nexus-gh-alert-accent) 10%, transparent);
+}
+
+.nexus-gh-alert__title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--nexus-gh-alert-accent);
+  user-select: none;
+}
+
+.nexus-gh-alert__icon {
+  flex: 0 0 auto;
+}
+
+/* Collapse the trailing margin of the alert's last body block so it sits flush. */
+.nexus-gh-alert :last-child {
+  margin-bottom: 0;
+}
+
+.nexus-gh-alert--note {
+  --nexus-gh-alert-accent: #0969da;
+}
+
+.nexus-gh-alert--tip {
+  --nexus-gh-alert-accent: #1a7f37;
+}
+
+.nexus-gh-alert--important {
+  --nexus-gh-alert-accent: #8250df;
+}
+
+.nexus-gh-alert--warning {
+  --nexus-gh-alert-accent: #9a6700;
+}
+
+.nexus-gh-alert--caution {
+  --nexus-gh-alert-accent: #cf222e;
+}
+
+[data-theme="dark"] .nexus-gh-alert--note {
+  --nexus-gh-alert-accent: #58a6ff;
+}
+
+[data-theme="dark"] .nexus-gh-alert--tip {
+  --nexus-gh-alert-accent: #3fb950;
+}
+
+[data-theme="dark"] .nexus-gh-alert--important {
+  --nexus-gh-alert-accent: #a371f7;
+}
+
+[data-theme="dark"] .nexus-gh-alert--warning {
+  --nexus-gh-alert-accent: #d29922;
+}
+
+[data-theme="dark"] .nexus-gh-alert--caution {
+  --nexus-gh-alert-accent: #f85149;
 }
 
 .nexus-js-runner-block {

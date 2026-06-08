@@ -40,6 +40,10 @@ export const EDITOR_PAGE_MARGIN_MIN_INCHES = 0.25;
 export const EDITOR_PAGE_MARGIN_MAX_INCHES = 2;
 export const EDITOR_PAGE_MARGIN_STEP_INCHES = 0.25;
 
+export const DEFAULT_OUTLINE_WIDTH_PIXELS = 256;
+export const OUTLINE_WIDTH_MIN_PIXELS = 180;
+export const OUTLINE_WIDTH_MAX_PIXELS = 560;
+
 export const EDITOR_PAGE_SIZE_OPTIONS = [
   { label: "Letter", value: "Letter", widthInches: 8.5, heightInches: 11 },
   { label: "A4", value: "A4", widthInches: 8.27, heightInches: 11.69 }
@@ -102,14 +106,14 @@ export type PublishTargetSettings = {
 };
 
 /**
- * QuickConnect HTTP publish target persisted per OS profile to pre-fill the
- * QuickConnect dialog. Unlike the SFTP target, the bearer token IS persisted here
- * by explicit user choice for one-click publishing.
+ * Non-secret QuickConnect HTTP publish target fields persisted per OS profile to pre-fill the
+ * QuickConnect dialog. The bearer token is NOT stored here; it is encrypted at rest by the main
+ * process (Electron safeStorage). See readLegacyQuickConnectToken for the one-time migration of
+ * tokens that older versions stored in plaintext alongside these fields.
  */
 export type QuickConnectSettings = {
   url: string;
   path: string;
-  token: string;
 };
 
 export type EditorFontFamily = (typeof EDITOR_FONT_OPTIONS)[number]["value"];
@@ -127,6 +131,7 @@ export type UserSettings = {
   paperViewEnabled: boolean;
   responsiveContentWrappingEnabled: boolean;
   outlineVisible: boolean;
+  outlineWidthPixels: number;
   showInvisibleCharacters: boolean;
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
@@ -209,6 +214,14 @@ function sanitizeShowInvisibleCharacters(value: unknown) {
 
 function sanitizeOutlineVisible(value: unknown) {
   return typeof value === "boolean" ? value : false;
+}
+
+function sanitizeOutlineWidth(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(OUTLINE_WIDTH_MAX_PIXELS, Math.max(OUTLINE_WIDTH_MIN_PIXELS, Math.round(value)));
+  }
+
+  return DEFAULT_OUTLINE_WIDTH_PIXELS;
 }
 
 export function createDefaultPageMargins(): EditorPageMargins {
@@ -350,8 +363,7 @@ export function sanitizePublishTarget(value: unknown): PublishTargetSettings {
 export function createDefaultQuickConnect(): QuickConnectSettings {
   return {
     url: "",
-    path: "",
-    token: ""
+    path: ""
   };
 }
 
@@ -361,9 +373,32 @@ export function sanitizeQuickConnect(value: unknown): QuickConnectSettings {
 
   return {
     url: sanitizePublishTargetString(source.url),
-    path: sanitizePublishTargetString(source.path),
-    token: sanitizePublishTargetString(source.token)
+    path: sanitizePublishTargetString(source.path)
   };
+}
+
+/**
+ * Read a legacy plaintext QuickConnect bearer token that older versions stored inside the settings
+ * JSON. Returns "" when none is present. Used once at startup to migrate the token into the
+ * main-process encrypted store, after which the token is no longer persisted in localStorage.
+ */
+export function readLegacyQuickConnectToken(profileName: string): string {
+  if (typeof localStorage === "undefined") {
+    return "";
+  }
+
+  try {
+    const stored = localStorage.getItem(getSettingsStorageKey(profileName));
+    if (!stored) {
+      return "";
+    }
+
+    const parsed = JSON.parse(stored) as { quickConnect?: { token?: unknown } };
+    const token = parsed?.quickConnect?.token;
+    return typeof token === "string" ? token : "";
+  } catch {
+    return "";
+  }
 }
 
 export function sanitizeEditorPageMargins(value: unknown): EditorPageMargins {
@@ -386,6 +421,7 @@ export function createDefaultSettings(): UserSettings {
     paperViewEnabled: true,
     responsiveContentWrappingEnabled: true,
     outlineVisible: false,
+    outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
     showInvisibleCharacters: false,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
@@ -422,6 +458,7 @@ export function loadSettings(profileName: string): UserSettings {
         parsed.responsiveContentWrappingEnabled
       ),
       outlineVisible: sanitizeOutlineVisible(parsed.outlineVisible),
+      outlineWidthPixels: sanitizeOutlineWidth(parsed.outlineWidthPixels),
       showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)

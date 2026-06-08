@@ -136,4 +136,9 @@ This admonition checks directive rendering and editing. It should remain editabl
 :::tip
 Export this document to HTML and PDF to verify Mermaid diagrams, tables, code blocks, and embedded images together.
 :::
+
+## GitHub Alerts
+
+> [!NOTE]
+> I want the readers to read it carefully as it contains many important docs.
 `;

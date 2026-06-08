@@ -18,7 +18,23 @@
       "Bash(node _ngrok_probe.cjs)",
       "Bash(npm uninstall *)",
       "Bash(node --check electron/ngrok-tunnel.cjs)",
-      "Bash(xargs grep -l \"window.electron\\\\|window.nexus\")"
+      "Bash(xargs grep -l \"window.electron\\\\|window.nexus\")",
+      "PowerShell(npm run build 2>&1)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git --no-pager diff src/App.tsx)",
+      "Bash(node --check electron/recentFiles.cjs)",
+      "Bash(git --no-pager diff --stat -- electron/main.cjs electron/preload.cjs src/App.tsx src/electron.d.ts ARCHITECTURE.md PRODUCT.md CHANGELOG.md)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/@mdxeditor/editor/package.json'\\).version\\)\")",
+      "Bash(node --check electron/headingSlugger.cjs)",
+      "Bash(npx tsc *)",
+      "Bash(node -e ' *)",
+      "Bash(xargs grep -ln \"interface ContainerDirective\\\\|ContainerDirective \")",
+      "Bash(node -e \"for \\(const p of ['jsdom','happy-dom','@testing-library/react']\\) { try { require.resolve\\(p\\); console.log\\('FOUND', p\\); } catch { console.log\\('missing', p\\); } }\")",
+      "Bash(xargs grep -ln \"ButtonOrDropdownButton\\\\|insertDirective\")",
+      "Bash(grep -nE \"insertDirective\\\\\\\\\\\\$|ButtonOrDropdownButton|LeafDirective|ContainerDirective|interface DirectiveNode|DirectiveProperties\" node_modules/@mdxeditor/editor/dist/index.d.ts)",
+      "Bash(echo \"TSC_EXIT=$?\")",
+      "Bash(xargs grep -l \"ChangeAdmonitionType\\\\|ADMONITION_TYPES\")",
+      "Bash(grep -nE \"export declare const \\(Select|editorInFocus\\\\\\\\\\\\$|rootEditor\\\\\\\\\\\\$|activeEditor\\\\\\\\\\\\$\\)|declare const Select:|EditorInFocus\" node_modules/@mdxeditor/editor/dist/index.d.ts)"
     ]
   }
 }

@@ -36,7 +36,7 @@ pre-fill next time:
 | --- | --- | --- |
 | **Endpoint URL** | The request URL | Used verbatim. The path is **not** appended to it. |
 | **Path** | `X-QuickConnect-Path` header | Free-form string; your server interprets it. |
-| **Bearer token** | `Authorization: Bearer <token>` | Verified by your server. Stored in local settings. |
+| **Bearer token** | `Authorization: Bearer <token>` | Verified by your server. Stored encrypted at rest on your machine via the OS secure storage, not in plaintext settings. |
 
 ---
 
@@ -110,6 +110,11 @@ Returning an empty `200` is perfectly valid.
 - Treat the `X-QuickConnect-Path` value as untrusted input. If you map it to a
   filesystem path, clean it and confirm it stays within your publish root to
   avoid path traversal (`../`) escapes. See the reference server below.
+- On the Nexus side, the bearer token is stored **encrypted at rest** using the
+  operating system's secure storage (Electron `safeStorage`: DPAPI on Windows,
+  Keychain on macOS, libsecret on Linux), not in the plaintext local settings.
+  Where that secure storage is unavailable, the token is entered per publish and
+  not saved.
 
 ---
 

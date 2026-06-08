@@ -12,6 +12,7 @@ export type NexusMenuAction =
   | "refresh"
   | "comparePreviousVersion"
   | "find"
+  | "replace"
   | "zoomIn"
   | "zoomOut"
   | "resetZoom"
@@ -133,6 +134,17 @@ type McpConfirmWriteEvent = {
 
 type McpWriteDecision = "approve" | "reject";
 
+type McpRequestSelectionEvent = {
+  requestId: string;
+};
+
+export type McpEditorSelection = {
+  ok: true;
+  mode: "rich-text" | "source" | "diff" | "unknown";
+  hasSelection: boolean;
+  text: string;
+};
+
 type PublishWebConnection = {
   host: string;
   port: number;
@@ -178,6 +190,11 @@ type QuickConnectResult =
   | { ok: true; url: string | null }
   | { ok: false; error: string };
 
+type QuickConnectTokenSaveResult = {
+  stored: boolean;
+  encryptionAvailable: boolean;
+};
+
 type ConfirmHostKeyEvent = {
   requestId: string;
   host: string;
@@ -192,6 +209,7 @@ declare global {
     nexus?: {
       platform: NodeJS.Platform;
       onMenuAction(callback: (action: NexusMenuAction) => void): () => void;
+      onOpenRecentFile(callback: (filePath: string) => void): () => void;
       onCloseRequest(callback: () => void): () => void;
       onExternalFileChange(callback: (event: ExternalFileChangeEvent) => void): () => void;
       resolveCloseRequest(shouldClose: boolean): Promise<void>;
@@ -205,6 +223,7 @@ declare global {
       convertImageToDataUrl(source: string): Promise<string | null>;
       getProfileName(): Promise<string>;
       openMarkdownFile(): Promise<OpenMarkdownResult>;
+      openRecentFile(filePath: string): Promise<OpenMarkdownResult>;
       getInitialOpenFile(): Promise<OpenMarkdownResult>;
       readWatchedMarkdownFile(filePath: string): Promise<OpenMarkdownResult>;
       watchMarkdownFile(filePath: string): Promise<{ filePath: string }>;
@@ -226,7 +245,7 @@ declare global {
         markdown: string,
         options?: ExportMarkdownPdfOptions
       ): Promise<SaveMarkdownResult>;
-      selectLocalImage(): Promise<SelectLocalImageResult>;
+      selectLocalImage(documentPath?: string): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
@@ -237,8 +256,15 @@ declare global {
       unregisterMcpWindow(): void;
       onMcpConfirmWrite(callback: (event: McpConfirmWriteEvent) => void): () => void;
       resolveMcpWrite(requestId: string, decision: McpWriteDecision): void;
+      onMcpRequestSelection(callback: (event: McpRequestSelectionEvent) => void): () => void;
+      resolveMcpSelection(requestId: string, selection: McpEditorSelection): void;
       publishWeb(payload: PublishWebInput): Promise<PublishWebResult>;
       publishQuickConnect(payload: QuickConnectInput): Promise<QuickConnectResult>;
+      getQuickConnectToken(profileName: string): Promise<string>;
+      setQuickConnectToken(
+        profileName: string,
+        token: string
+      ): Promise<QuickConnectTokenSaveResult>;
       selectPrivateKeyFile(): Promise<SelectPrivateKeyResult>;
       onConfirmHostKey(callback: (event: ConfirmHostKeyEvent) => void): () => void;
       resolveHostKey(requestId: string, decision: HostKeyDecision): void;
