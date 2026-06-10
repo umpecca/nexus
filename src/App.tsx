@@ -69,6 +69,7 @@ import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
+import StatusBar from "./components/statusbar/StatusBar";
 
 const APP_TITLE = "Nexus";
 
@@ -343,6 +344,22 @@ function clampEditorZoomPercent(zoomPercent: number) {
   );
 }
 
+/**
+ * Approximate word count for the status bar: fenced code is skipped, and a
+ * whitespace-separated token counts as a word when it has a letter or digit
+ * (so bare Markdown punctuation like `*` or `---` is not counted).
+ */
+function countWords(markdown: string) {
+  const withoutCodeBlocks = markdown.replace(/```[\s\S]*?```/g, " ");
+  let count = 0;
+  for (const token of withoutCodeBlocks.split(/\s+/)) {
+    if (/[\p{L}\p{N}]/u.test(token)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function App() {
   const initialDraft = useMemo(createDefaultDraft, []);
   const [markdown, setMarkdown] = useState(initialDraft.markdown);
@@ -478,6 +495,7 @@ function App() {
   const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
   const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
   const outlineHeadings = useMemo(() => extractOutline(markdown), [markdown]);
+  const wordCount = useMemo(() => countWords(markdown), [markdown]);
   outlineHeadingsRef.current = outlineHeadings;
   // The outline now follows the document in both rich-text and source mode; diff mode
   // keeps the full editor width for side-by-side review.
@@ -2117,6 +2135,18 @@ function App() {
           </div>
         </div>
       </section>
+      <StatusBar
+        isDirty={isDirty}
+        maxZoom={MAX_EDITOR_ZOOM_PERCENT}
+        minZoom={MIN_EDITOR_ZOOM_PERCENT}
+        onZoomChange={(zoomPercent) => setEditorZoomPercent(clampEditorZoomPercent(zoomPercent))}
+        onZoomIn={zoomEditorIn}
+        onZoomOut={zoomEditorOut}
+        onZoomReset={resetEditorZoom}
+        viewMode={editorViewMode}
+        wordCount={wordCount}
+        zoomPercent={editorZoomPercent}
+      />
       {externalFileChangePrompt ? (
         <FileChangedDialog
           filePath={externalFileChangePrompt.filePath}
