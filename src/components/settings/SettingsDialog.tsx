@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -17,7 +18,7 @@ import type {
   McpAuthMode,
   McpServerSettings
 } from "../../lib/settings";
-import type { McpNgrokStatus } from "../../electron";
+import type { McpConnectionProbe, McpConnectionTestResult, McpNgrokStatus } from "../../electron";
 import {
   EDITOR_FONT_OPTIONS,
   EDITOR_FONT_SIZE_MAX_PIXELS,
@@ -46,6 +47,9 @@ type SettingsDialogProps = {
   fontSizePixels: number;
   mcpServer: McpServerSettings;
   mcpNgrokStatus: McpNgrokStatus | null;
+  onTestMcpConnection: () => Promise<McpConnectionTestResult | undefined>;
+  onStopNgrok: () => Promise<void>;
+  onRestartNgrok: () => Promise<void>;
   onFontFamilyChange: (fontFamily: EditorFontFamily) => void;
   onFontSizePixelsChange: (fontSizePixels: number) => void;
   onMcpServerChange: (next: McpServerSettings) => void;
@@ -84,11 +88,33 @@ function formatNumber(value: number) {
   return String(value);
 }
 
+function describeProbe(probe: McpConnectionProbe) {
+  if (probe.ok) {
+    return `Reachable${probe.status ? ` · HTTP ${probe.status}` : ""}`;
+  }
+  if (probe.status === 401) {
+    return "Unauthorized — token rejected (HTTP 401)";
+  }
+  if (probe.status) {
+    return `Failed — HTTP ${probe.status}`;
+  }
+  if (probe.error === "not-running") {
+    return "Server not running";
+  }
+  if (probe.error === "timeout") {
+    return "Timed out";
+  }
+  return `Failed — ${probe.error ?? "error"}`;
+}
+
 function SettingsDialog({
   fontFamily,
   fontSizePixels,
   mcpServer,
   mcpNgrokStatus,
+  onTestMcpConnection,
+  onStopNgrok,
+  onRestartNgrok,
   onFontFamilyChange,
   onFontSizePixelsChange,
   onMcpServerChange,
@@ -107,6 +133,54 @@ function SettingsDialog({
   profileName,
   themePreference
 }: SettingsDialogProps) {
+  const [mcpTesting, setMcpTesting] = useState(false);
+  const [mcpTestResult, setMcpTestResult] = useState<McpConnectionTestResult | null>(null);
+
+  // Drop a stale result when the dialog closes or the MCP server settings that affect reachability
+  // change, so the readout never describes a configuration the user has since edited.
+  useEffect(() => {
+    setMcpTestResult(null);
+  }, [
+    open,
+    mcpServer.enabled,
+    mcpServer.port,
+    mcpServer.authMode,
+    mcpServer.bearerToken,
+    mcpServer.ngrokEnabled
+  ]);
+
+  const [ngrokBusy, setNgrokBusy] = useState(false);
+
+  async function handleTestMcpConnection() {
+    setMcpTesting(true);
+    try {
+      const result = await onTestMcpConnection();
+      setMcpTestResult(result ?? { local: { ok: false, error: "unavailable" }, ngrok: null });
+    } catch {
+      setMcpTestResult({ local: { ok: false, error: "failed" }, ngrok: null });
+    } finally {
+      setMcpTesting(false);
+    }
+  }
+
+  async function handleStopNgrok() {
+    setNgrokBusy(true);
+    try {
+      await onStopNgrok();
+    } finally {
+      setNgrokBusy(false);
+    }
+  }
+
+  async function handleRestartNgrok() {
+    setNgrokBusy(true);
+    try {
+      await onRestartNgrok();
+    } finally {
+      setNgrokBusy(false);
+    }
+  }
+
   function handleMcpEnabledChange(nextEnabled: boolean) {
     const needsToken =
       nextEnabled && mcpServer.authMode === "bearer" && mcpServer.bearerToken === "";
@@ -162,6 +236,13 @@ function SettingsDialog({
     ? `http://${MCP_SERVER_DEFAULT_HOST}:${mcpServer.port}/mcp`
     : "";
 
+  function handleMcpAutoApproveWritesChange(nextEnabled: boolean) {
+    onMcpServerChange({
+      ...mcpServer,
+      autoApproveWrites: nextEnabled
+    });
+  }
+
   function handleMcpNgrokEnabledChange(nextEnabled: boolean) {
     onMcpServerChange({
       ...mcpServer,
@@ -200,6 +281,10 @@ function SettingsDialog({
   const ngrokPublicMcpUrl = ngrokPublicUrl
     ? `${ngrokPublicUrl.replace(/\/+$/, "")}/mcp`
     : "";
+  const mcpLandingUrl = mcpServer.enabled
+    ? `http://${MCP_SERVER_DEFAULT_HOST}:${mcpServer.port}/`
+    : "";
+  const ngrokPublicLandingUrl = ngrokPublicUrl ? `${ngrokPublicUrl.replace(/\/+$/, "")}/` : "";
   function handleFontSizeChange(value: string) {
     const nextFontSize = Number.parseFloat(value);
     if (!Number.isFinite(nextFontSize)) {
@@ -369,8 +454,11 @@ function SettingsDialog({
             <legend className="nexus-settings-label">MCP server (experimental)</legend>
             <p className="nexus-settings-help">
               Lets an external AI client (Claude, ChatGPT) read this document and propose
-              edits over a local HTTP connection. Off by default. Every write must be
-              approved in a diff confirmation dialog.
+              edits over a local HTTP connection. Off by default. Writes are approved in a
+              diff confirmation dialog unless auto-approve is enabled below. Clients can send
+              the bearer token directly, or connect with OAuth (used by ChatGPT custom
+              connectors and Claude.ai) — the OAuth flow opens a browser page asking for your
+              approval, then issues the same bearer token.
             </p>
 
             <label className="nexus-settings-field">
@@ -434,6 +522,19 @@ function SettingsDialog({
               </label>
             )}
 
+            {mcpServer.enabled && (
+              <label className="nexus-settings-field">
+                <span className="nexus-settings-label">Test page</span>
+                <input
+                  className="nexus-settings-input"
+                  readOnly
+                  type="text"
+                  value={mcpLandingUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+            )}
+
             {mcpServer.enabled && mcpServer.authMode === "bearer" && mcpServer.bearerToken && (
               <>
                 <label className="nexus-settings-field">
@@ -455,6 +556,69 @@ function SettingsDialog({
                     Regenerate token
                   </Button>
                 </div>
+              </>
+            )}
+
+            {mcpServer.enabled && (
+              <div className="nexus-settings-mcp-test">
+                <div className="nexus-settings-mcp-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={mcpTesting}
+                    onClick={handleTestMcpConnection}
+                  >
+                    {mcpTesting ? "Testing…" : "Test setup"}
+                  </Button>
+                </div>
+
+                {mcpTestResult && (
+                  <div className="nexus-settings-mcp-test-result" role="status" aria-live="polite">
+                    <p
+                      className={
+                        mcpTestResult.local.ok ? "nexus-settings-success" : "nexus-settings-warning"
+                      }
+                    >
+                      Local server: {describeProbe(mcpTestResult.local)}
+                    </p>
+                    {mcpTestResult.ngrok && (
+                      <p
+                        className={
+                          mcpTestResult.ngrok.ok
+                            ? "nexus-settings-success"
+                            : "nexus-settings-warning"
+                        }
+                      >
+                        ngrok URL: {describeProbe(mcpTestResult.ngrok)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mcpServer.enabled && (
+              <>
+                <label className="nexus-settings-field">
+                  <span className="nexus-settings-label">Auto-approve writes</span>
+                  <input
+                    type="checkbox"
+                    checked={mcpServer.autoApproveWrites}
+                    onChange={(event) =>
+                      handleMcpAutoApproveWritesChange(event.target.checked)
+                    }
+                  />
+                </label>
+
+                {mcpServer.autoApproveWrites && (
+                  <p className="nexus-settings-warning">
+                    MCP write tools will change this document immediately, with no confirmation
+                    dialog. Leave this off unless you trust every client that can reach the server
+                    {mcpServer.ngrokEnabled
+                      ? " — with the ngrok tunnel on, that includes any remote client with the URL."
+                      : "."}
+                  </p>
+                )}
               </>
             )}
 
@@ -539,6 +703,25 @@ function SettingsDialog({
                       <p className="nexus-settings-warning">Tunnel error: {mcpNgrokStatus.error}</p>
                     )}
 
+                    <div className="nexus-settings-mcp-actions">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={ngrokBusy}
+                        onClick={handleRestartNgrok}
+                      >
+                        {ngrokBusy ? "Working…" : "Restart tunnel"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={ngrokBusy || !mcpNgrokStatus?.connected}
+                        onClick={handleStopNgrok}
+                      >
+                        Stop tunnel
+                      </Button>
+                    </div>
+
                     {ngrokPublicMcpUrl && (
                       <>
                         <label className="nexus-settings-field">
@@ -561,6 +744,19 @@ function SettingsDialog({
                           </Button>
                         </div>
                       </>
+                    )}
+
+                    {ngrokPublicLandingUrl && (
+                      <label className="nexus-settings-field">
+                        <span className="nexus-settings-label">Public test page</span>
+                        <input
+                          className="nexus-settings-input"
+                          readOnly
+                          type="text"
+                          value={ngrokPublicLandingUrl}
+                          onFocus={(event) => event.currentTarget.select()}
+                        />
+                      </label>
                     )}
                   </>
                 )}

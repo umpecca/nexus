@@ -298,8 +298,19 @@ function stopTunnel() {
   });
 }
 
+// Synchronous, idempotent teardown for process-exit paths where the async stopTunnel chain would not
+// be drained before the process terminates. Bypasses runExclusive and kills the agent immediately.
+// Safe to call repeatedly and when no tunnel is active (no-ops). Cannot help on a hard kill (SIGKILL)
+// or crash, where no JavaScript runs.
+function killTunnelSync() {
+  killChild();
+  resetActiveState();
+  lastError = null;
+}
+
 module.exports = {
   ensureTunnel,
   stopTunnel,
+  killTunnelSync,
   getTunnelState
 };

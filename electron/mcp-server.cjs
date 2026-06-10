@@ -1,10 +1,39 @@
 const http = require("node:http");
+const https = require("node:https");
 const { Buffer } = require("node:buffer");
 const { timingSafeEqual } = require("node:crypto");
+const mcpOauth = require("./mcpOauth.cjs");
 
 const SERVER_BIND_HOST = "127.0.0.1";
 const SERVER_NAME = "nexus-mcp";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
+
+// Static, unauthenticated landing page served at "/" so the server URL can be opened in a browser to
+// confirm reachability. Intentionally reveals nothing beyond "a Nexus MCP server is here."
+const LANDING_PAGE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus MCP</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0b0b0c; color: #e7e7e9; }
+  main { text-align: center; padding: 2rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
+  p { margin: 0; color: #9aa0a6; }
+</style>
+</head>
+<body>
+<main>
+<h1>Nexus MCP server</h1>
+<p>Testing &mdash; the server is reachable.</p>
+</main>
+</body>
+</html>
+`;
 
 let pkgVersion = "0.0.0";
 try {
@@ -115,6 +144,131 @@ const WRITE_TOOL = {
   }
 };
 
+// Granular, in-buffer write tools. Each computes a proposed full buffer from the cached document and
+// routes it through the same diff-confirmation gate as nexus_replace_document (or applies directly
+// when the user has enabled auto-approve). An edit that cannot be located fails without a dialog.
+const WRITE_TOOLS = [
+  {
+    name: "nexus_apply_edits",
+    description:
+      "Apply one or more ordered find/replace edits to the document of the focused Nexus editor window (or windowId). Each edit is { find, replace, all?, isRegex? }: 'find' is matched literally unless 'isRegex' is true. An edit that matches nothing — or matches more than once without 'all' — fails the whole batch without changing the document, so a stale read is rejected rather than mis-applied. Use an empty 'replace' to delete. The change is shown in an in-app diff for the user to approve (unless auto-approve is enabled).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        edits: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              find: { type: "string" },
+              replace: { type: "string" },
+              all: { type: "boolean" },
+              isRegex: { type: "boolean" }
+            },
+            required: ["find", "replace"],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ["edits"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_replace_section",
+    description:
+      "Replace a whole section (a heading through the line before the next same-or-higher heading, deeper subsections included) of the focused Nexus editor window (or windowId) with caller-supplied Markdown. Identify the section by exactly one of 'index' (the heading ordinal from nexus_get_outline), 'slug', or 'heading'. An empty 'markdown' deletes the section. The change is shown in an in-app diff for the user to approve (unless auto-approve is enabled).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        index: { type: "integer", minimum: 0 },
+        slug: { type: "string" },
+        heading: { type: "string" },
+        markdown: { type: "string" }
+      },
+      required: ["markdown"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_set_frontmatter",
+    description:
+      "Set, merge, or remove simple scalar YAML frontmatter fields (title, tags, date, …) of the focused Nexus editor window (or windowId), creating the leading --- block if absent and removing it when the last field is removed. 'set' is an object of key to scalar (string, number, or boolean) value; 'remove' is an array of keys. Frontmatter that is not simple key: value scalars is left untouched and reported. The change is shown in an in-app diff for the user to approve (unless auto-approve is enabled).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        set: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } },
+        remove: { type: "array", items: { type: "string" } }
+      },
+      additionalProperties: false
+    }
+  }
+];
+
+function describeEditError(error) {
+  if (!error || typeof error !== "object") {
+    return "The edit could not be applied.";
+  }
+  const at = typeof error.editIndex === "number" ? `Edit ${error.editIndex}: ` : "";
+  switch (error.reason) {
+    case "anchor-not-found":
+      return `${at}the text to find was not present in the document: ${JSON.stringify(error.find)}.`;
+    case "ambiguous":
+      return `${at}the text to find appears ${error.matchCount} times; pass "all": true or use a more specific anchor.`;
+    case "invalid-regex":
+      return `${at}invalid regular expression: ${error.message}.`;
+    case "invalid-edit":
+      return error.message || "An edit was missing a valid find/replace.";
+    case "invalid-edits":
+      return error.message || "apply_edits requires a non-empty 'edits' array.";
+    case "section-not-found":
+      return "No section matched the given index, slug, or heading.";
+    case "no-headings":
+      return "The document has no headings, so there is no section to replace.";
+    case "frontmatter-unsupported":
+      return "The document's existing frontmatter is not simple key: value YAML, so it was left unchanged.";
+    case "unsupported-value":
+      return `Frontmatter value for "${error.key}" must be a scalar (string, number, or boolean) without line breaks.`;
+    case "no-changes":
+      return error.message || "Provide 'set' and/or 'remove'.";
+    case "invalid-markdown":
+      return error.message || "A string 'markdown' value is required.";
+    default:
+      return error.message || `The edit could not be applied (${error.reason ?? "unknown"}).`;
+  }
+}
+
+// Map a host write result into MCP tool content: a normal applied/rejected outcome is data; a missing
+// window, a busy window, a delivery failure, or an edit that could not be located is an error.
+function writeResultToToolContent(result, windowId) {
+  if (!result) {
+    return toolErrorContent(noWindowMessage(windowId));
+  }
+  if (result.applied) {
+    return toolTextContent({ applied: true });
+  }
+  switch (result.reason) {
+    case "no-window":
+      return toolErrorContent(noWindowMessage(windowId));
+    case "busy":
+      return toolErrorContent(
+        "A write confirmation is already pending for this window. Try again after the user responds."
+      );
+    case "send-failed":
+      return toolErrorContent(result.message || "Failed to deliver the write to the editor window.");
+    case "edit-failed":
+      return toolErrorContent(describeEditError(result.error));
+    case "user-rejected":
+      return toolTextContent({ applied: false, reason: "user-rejected" });
+    default:
+      return toolTextContent({ applied: false, reason: result.reason ?? "unknown" });
+  }
+}
+
 function setHost(nextHost) {
   host = nextHost;
 }
@@ -155,14 +309,158 @@ function extractBearerToken(headerValue) {
   return match ? match[1].trim() : "";
 }
 
-function sendJson(res, statusCode, body) {
+function sendJson(res, statusCode, body, extraHeaders) {
   const payload = body === undefined ? "" : JSON.stringify(body);
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(payload),
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
+    ...(extraHeaders || {})
   });
   res.end(payload);
+}
+
+function sendHtml(res, statusCode, html, extraHeaders) {
+  const payload = Buffer.from(html, "utf8");
+  res.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": payload.length,
+    "Cache-Control": "no-store",
+    ...(extraHeaders || {})
+  });
+  res.end(payload);
+}
+
+// Derive the externally-visible origin for OAuth metadata and 401 challenges. Through the ngrok
+// tunnel the public host arrives in the Host header and ngrok adds X-Forwarded-Proto: https; for a
+// direct loopback request this yields http://127.0.0.1:{port}.
+function getRequestOrigin(req) {
+  const protoHeader = req.headers["x-forwarded-proto"];
+  const protoRaw = (Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || "")
+    .split(",")[0]
+    .trim();
+  const proto = protoRaw === "https" ? "https" : "http";
+  const host = req.headers.host || "";
+  if (!/^[A-Za-z0-9.\-:[\]]+$/.test(host)) {
+    return `http://${SERVER_BIND_HOST}:${listeningPort}`;
+  }
+  return `${proto}://${host}`;
+}
+
+// RFC 9728: point 401 responses at the protected-resource metadata so OAuth-capable MCP clients
+// (ChatGPT, Claude.ai) can discover the authorization server instead of giving up.
+function unauthorizedChallengeHeaders(req) {
+  return {
+    "WWW-Authenticate": `Bearer resource_metadata="${getRequestOrigin(req)}/.well-known/oauth-protected-resource"`
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildConsentPageHtml({ clientName, redirectUri, requestId, nonce }) {
+  let redirectHost = redirectUri;
+  try {
+    redirectHost = new URL(redirectUri).host;
+  } catch {
+    // Display the raw value if it cannot be parsed; it was validated at registration.
+  }
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authorize access to Nexus</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0b0b0c; color: #e7e7e9; }
+  main { text-align: center; padding: 2rem; max-width: 26rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
+  p { margin: 0 0 1.25rem; color: #9aa0a6; line-height: 1.5; }
+  .actions { display: flex; gap: 0.75rem; justify-content: center; }
+  button { font: inherit; padding: 0.55rem 1.4rem; border-radius: 0.5rem; cursor: pointer;
+    border: 1px solid #3f3f46; background: #18181b; color: #e7e7e9; }
+  button.approve { background: #2563eb; border-color: #2563eb; color: #fff; }
+</style>
+</head>
+<body>
+<main>
+<h1>Authorize access to Nexus?</h1>
+<p><strong>${escapeHtml(clientName)}</strong> (${escapeHtml(redirectHost)}) is asking to connect to
+your Nexus MCP server. Approving lets it read your open document and propose edits, subject to your
+MCP write settings.</p>
+<form method="post" action="/authorize/decision">
+<input type="hidden" name="request_id" value="${escapeHtml(requestId)}" />
+<input type="hidden" name="nonce" value="${escapeHtml(nonce)}" />
+<div class="actions">
+<button type="submit" name="action" value="deny">Deny</button>
+<button type="submit" name="action" value="approve" class="approve">Approve</button>
+</div>
+</form>
+</main>
+</body>
+</html>
+`;
+}
+
+function buildOauthErrorPageHtml(message) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus authorization error</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0b0b0c; color: #e7e7e9; }
+  main { text-align: center; padding: 2rem; max-width: 26rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
+  p { margin: 0; color: #9aa0a6; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+<h1>Authorization failed</h1>
+<p>${escapeHtml(message)}</p>
+</main>
+</body>
+</html>
+`;
+}
+
+// Consent and error pages must not be frameable (clickjacking) and must not leak codes via referrers.
+const OAUTH_PAGE_HEADERS = {
+  "X-Frame-Options": "DENY",
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "Referrer-Policy": "no-referrer"
+};
+
+function respondAuthorizationOutcome(res, outcome) {
+  if (outcome.kind === "redirect") {
+    res.writeHead(302, { Location: outcome.url, "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  if (outcome.kind === "consent") {
+    sendHtml(res, 200, buildConsentPageHtml(outcome), OAUTH_PAGE_HEADERS);
+    return;
+  }
+  sendHtml(
+    res,
+    outcome.status || 400,
+    buildOauthErrorPageHtml(outcome.message || "Authorization failed."),
+    OAUTH_PAGE_HEADERS
+  );
 }
 
 function jsonRpcError(id, code, message, data) {
@@ -340,6 +638,77 @@ async function dispatchToolCall(name, args, requestContext) {
     return toolTextContent(result);
   }
 
+  const clientLabel = requestContext.clientLabel || lastClientLabel || "unknown";
+
+  if (name === "nexus_apply_edits") {
+    if (typeof host.requestApplyEdits !== "function") {
+      return toolErrorContent("nexus_apply_edits is not supported by this Nexus version.");
+    }
+    const edits = Array.isArray(args?.edits) ? args.edits : null;
+    if (!edits || edits.length === 0) {
+      return toolErrorContent(
+        "nexus_apply_edits requires a non-empty 'edits' array of { find, replace } objects."
+      );
+    }
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    const result = await host.requestApplyEdits({ windowId, edits, clientLabel });
+    return writeResultToToolContent(result, windowId);
+  }
+
+  if (name === "nexus_replace_section") {
+    if (typeof host.requestReplaceSection !== "function") {
+      return toolErrorContent("nexus_replace_section is not supported by this Nexus version.");
+    }
+    if (typeof args?.markdown !== "string") {
+      return toolErrorContent(
+        "nexus_replace_section requires a string 'markdown' value (the new section content)."
+      );
+    }
+
+    const selector = {};
+    if (Number.isInteger(args?.index)) {
+      selector.index = args.index;
+    }
+    if (typeof args?.slug === "string" && args.slug.length > 0) {
+      selector.slug = args.slug;
+    }
+    if (typeof args?.heading === "string" && args.heading.length > 0) {
+      selector.heading = args.heading;
+    }
+    if (selector.index === undefined && selector.slug === undefined && selector.heading === undefined) {
+      return toolErrorContent(
+        "nexus_replace_section requires one of 'index', 'slug', or 'heading' to identify the section."
+      );
+    }
+
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    const result = await host.requestReplaceSection({
+      windowId,
+      selector,
+      markdown: args.markdown,
+      clientLabel
+    });
+    return writeResultToToolContent(result, windowId);
+  }
+
+  if (name === "nexus_set_frontmatter") {
+    if (typeof host.requestSetFrontmatter !== "function") {
+      return toolErrorContent("nexus_set_frontmatter is not supported by this Nexus version.");
+    }
+    const set =
+      args?.set && typeof args.set === "object" && !Array.isArray(args.set) ? args.set : undefined;
+    const remove = Array.isArray(args?.remove) ? args.remove : undefined;
+    if (!set && !remove) {
+      return toolErrorContent(
+        "nexus_set_frontmatter requires 'set' (an object of fields) and/or 'remove' (an array of keys)."
+      );
+    }
+
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    const result = await host.requestSetFrontmatter({ windowId, set, remove, clientLabel });
+    return writeResultToToolContent(result, windowId);
+  }
+
   return toolErrorContent(`Unknown tool: ${name}`);
 }
 
@@ -373,7 +742,7 @@ async function handleJsonRpc(message, requestContext) {
 
   if (method === "tools/list") {
     return jsonRpcResult(id, {
-      tools: [...READ_ONLY_TOOLS, WRITE_TOOL]
+      tools: [...READ_ONLY_TOOLS, WRITE_TOOL, ...WRITE_TOOLS]
     });
   }
 
@@ -431,10 +800,171 @@ async function handleRequest(req, res) {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type, MCP-Session-Id"
     });
     res.end();
+    return;
+  }
+
+  const requestUrl = new URL(req.url, "http://localhost");
+
+  // Simple, unauthenticated landing page so a user can open the server URL (local or the public ngrok
+  // URL) in a browser and confirm it is reachable. It exposes no document content or tools — just a
+  // static "it's working" message — so it is safe without the bearer token, which a browser GET would
+  // not send anyway.
+  if (requestUrl.pathname === "/" || requestUrl.pathname === "/index.html") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" }).end();
+      return;
+    }
+    sendHtml(res, 200, LANDING_PAGE_HTML);
+    return;
+  }
+
+  // Lightweight verification endpoint: confirms the server is reachable and (in bearer mode) that the
+  // token is accepted, over the same loopback bind and auth as /mcp. Used by the Preferences "Test
+  // setup" button to probe both the local server and, when connected, the public ngrok URL.
+  if (requestUrl.pathname === "/health") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" }).end();
+      return;
+    }
+
+    if (currentConfig.authMode !== "none") {
+      const provided = extractBearerToken(req.headers["authorization"]);
+      if (!compareTokens(provided, currentConfig.bearerToken)) {
+        sendJson(res, 401, { ok: false, error: "unauthorized" }, unauthorizedChallengeHeaders(req));
+        return;
+      }
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      name: SERVER_NAME,
+      version: pkgVersion,
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      authMode: currentConfig.authMode,
+      time: new Date().toISOString()
+    });
+    return;
+  }
+
+  // OAuth 2.1 surface (discovery, registration, consent, token) for MCP clients that require the MCP
+  // authorization spec, such as ChatGPT custom connectors. Active only in bearer-token mode: the flow
+  // ends by issuing the static bearer token, so in "none" mode there is nothing to issue (and nothing
+  // returns 401, so spec-following clients never look for it).
+  const oauthActive = currentConfig.authMode !== "none";
+  const pathname = requestUrl.pathname;
+
+  if (
+    pathname === "/.well-known/oauth-protected-resource" ||
+    pathname === "/.well-known/oauth-protected-resource/mcp"
+  ) {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" }).end();
+      return;
+    }
+    sendJson(res, 200, mcpOauth.getProtectedResourceMetadata(getRequestOrigin(req)));
+    return;
+  }
+
+  if (
+    pathname === "/.well-known/oauth-authorization-server" ||
+    pathname === "/.well-known/oauth-authorization-server/mcp" ||
+    pathname === "/.well-known/openid-configuration"
+  ) {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" }).end();
+      return;
+    }
+    sendJson(res, 200, mcpOauth.getAuthorizationServerMetadata(getRequestOrigin(req)));
+    return;
+  }
+
+  if (pathname === "/register") {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" }).end();
+      return;
+    }
+    let registrationBody;
+    try {
+      registrationBody = await readRequestBody(req);
+    } catch {
+      sendJson(res, 400, { error: "invalid_client_metadata" });
+      return;
+    }
+    const registration = mcpOauth.handleRegistration(registrationBody);
+    sendJson(res, registration.status, registration.body);
+    return;
+  }
+
+  if (pathname === "/authorize") {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.writeHead(405, { Allow: "GET" }).end();
+      return;
+    }
+    respondAuthorizationOutcome(res, mcpOauth.beginAuthorization(requestUrl.searchParams));
+    return;
+  }
+
+  if (pathname === "/authorize/decision") {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" }).end();
+      return;
+    }
+    let decisionBody;
+    try {
+      decisionBody = await readRequestBody(req);
+    } catch {
+      sendHtml(res, 400, buildOauthErrorPageHtml("The request could not be read."), OAUTH_PAGE_HEADERS);
+      return;
+    }
+    respondAuthorizationOutcome(res, mcpOauth.decideAuthorization(new URLSearchParams(decisionBody)));
+    return;
+  }
+
+  if (pathname === "/token") {
+    if (!oauthActive) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" }).end();
+      return;
+    }
+    let tokenBody;
+    try {
+      tokenBody = await readRequestBody(req);
+    } catch {
+      sendJson(res, 400, { error: "invalid_request" });
+      return;
+    }
+    const tokenResult = mcpOauth.exchangeAuthorizationCode(
+      new URLSearchParams(tokenBody),
+      currentConfig.bearerToken
+    );
+    sendJson(res, tokenResult.status, tokenResult.body);
     return;
   }
 
@@ -456,7 +986,7 @@ async function handleRequest(req, res) {
   if (currentConfig.authMode !== "none") {
     const provided = extractBearerToken(req.headers["authorization"]);
     if (!compareTokens(provided, currentConfig.bearerToken)) {
-      sendJson(res, 401, jsonRpcError(null, -32001, "Unauthorized"));
+      sendJson(res, 401, jsonRpcError(null, -32001, "Unauthorized"), unauthorizedChallengeHeaders(req));
       return;
     }
   }
@@ -552,9 +1082,15 @@ async function configure(nextConfig) {
   const bearerToken = typeof nextConfig?.bearerToken === "string" ? nextConfig.bearerToken : "";
   const credentialsReady = authMode === "none" || bearerToken.length > 0;
 
+  mcpOauth.configure({
+    clientStorePath:
+      typeof nextConfig?.oauthClientStorePath === "string" ? nextConfig.oauthClientStorePath : null
+  });
+
   if (!enabled || !credentialsReady) {
     await stopListening();
     currentConfig = { enabled: false, port, authMode, bearerToken };
+    mcpOauth.clearVolatileState();
     if (typeof host?.rejectAllPendingWrites === "function") {
       host.rejectAllPendingWrites("server-disabled");
     }
@@ -587,6 +1123,79 @@ async function configure(nextConfig) {
 async function stop() {
   await stopListening();
   currentConfig = { enabled: false, port: 0, authMode: "bearer", bearerToken: "" };
+  mcpOauth.clearVolatileState();
+}
+
+// GET a URL with an optional bearer token and a timeout, resolving a probe result. Used to verify the
+// server's own /health endpoint over loopback and (optionally) the public ngrok URL.
+function httpGetJson(targetUrl, token, timeoutMs) {
+  return new Promise((resolve) => {
+    let parsed;
+    try {
+      parsed = new URL(targetUrl);
+    } catch {
+      resolve({ ok: false, error: "invalid-url" });
+      return;
+    }
+
+    const transport = parsed.protocol === "https:" ? https : http;
+    const headers = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const request = transport.request(
+      {
+        method: "GET",
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: `${parsed.pathname}${parsed.search}`,
+        headers,
+        timeout: timeoutMs
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        // The body is small and we only need the status; drain it so the socket can close.
+        response.on("data", () => {});
+        response.on("end", () => {
+          resolve({ ok: status >= 200 && status < 300, status });
+        });
+      }
+    );
+
+    request.on("timeout", () => {
+      request.destroy();
+      resolve({ ok: false, error: "timeout" });
+    });
+    request.on("error", (error) => {
+      resolve({ ok: false, error: error && error.code ? error.code : "request-failed" });
+    });
+    request.end();
+  });
+}
+
+// Verify the running server: probe the loopback /health with the active token, and — when a public
+// ngrok URL is supplied — probe that too, so the Preferences "Test setup" button can confirm both.
+async function testConnection(options = {}) {
+  const ngrokUrl =
+    typeof options.ngrokUrl === "string" && options.ngrokUrl.length > 0 ? options.ngrokUrl : null;
+
+  if (!httpServer || !httpServer.listening) {
+    return { local: { ok: false, error: "not-running" }, ngrok: null };
+  }
+
+  const token = currentConfig.authMode === "bearer" ? currentConfig.bearerToken : "";
+  const local = await httpGetJson(`http://${SERVER_BIND_HOST}:${listeningPort}/health`, token, 4000);
+
+  let ngrok = null;
+  if (ngrokUrl) {
+    const base = ngrokUrl.replace(/\/+$/, "");
+    const probe = await httpGetJson(`${base}/health`, token, 8000);
+    ngrok = { url: ngrokUrl, ...probe };
+  }
+
+  return { local, ngrok };
 }
 
 module.exports = {
@@ -594,5 +1203,6 @@ module.exports = {
   configure,
   stop,
   getListeningInfo,
-  getLastClientLabel
+  getLastClientLabel,
+  testConnection
 };

@@ -14,6 +14,7 @@ import {
   EDITOR_THEME_OPTIONS,
   getSettingsStorageKey,
   loadSettings,
+  readLegacyMcpBearerToken,
   readLegacyQuickConnectToken,
   resetSettings,
   saveSettings
@@ -74,6 +75,7 @@ describe("settings helpers", () => {
         port: 39125,
         authMode: "bearer",
         bearerToken: "",
+        autoApproveWrites: false,
         ngrokEnabled: false,
         ngrokDomain: "",
         ngrokUseCustomPath: false,
@@ -131,6 +133,7 @@ describe("settings helpers", () => {
         port: 39125,
         authMode: "bearer",
         bearerToken: "",
+        autoApproveWrites: false,
         ngrokEnabled: false,
         ngrokDomain: "",
         ngrokUseCustomPath: false,
@@ -629,6 +632,45 @@ describe("settings helpers", () => {
     expect(readLegacyQuickConnectToken("default")).toBe("");
   });
 
+  it("never persists the MCP bearer token in localStorage", () => {
+    const storage = installLocalStorage();
+    const settings = createDefaultSettings();
+    settings.mcpServer = { ...settings.mcpServer, enabled: true, bearerToken: "super-secret-token" };
+
+    saveSettings("default", settings);
+
+    const written = storage.setItem.mock.calls.at(-1)?.[1] as string;
+    expect(written).not.toContain("super-secret-token");
+    const parsed = JSON.parse(written);
+    expect(parsed.mcpServer.bearerToken).toBe("");
+    // The other MCP settings are still persisted as normal.
+    expect(parsed.mcpServer.enabled).toBe(true);
+  });
+
+  it("reads a legacy plaintext MCP bearer token for migration", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        mcpServer: { enabled: true, authMode: "bearer", bearerToken: "legacy-bearer" }
+      })
+    });
+
+    expect(readLegacyMcpBearerToken("default")).toBe("legacy-bearer");
+  });
+
+  it("returns an empty legacy MCP bearer token when none is stored or storage is unavailable", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ mcpServer: { authMode: "bearer" } })
+    });
+    expect(readLegacyMcpBearerToken("default")).toBe("");
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ mcpServer: { bearerToken: 123 } })
+    });
+    expect(readLegacyMcpBearerToken("default")).toBe("");
+  });
+
   it("loads saved ngrok tunnel MCP settings", () => {
     installLocalStorage({
       [getSettingsStorageKey("default")]: JSON.stringify({
@@ -675,6 +717,26 @@ describe("settings helpers", () => {
     expect(mcp.ngrokPath).toBe("");
   });
 
+  it("loads and sanitizes the MCP auto-approve writes flag", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        mcpServer: { autoApproveWrites: true }
+      })
+    });
+    expect(loadSettings("default").mcpServer.autoApproveWrites).toBe(true);
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+        pageSize: "Letter",
+        mcpServer: { autoApproveWrites: "yes" }
+      })
+    });
+    expect(loadSettings("default").mcpServer.autoApproveWrites).toBe(false);
+  });
+
   it("saves the selected paper size", () => {
     const storage = installLocalStorage();
 
@@ -701,6 +763,7 @@ describe("settings helpers", () => {
         port: 39125,
         authMode: "bearer",
         bearerToken: "",
+        autoApproveWrites: false,
         ngrokEnabled: false,
         ngrokDomain: "",
         ngrokUseCustomPath: false,
@@ -744,6 +807,7 @@ describe("settings helpers", () => {
           port: 39125,
           authMode: "bearer",
           bearerToken: "",
+          autoApproveWrites: false,
           ngrokEnabled: false,
           ngrokDomain: "",
           ngrokUseCustomPath: false,

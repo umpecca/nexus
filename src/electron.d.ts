@@ -101,6 +101,18 @@ export type McpNgrokStatus = {
   domainFallback: boolean;
 };
 
+export type McpConnectionProbe = {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  url?: string;
+};
+
+export type McpConnectionTestResult = {
+  local: McpConnectionProbe;
+  ngrok: McpConnectionProbe | null;
+};
+
 type ConfigureMcpServerResult =
   | { ok: true; listening: boolean; port?: number; ngrok: McpNgrokStatus }
   | { ok: false; listening?: false; error: string; ngrok?: McpNgrokStatus };
@@ -251,6 +263,9 @@ declare global {
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
       setMenuState(state: NexusMenuState): void;
       configureMcpServer(config: ConfigureMcpServerInput): Promise<ConfigureMcpServerResult>;
+      testMcpConnection(): Promise<McpConnectionTestResult>;
+      stopMcpNgrok(): Promise<McpNgrokStatus>;
+      restartMcpNgrok(config: ConfigureMcpServerInput): Promise<McpNgrokStatus>;
       registerMcpWindow(payload: RegisterMcpWindowInput): void;
       updateMcpWindowState(state: UpdateMcpWindowStateInput): void;
       unregisterMcpWindow(): void;
@@ -265,6 +280,8 @@ declare global {
         profileName: string,
         token: string
       ): Promise<QuickConnectTokenSaveResult>;
+      getMcpBearerToken(profileName: string): Promise<string>;
+      setMcpBearerToken(profileName: string, token: string): Promise<QuickConnectTokenSaveResult>;
       selectPrivateKeyFile(): Promise<SelectPrivateKeyResult>;
       onConfirmHostKey(callback: (event: ConfirmHostKeyEvent) => void): () => void;
       resolveHostKey(requestId: string, decision: HostKeyDecision): void;

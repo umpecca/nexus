@@ -13,6 +13,7 @@ const ngrokTunnel = require("./ngrok-tunnel.cjs");
 const recentFilesStore = require("./recentFiles.cjs");
 const headingSlugger = require("./headingSlugger.cjs");
 const mcpDocumentTools = require("./mcpDocumentTools.cjs");
+const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
@@ -202,6 +203,66 @@ function rejectAllPendingMcpWrites(reason) {
   mcpPendingWrites.clear();
 }
 
+// Route an already-computed proposed buffer to a resolved window record through the write-confirmation
+// pipeline. Shared by every write tool (full replace and the granular in-buffer edits) so they all
+// inherit the same busy/no-window handling and the renderer's diff-confirmation (or auto-approve).
+function requestReplaceWithMarkdown(record, proposedMarkdown, clientLabel) {
+  return new Promise((resolve) => {
+    for (const pending of mcpPendingWrites.values()) {
+      if (pending.webContentsId === record.webContentsId) {
+        resolve({ applied: false, reason: "busy" });
+        return;
+      }
+    }
+
+    const window = BrowserWindow.fromId(record.browserWindowId);
+    if (!window || window.isDestroyed()) {
+      mcpWindowRecords.delete(record.webContentsId);
+      resolve({ applied: false, reason: "no-window" });
+      return;
+    }
+
+    mcpPendingWriteCounter += 1;
+    const requestId = `mcp-write-${mcpPendingWriteCounter}`;
+    mcpPendingWrites.set(requestId, {
+      resolve,
+      webContentsId: record.webContentsId
+    });
+
+    try {
+      window.webContents.send("mcp:confirm-write", {
+        requestId,
+        markdown: proposedMarkdown,
+        clientLabel: clientLabel || "an MCP client"
+      });
+    } catch (error) {
+      mcpPendingWrites.delete(requestId);
+      resolve({
+        applied: false,
+        reason: "send-failed",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+}
+
+// Resolve the target window, compute a proposed buffer from its cached Markdown via `computeProposed`
+// (a pure function returning `{ ok, markdown }` | `{ ok: false, ... }`), and either route the proposal
+// through the confirmation pipeline or report the edit failure to the client (no dialog shown).
+function requestComputedWrite(windowId, clientLabel, computeProposed) {
+  const record = resolveMcpWindowRecord(windowId);
+  if (!record) {
+    return Promise.resolve({ applied: false, reason: "no-window" });
+  }
+
+  const result = computeProposed(record.markdown ?? "");
+  if (!result.ok) {
+    return Promise.resolve({ applied: false, reason: "edit-failed", error: result });
+  }
+
+  return requestReplaceWithMarkdown(record, result.markdown, clientLabel);
+}
+
 mcpServer.setHost({
   listWindows: mcpListWindows,
   getDocument: mcpGetDocument,
@@ -210,51 +271,20 @@ mcpServer.setHost({
   searchDocument: mcpSearchDocument,
   getSelection: mcpRequestSelection,
   rejectAllPendingWrites: rejectAllPendingMcpWrites,
-  requestReplaceDocument: ({ windowId, markdown, clientLabel }) => {
-    return new Promise((resolve) => {
-      const record = windowId ? findMcpWindowByWindowId(windowId) : findMcpFocusedWindow();
-      if (!record) {
-        resolve({ applied: false, reason: "no-window" });
-        return;
-      }
-
-      for (const pending of mcpPendingWrites.values()) {
-        if (pending.webContentsId === record.webContentsId) {
-          resolve({ applied: false, reason: "busy" });
-          return;
-        }
-      }
-
-      const window = BrowserWindow.fromId(record.browserWindowId);
-      if (!window || window.isDestroyed()) {
-        mcpWindowRecords.delete(record.webContentsId);
-        resolve({ applied: false, reason: "no-window" });
-        return;
-      }
-
-      mcpPendingWriteCounter += 1;
-      const requestId = `mcp-write-${mcpPendingWriteCounter}`;
-      mcpPendingWrites.set(requestId, {
-        resolve,
-        webContentsId: record.webContentsId
-      });
-
-      try {
-        window.webContents.send("mcp:confirm-write", {
-          requestId,
-          markdown,
-          clientLabel: clientLabel || "an MCP client"
-        });
-      } catch (error) {
-        mcpPendingWrites.delete(requestId);
-        resolve({
-          applied: false,
-          reason: "send-failed",
-          message: error instanceof Error ? error.message : String(error)
-        });
-      }
-    });
-  }
+  requestReplaceDocument: ({ windowId, markdown, clientLabel }) =>
+    requestComputedWrite(windowId, clientLabel, () => ({ ok: true, markdown })),
+  requestApplyEdits: ({ windowId, edits, clientLabel }) =>
+    requestComputedWrite(windowId, clientLabel, (current) =>
+      mcpDocumentEdits.applyEdits(current, edits)
+    ),
+  requestReplaceSection: ({ windowId, selector, markdown, clientLabel }) =>
+    requestComputedWrite(windowId, clientLabel, (current) =>
+      mcpDocumentEdits.replaceSection(current, selector, markdown)
+    ),
+  requestSetFrontmatter: ({ windowId, set, remove, clientLabel }) =>
+    requestComputedWrite(windowId, clientLabel, (current) =>
+      mcpDocumentEdits.setFrontmatter(current, { set, remove })
+    )
 });
 
 const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
@@ -3810,6 +3840,76 @@ ipcMain.handle("quickconnect:set-token", async (_event, payload) => {
   return { stored: true, encryptionAvailable: true };
 });
 
+// The MCP bearer token is the secret that authenticates AI clients (and the OAuth flow issues it), so
+// like the QuickConnect token it is encrypted at rest with Electron safeStorage rather than written
+// to localStorage in plaintext. Same per-profile ciphertext map, separate file.
+function getMcpBearerTokenStorePath() {
+  return path.join(app.getPath("userData"), "mcp-bearer-tokens.json");
+}
+
+function mcpBearerProfileKey(profileName) {
+  return typeof profileName === "string" && profileName.trim() ? profileName.trim() : "default";
+}
+
+async function readMcpBearerTokenStore() {
+  try {
+    const raw = await fs.readFile(getMcpBearerTokenStorePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeMcpBearerTokenStore(store) {
+  const filePath = getMcpBearerTokenStorePath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(store), "utf8");
+}
+
+ipcMain.handle("mcp:get-bearer-token", async (_event, profileName) => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return "";
+  }
+
+  const store = await readMcpBearerTokenStore();
+  const encoded = store[mcpBearerProfileKey(profileName)];
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    return "";
+  }
+
+  try {
+    return safeStorage.decryptString(Buffer.from(encoded, "base64"));
+  } catch {
+    // A token encrypted under a different OS user/key cannot be read back here; treat as absent.
+    return "";
+  }
+});
+
+ipcMain.handle("mcp:set-bearer-token", async (_event, payload) => {
+  const profileKey = mcpBearerProfileKey(payload?.profileName);
+  const token = typeof payload?.token === "string" ? payload.token : "";
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+  const store = await readMcpBearerTokenStore();
+
+  if (!token) {
+    if (Object.prototype.hasOwnProperty.call(store, profileKey)) {
+      delete store[profileKey];
+      await writeMcpBearerTokenStore(store);
+    }
+    return { stored: false, encryptionAvailable };
+  }
+
+  // Never fall back to plaintext on disk: the whole point is encryption at rest.
+  if (!encryptionAvailable) {
+    return { stored: false, encryptionAvailable: false };
+  }
+
+  store[profileKey] = safeStorage.encryptString(token).toString("base64");
+  await writeMcpBearerTokenStore(store);
+  return { stored: true, encryptionAvailable: true };
+});
+
 ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
@@ -4057,7 +4157,8 @@ ipcMain.handle("mcp:configure", async (_event, config) => {
     enabled: nextEnabled,
     port: nextPort,
     authMode: nextAuthMode,
-    bearerToken: nextToken
+    bearerToken: nextToken,
+    oauthClientStorePath: path.join(app.getPath("userData"), "mcp-oauth-clients.json")
   });
 
   // Manage the optional ngrok tunnel based on the live server state. A tunnel failure
@@ -4084,6 +4185,51 @@ ipcMain.handle("mcp:configure", async (_event, config) => {
       domainFallback: Boolean(tunnelState.domainFallback)
     }
   };
+});
+
+ipcMain.handle("mcp:test-connection", async () => {
+  const tunnelState = ngrokTunnel.getTunnelState();
+  const ngrokUrl = tunnelState.connected ? tunnelState.url : null;
+  return mcpServer.testConnection({ ngrokUrl });
+});
+
+function ngrokParamsFromConfig(config) {
+  const domain = typeof config?.ngrokDomain === "string" ? config.ngrokDomain.trim() : "";
+  const useCustomPath = typeof config?.ngrokUseCustomPath === "boolean" ? config.ngrokUseCustomPath : false;
+  const path = typeof config?.ngrokPath === "string" ? config.ngrokPath.trim() : "";
+  // Use the explicit path only when the user opted in and provided one; otherwise resolve from PATH.
+  const command = useCustomPath && path ? path : "ngrok";
+  return { domain, command };
+}
+
+function currentNgrokStatus(enabled) {
+  const tunnelState = ngrokTunnel.getTunnelState();
+  return {
+    enabled: Boolean(enabled),
+    connected: tunnelState.connected,
+    url: tunnelState.url,
+    error: tunnelState.error,
+    domainFallback: Boolean(tunnelState.domainFallback)
+  };
+}
+
+ipcMain.handle("mcp:stop-ngrok", async () => {
+  await ngrokTunnel.stopTunnel();
+  return currentNgrokStatus(false);
+});
+
+ipcMain.handle("mcp:restart-ngrok", async (_event, config) => {
+  // Stop first so ensureTunnel spawns a fresh agent instead of treating the request as a no-op.
+  await ngrokTunnel.stopTunnel();
+
+  const ngrokEnabled = typeof config?.ngrokEnabled === "boolean" ? config.ngrokEnabled : false;
+  const info = mcpServer.getListeningInfo();
+  if (info.listening && ngrokEnabled) {
+    const { domain, command } = ngrokParamsFromConfig(config);
+    await ngrokTunnel.ensureTunnel({ port: info.port, domain, command });
+  }
+
+  return currentNgrokStatus(ngrokEnabled);
 });
 
 ipcMain.on("mcp:register-window", (event, payload) => {
@@ -4318,5 +4464,13 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   rejectAllPendingMcpWrites("app-quit");
   void mcpServer.stop();
-  void ngrokTunnel.stopTunnel();
+  // Kill the ngrok agent synchronously so it cannot outlive the app: the async stopTunnel chain is
+  // not guaranteed to run before the process terminates after will-quit.
+  ngrokTunnel.killTunnelSync();
+});
+
+// Last-resort synchronous teardown for graceful exit paths that bypass will-quit (e.g. an explicit
+// process.exit). Cannot run on a hard kill (SIGKILL) or crash, where no JavaScript executes.
+process.on("exit", () => {
+  ngrokTunnel.killTunnelSync();
 });

@@ -856,6 +856,28 @@ body.nexus-resizing-col * {
   padding: 0.55rem 0.7rem;
 }
 
+.nexus-settings-success {
+  background: rgba(22, 163, 74, 0.08);
+  border: 1px solid rgba(22, 163, 74, 0.45);
+  border-radius: calc(var(--radius) - 2px);
+  color: #15803d;
+  font-size: 0.82rem;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+}
+
+.nexus-settings-mcp-test {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nexus-settings-mcp-test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .nexus-mcp-confirm-dialog {
   max-width: 720px;
 }

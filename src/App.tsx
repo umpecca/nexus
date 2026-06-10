@@ -30,6 +30,7 @@ import {
   createDefaultSettings,
   getEditorPageSizeOption,
   loadSettings,
+  readLegacyMcpBearerToken,
   readLegacyQuickConnectToken,
   resetSettings,
   saveSettings
@@ -384,6 +385,10 @@ function App() {
   const activeScrollElementRef = useRef<HTMLElement | null>(null);
   const isApplyingScrollRef = useRef(false);
   const filePathRef = useRef(filePath);
+  const autoApproveMcpWritesRef = useRef(settings.mcpServer.autoApproveWrites);
+  // Tracks the bearer token already written to the encrypted store, so the persist effect only writes
+  // on genuine changes (and skips re-writing the value hydrated at startup).
+  const persistedBearerTokenRef = useRef<string | null>(null);
   const hasHandledInitialOpenFileRef = useRef(false);
   const hasFocusedInitialEmptyEditorRef = useRef(false);
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
@@ -586,6 +591,7 @@ function App() {
   }, []);
 
   filePathRef.current = filePath;
+  autoApproveMcpWritesRef.current = settings.mcpServer.autoApproveWrites;
   menuHandlersRef.current = {
     createNewDocument,
     openDocument,
@@ -660,9 +666,10 @@ function App() {
         return;
       }
 
-      // Capture any legacy plaintext token before setSettings triggers the save effect, which
-      // rewrites localStorage without it (the QuickConnect token is no longer persisted there).
+      // Capture any legacy plaintext tokens before setSettings triggers the save effect, which
+      // rewrites localStorage without them (these secrets are no longer persisted there).
       const legacyToken = readLegacyQuickConnectToken(nextProfileName);
+      const legacyBearerToken = readLegacyMcpBearerToken(nextProfileName);
 
       setProfileName(nextProfileName);
       setSettings(loadSettings(nextProfileName));
@@ -678,6 +685,23 @@ function App() {
       if (isMounted) {
         setQuickConnectToken(token);
       }
+
+      // The MCP bearer token is likewise encrypted at rest. Load it (migrating a legacy plaintext
+      // token once), then merge it into the in-memory settings so the server and dialog see it.
+      let bearerToken = (await window.nexus?.getMcpBearerToken(nextProfileName)) ?? "";
+      if (!bearerToken && legacyBearerToken) {
+        bearerToken = legacyBearerToken;
+        await window.nexus?.setMcpBearerToken(nextProfileName, legacyBearerToken);
+      }
+
+      if (isMounted && bearerToken) {
+        // Record the hydrated value so the persist effect does not write it straight back.
+        persistedBearerTokenRef.current = bearerToken;
+        setSettings((current) => ({
+          ...current,
+          mcpServer: { ...current.mcpServer, bearerToken }
+        }));
+      }
     }
 
     void initializeProfileSettings();
@@ -690,6 +714,17 @@ function App() {
   useEffect(() => {
     saveSettings(profileName, settings);
   }, [profileName, settings]);
+
+  useEffect(() => {
+    const bearerToken = settings.mcpServer.bearerToken;
+    // An empty token means "none yet" — never clear the encrypted store from here, which would race
+    // the startup hydration that loads it. Only persist a genuine new value (enable/regenerate).
+    if (!bearerToken || bearerToken === persistedBearerTokenRef.current) {
+      return;
+    }
+    persistedBearerTokenRef.current = bearerToken;
+    void window.nexus?.setMcpBearerToken(profileName, bearerToken);
+  }, [profileName, settings.mcpServer.bearerToken]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -827,6 +862,12 @@ function App() {
     }
 
     return window.nexus.onMcpConfirmWrite((payload) => {
+      // When the user has opted into auto-approve, apply the write immediately and skip the dialog.
+      if (autoApproveMcpWritesRef.current) {
+        applyApprovedMcpWrite(payload.requestId, payload.markdown);
+        return;
+      }
+
       setPendingMcpWrite((current) => {
         if (current) {
           window.nexus?.resolveMcpWrite(payload.requestId, "reject");
@@ -835,6 +876,7 @@ function App() {
         return payload;
       });
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -858,16 +900,20 @@ function App() {
     });
   }, []);
 
+  function applyApprovedMcpWrite(requestId: string, nextMarkdown: string) {
+    beginProgrammaticMarkdownChange(nextMarkdown);
+    editorRef.current?.setMarkdown(nextMarkdown);
+    setMarkdown(nextMarkdown);
+    window.nexus?.resolveMcpWrite(requestId, "approve");
+  }
+
   function approvePendingMcpWrite() {
     setPendingMcpWrite((pending) => {
       if (!pending) {
         return null;
       }
 
-      beginProgrammaticMarkdownChange(pending.markdown);
-      editorRef.current?.setMarkdown(pending.markdown);
-      setMarkdown(pending.markdown);
-      window.nexus?.resolveMcpWrite(pending.requestId, "approve");
+      applyApprovedMcpWrite(pending.requestId, pending.markdown);
       return null;
     });
   }
@@ -2089,6 +2135,28 @@ function App() {
         fontSizePixels={settings.fontSizePixels}
         mcpServer={settings.mcpServer}
         mcpNgrokStatus={mcpNgrokStatus}
+        onTestMcpConnection={() => window.nexus?.testMcpConnection() ?? Promise.resolve(undefined)}
+        onStopNgrok={async () => {
+          const status = await window.nexus?.stopMcpNgrok();
+          if (status) {
+            setMcpNgrokStatus(status);
+          }
+        }}
+        onRestartNgrok={async () => {
+          const status = await window.nexus?.restartMcpNgrok({
+            enabled: settings.mcpServer.enabled,
+            port: settings.mcpServer.port,
+            authMode: settings.mcpServer.authMode,
+            bearerToken: settings.mcpServer.bearerToken,
+            ngrokEnabled: settings.mcpServer.ngrokEnabled,
+            ngrokDomain: settings.mcpServer.ngrokDomain,
+            ngrokUseCustomPath: settings.mcpServer.ngrokUseCustomPath,
+            ngrokPath: settings.mcpServer.ngrokPath
+          });
+          if (status) {
+            setMcpNgrokStatus(status);
+          }
+        }}
         onFontFamilyChange={(fontFamily) => setSettings((current) => ({ ...current, fontFamily }))}
         onFontSizePixelsChange={(fontSizePixels) =>
           setSettings((current) => ({ ...current, fontSizePixels }))

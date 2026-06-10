@@ -77,7 +77,17 @@ export type McpServerSettings = {
   enabled: boolean;
   port: number;
   authMode: McpAuthMode;
+  /**
+   * The MCP bearer token. Held in memory at runtime, but a secret at rest: it is NOT persisted in
+   * localStorage (saveSettings strips it) and is instead encrypted by the main process via Electron
+   * safeStorage. See readLegacyMcpBearerToken for the one-time migration of plaintext tokens.
+   */
   bearerToken: string;
+  /**
+   * When true, MCP write tool calls apply immediately without the per-call diff confirmation dialog.
+   * Off by default; intended only for trusted local sessions.
+   */
+  autoApproveWrites: boolean;
   /** Optional ngrok tunnel that exposes the loopback MCP server publicly. Off by default. */
   ngrokEnabled: boolean;
   /** Optional reserved/custom ngrok domain; used when set, otherwise a random URL is assigned. */
@@ -276,6 +286,7 @@ export function createDefaultMcpServerSettings(): McpServerSettings {
     port: MCP_SERVER_DEFAULT_PORT,
     authMode: "bearer",
     bearerToken: "",
+    autoApproveWrites: false,
     ngrokEnabled: false,
     ngrokDomain: "",
     ngrokUseCustomPath: false,
@@ -291,6 +302,8 @@ export function sanitizeMcpServerSettings(value: unknown): McpServerSettings {
     port: sanitizeMcpServerPort(source.port),
     authMode: sanitizeMcpAuthMode(source.authMode),
     bearerToken: sanitizeMcpBearerToken(source.bearerToken),
+    autoApproveWrites:
+      typeof source.autoApproveWrites === "boolean" ? source.autoApproveWrites : false,
     ngrokEnabled: typeof source.ngrokEnabled === "boolean" ? source.ngrokEnabled : false,
     ngrokDomain: typeof source.ngrokDomain === "string" ? source.ngrokDomain.trim() : "",
     ngrokUseCustomPath:
@@ -480,9 +493,40 @@ export function saveSettings(profileName: string, settings: UserSettings) {
   }
 
   try {
-    localStorage.setItem(getSettingsStorageKey(profileName), JSON.stringify(settings));
+    // The MCP bearer token is a secret encrypted at rest by the main process (Electron safeStorage);
+    // never persist it in plaintext localStorage. Strip it before serializing — the in-memory
+    // settings still carry it, and the renderer rehydrates it from the encrypted store on launch.
+    const persisted: UserSettings = {
+      ...settings,
+      mcpServer: { ...settings.mcpServer, bearerToken: "" }
+    };
+    localStorage.setItem(getSettingsStorageKey(profileName), JSON.stringify(persisted));
   } catch {
     // Settings persistence is a convenience; keep the in-memory preference active.
+  }
+}
+
+/**
+ * Read a legacy plaintext MCP bearer token that older versions stored inside the settings JSON.
+ * Returns "" when none is present. Used once at startup to migrate the token into the main-process
+ * encrypted store, after which the token is no longer persisted in localStorage.
+ */
+export function readLegacyMcpBearerToken(profileName: string): string {
+  if (typeof localStorage === "undefined") {
+    return "";
+  }
+
+  try {
+    const stored = localStorage.getItem(getSettingsStorageKey(profileName));
+    if (!stored) {
+      return "";
+    }
+
+    const parsed = JSON.parse(stored) as { mcpServer?: { bearerToken?: unknown } };
+    const token = parsed?.mcpServer?.bearerToken;
+    return typeof token === "string" ? token : "";
+  } catch {
+    return "";
   }
 }
 

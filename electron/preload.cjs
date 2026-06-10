@@ -99,6 +99,15 @@ contextBridge.exposeInMainWorld("nexus", {
   configureMcpServer(config) {
     return ipcRenderer.invoke("mcp:configure", config);
   },
+  testMcpConnection() {
+    return ipcRenderer.invoke("mcp:test-connection");
+  },
+  stopMcpNgrok() {
+    return ipcRenderer.invoke("mcp:stop-ngrok");
+  },
+  restartMcpNgrok(config) {
+    return ipcRenderer.invoke("mcp:restart-ngrok", config);
+  },
   registerMcpWindow(payload) {
     ipcRenderer.send("mcp:register-window", payload);
   },
@@ -135,6 +144,12 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   setQuickConnectToken(profileName, token) {
     return ipcRenderer.invoke("quickconnect:set-token", { profileName, token });
+  },
+  getMcpBearerToken(profileName) {
+    return ipcRenderer.invoke("mcp:get-bearer-token", profileName);
+  },
+  setMcpBearerToken(profileName, token) {
+    return ipcRenderer.invoke("mcp:set-bearer-token", { profileName, token });
   },
   selectPrivateKeyFile() {
     return ipcRenderer.invoke("dialog:select-private-key");

@@ -100,27 +100,24 @@ function resolveTargetHeading(headings, selector) {
 }
 
 /**
- * Return the Markdown of a single section identified by `index` (heading ordinal), `slug`, or
- * `heading` text. The section runs from its heading line through the line before the next heading of
- * the same or higher level (deeper subsections are included), with trailing blank lines trimmed.
+ * Resolve a section selector (`index` heading ordinal, `slug`, or `heading` text) to the half-open
+ * line range `[startLine0, endLine0)` covering that section — its heading line through the line before
+ * the next heading of the same or higher level (deeper subsections included). Shared by
+ * `getDocumentSection` (read) and `replaceSection` (write, in `mcpDocumentEdits.cjs`) so both agree on
+ * exactly which lines a section spans. Returns the parsed `headings` and split `lines` either way.
  */
-function getDocumentSection(markdown, selector) {
+function getSectionRange(markdown, selector) {
   const source = String(markdown ?? "");
   const lines = source.split(/\r?\n/);
   const headings = parseHeadings(source);
 
   if (headings.length === 0) {
-    return { found: false, reason: "no-headings", headingCount: 0, headings: [] };
+    return { found: false, reason: "no-headings", headings, lines };
   }
 
   const target = resolveTargetHeading(headings, selector);
   if (!target) {
-    return {
-      found: false,
-      reason: "not-found",
-      headingCount: headings.length,
-      headings: headings.map(toPublicHeading)
-    };
+    return { found: false, reason: "not-found", headings, lines };
   }
 
   let endLine0 = lines.length;
@@ -131,7 +128,28 @@ function getDocumentSection(markdown, selector) {
     }
   }
 
-  const sectionLines = lines.slice(target.line0, endLine0);
+  return { found: true, target, headings, lines, startLine0: target.line0, endLine0 };
+}
+
+/**
+ * Return the Markdown of a single section identified by `index` (heading ordinal), `slug`, or
+ * `heading` text. The section runs from its heading line through the line before the next heading of
+ * the same or higher level (deeper subsections are included), with trailing blank lines trimmed.
+ */
+function getDocumentSection(markdown, selector) {
+  const range = getSectionRange(markdown, selector);
+
+  if (!range.found) {
+    return {
+      found: false,
+      reason: range.reason,
+      headingCount: range.headings.length,
+      headings: range.reason === "not-found" ? range.headings.map(toPublicHeading) : []
+    };
+  }
+
+  const { target, lines, startLine0, endLine0 } = range;
+  const sectionLines = lines.slice(startLine0, endLine0);
   while (sectionLines.length > 0 && sectionLines[sectionLines.length - 1].trim() === "") {
     sectionLines.pop();
   }
@@ -142,8 +160,8 @@ function getDocumentSection(markdown, selector) {
     level: target.level,
     heading: target.text,
     slug: target.slug,
-    startLine: target.line0 + 1,
-    endLine: target.line0 + sectionLines.length,
+    startLine: startLine0 + 1,
+    endLine: startLine0 + sectionLines.length,
     lineCount: sectionLines.length,
     markdown: sectionLines.join("\n")
   };
@@ -233,5 +251,8 @@ function searchDocument(markdown, options) {
 module.exports = {
   buildDocumentOutline,
   getDocumentSection,
+  getSectionRange,
+  parseHeadings,
+  toPublicHeading,
   searchDocument
 };
