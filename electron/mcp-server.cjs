@@ -101,7 +101,7 @@ const READ_ONLY_TOOLS = [
   {
     name: "nexus_search_document",
     description:
-      "Search the Markdown of the focused Nexus editor window (or the window identified by windowId) and return matches with 1-based line and column numbers plus a line preview. 'query' is a literal substring unless 'isRegex' is true; matching is case-insensitive unless 'caseSensitive' is true. Results are capped at 'maxResults' (default 200, max 1000); 'total' reports the full count and 'truncated' indicates more matches exist.",
+      "Search the Markdown of the focused Nexus editor window (or the window identified by windowId) and return matches with 1-based line and column numbers plus a line preview. 'query' is a literal substring unless 'isRegex' is true; matching is case-insensitive unless 'caseSensitive' is true. Results are capped at 'maxResults' (default 200, max 1000); 'total' reports the full count and 'truncated' indicates more matches exist. For surrounding context and the heading each match falls under, use nexus_find instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -110,6 +110,24 @@ const READ_ONLY_TOOLS = [
         isRegex: { type: "boolean" },
         caseSensitive: { type: "boolean" },
         maxResults: { type: "integer", minimum: 1, maximum: 1000 }
+      },
+      required: ["query"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "nexus_find",
+    description:
+      "Find a query in the focused Nexus editor window (or the window identified by windowId) and return each matching line together with surrounding context lines and the heading the line falls under — so you can understand what was found and where it sits in the document without a separate read. Use this to explore and understand the document's contents. 'query' is a literal substring unless 'isRegex' is true; matching is case-insensitive unless 'caseSensitive' is true. Matches are grouped by line (each with the columns and count of occurrences on it); results are capped at 'maxResults' matching lines (default 50, max 500), 'contextLines' sets how many lines of context surround each match (default 2, max 10), and 'total'/'matchingLines'/'truncated' summarize the full result. For bare occurrence positions or exact counts, use nexus_search_document.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        windowId: { type: "string" },
+        query: { type: "string" },
+        isRegex: { type: "boolean" },
+        caseSensitive: { type: "boolean" },
+        maxResults: { type: "integer", minimum: 1, maximum: 500 },
+        contextLines: { type: "integer", minimum: 0, maximum: 10 }
       },
       required: ["query"],
       additionalProperties: false
@@ -583,6 +601,36 @@ async function dispatchToolCall(name, args, requestContext) {
         isRegex: Boolean(args?.isRegex),
         caseSensitive: Boolean(args?.caseSensitive),
         maxResults: args?.maxResults
+      });
+    } catch (error) {
+      return toolErrorContent(error instanceof Error ? error.message : String(error));
+    }
+
+    if (!result) {
+      return toolErrorContent(noWindowMessage(windowId));
+    }
+    return toolTextContent(result);
+  }
+
+  if (name === "nexus_find") {
+    const windowId = typeof args?.windowId === "string" ? args.windowId : undefined;
+    if (typeof host.find !== "function") {
+      return toolErrorContent("nexus_find is not supported by this Nexus version.");
+    }
+
+    const query = typeof args?.query === "string" ? args.query : "";
+    if (query.length === 0) {
+      return toolErrorContent("nexus_find requires a non-empty 'query' string.");
+    }
+
+    let result;
+    try {
+      result = host.find(windowId, {
+        query,
+        isRegex: Boolean(args?.isRegex),
+        caseSensitive: Boolean(args?.caseSensitive),
+        maxResults: args?.maxResults,
+        contextLines: args?.contextLines
       });
     } catch (error) {
       return toolErrorContent(error instanceof Error ? error.message : String(error));

@@ -1,180 +1,263 @@
 /*
- * Office 2010 theme. Light maps to the Word 2010 "Blue" colour scheme, dark to
- * the Office 2010 "Black" scheme. The signature pieces: silvery-blue chrome
- * gradients, the saturated blue File tab, gold hover / amber pressed states,
- * ribbon groups with captions, and a slate canvas behind the white page.
+ * Theme tokens for three looks, selected via [data-theme] on :root:
+ *   • Sky (the bare :root defaults below) — "Office 2010, modernized": blue-tinted
+ *     chrome, gold hover / amber pressed states, ribbon groups with captions, a
+ *     slate canvas behind the page, rendered flat (tinted fills instead of glass
+ *     gradients, hairline borders, 6-10px radii, soft elevation shadows).
+ *   • Light ([data-theme="light"]) — a true neutral variant: white surfaces,
+ *     light-gray chrome, gray hovers, and a single blue accent.
+ *   • Dark ([data-theme="dark"]).
  */
 :root {
-  color: #1e1e1e;
-  background: #cfdded;
+  color: #1e2430;
+  background: #e9eef7;
   font-family:
-    "Segoe UI", "Segoe UI Variable Text", Tahoma, -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI", Tahoma, -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", Arial, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #1e1e1e;
-  --muted: #5e718c;
+  --ink: #1e2430;
+  --muted: #5b6b85;
   --paper: #ffffff;
-  --line: #aabbd3;
-  --accent: #1b62ab;
-  --accent-strong: #2d76c4;
-  --app-bg: #cfdded;
+  --line: rgba(70, 95, 130, 0.22);
+  --accent: #185abd;
+  --accent-strong: #2e6fd0;
+  --app-bg: #e9eef7;
   --surface: #ffffff;
-  --surface-muted: #eef3fa;
+  --surface-muted: #f1f5fb;
   --toolbar: #ffffff;
-  --toolbar-hover: #fdf2cc;
-  --toolbar-active: #fbe49d;
-  --toolbar-shadow: rgba(59, 84, 117, 0.12);
-  --focus-ring: rgba(43, 110, 197, 0.32);
-  --focus-ring-strong: rgba(43, 110, 197, 0.45);
-  --selected-border: #d2ab48;
+  --toolbar-hover: rgba(245, 185, 60, 0.18);
+  --toolbar-active: rgba(245, 185, 60, 0.28);
+  --toolbar-shadow: rgba(35, 55, 90, 0.1);
+  --focus-ring: rgba(24, 90, 189, 0.25);
+  --focus-ring-strong: rgba(24, 90, 189, 0.5);
+  --selected-border: rgba(187, 134, 18, 0.55);
   --on-accent: #ffffff;
-  --danger: #b03325;
-  --danger-bg: #fdf3f1;
+  --danger: #c42b1c;
+  --danger-bg: #fdf3f2;
   --warning: #9a6400;
-  --tooltip-bg: #ffffff;
-  --tooltip-color: #44597a;
-  --option-highlight: #fdf2cc;
-  --scrollbar-thumb: rgba(94, 113, 140, 0.45);
-  --editor-caret: #1e1e1e;
-  --editor-selection: rgba(56, 138, 224, 0.3);
-  --editor-active-line: rgba(56, 138, 224, 0.07);
-  --toolbar-icon: #3b4a5e;
-  --toolbar-icon-active: #2b2105;
+  --tooltip-bg: #1f2430;
+  --tooltip-color: #f2f5fa;
+  --option-highlight: rgba(245, 185, 60, 0.18);
+  --scrollbar-thumb: rgba(70, 90, 120, 0.35);
+  --editor-caret: #1e2430;
+  --editor-selection: rgba(24, 90, 189, 0.22);
+  --editor-active-line: rgba(24, 90, 189, 0.06);
+  --toolbar-icon: #455772;
+  --toolbar-icon-active: #9c6f00;
   --paper-shadow:
-    0 0 0 1px rgba(62, 84, 115, 0.55),
-    0 2px 5px rgba(28, 44, 70, 0.38),
-    0 10px 22px rgba(28, 44, 70, 0.22);
-  --floating-shadow: 0 5px 14px rgba(38, 55, 82, 0.3);
-  --dialog-shadow: 0 10px 34px rgba(24, 38, 60, 0.45);
-  --popup-shadow: 0 6px 18px rgba(38, 55, 82, 0.3);
-  --context-shadow: 0 7px 18px rgba(38, 55, 82, 0.32);
-  --overlay: rgba(46, 62, 88, 0.32);
+    0 0 0 1px rgba(50, 70, 100, 0.08),
+    0 2px 6px rgba(35, 55, 90, 0.1),
+    0 18px 44px rgba(35, 55, 90, 0.14);
+  --floating-shadow: 0 6px 20px rgba(35, 55, 90, 0.16);
+  --dialog-shadow: 0 16px 50px rgba(25, 40, 70, 0.28);
+  --popup-shadow: 0 10px 30px rgba(35, 55, 90, 0.18);
+  --context-shadow: 0 10px 30px rgba(35, 55, 90, 0.18);
+  --overlay: rgba(25, 35, 55, 0.32);
   --nexus-toolbar-popup-clearance: 1.9rem;
   --nexus-toolbar-tooltip-clearance: 1.15rem;
-  --radius: 0.25rem;
+  --radius: 0.5rem;
   /* Window chrome (titlebar + tab row) */
-  --chrome-grad: linear-gradient(180deg, #e8effb 0%, #dbe6f5 45%, #cdddf0 100%);
-  --chrome-border: #a3b6d2;
-  --chrome-text: #44597a;
-  --chrome-text-glow: rgba(255, 255, 255, 0.65);
-  --tab-hover-bg: rgba(255, 255, 255, 0.5);
-  --tab-hover-border: rgba(255, 255, 255, 0.85);
-  --tab-open-grad: linear-gradient(180deg, #fbfdff 0%, #f0f5fc 60%, #ecf2fa 100%);
-  --tab-open-text: #2a4a73;
+  --chrome-grad: #e9eef7;
+  --chrome-border: rgba(70, 95, 130, 0.25);
+  --chrome-text: #41536e;
+  --tab-hover-bg: rgba(24, 90, 189, 0.08);
+  --tab-open-grad: rgba(24, 90, 189, 0.14);
+  --tab-open-text: #185abd;
   /* Ribbon */
-  --ribbon-grad: linear-gradient(180deg, #f6fafd 0%, #e7eef9 42%, #dde8f5 58%, #d5e1f1 100%);
-  --ribbon-border: #a3b6d2;
-  --ribbon-highlight: rgba(255, 255, 255, 0.6);
-  --ribbon-group-label: #67799a;
-  --ribbon-sep-dark: rgba(82, 105, 140, 0.3);
-  --ribbon-sep-light: rgba(255, 255, 255, 0.85);
-  --ribbon-hover-grad: linear-gradient(180deg, #fefbf0 0%, #fdf0c9 44%, #fbe39c 56%, #fdeec1 100%);
-  --ribbon-hover-border: #e2c168;
-  --ribbon-active-grad: linear-gradient(180deg, #fbdf9d 0%, #f8cf69 44%, #f5bf3e 56%, #f9d97f 100%);
-  --ribbon-active-border: #c29b3c;
-  --ribbon-checked-grad: linear-gradient(180deg, #fde9ad 0%, #fbda7c 50%, #f9d268 100%);
-  --hover-ink: #2b2105;
+  --ribbon-grad: #f6f8fc;
+  --ribbon-border: rgba(70, 95, 130, 0.25);
+  --ribbon-group-label: #6b7c97;
+  --ribbon-sep: rgba(70, 95, 130, 0.22);
+  --ribbon-hover-grad: rgba(245, 185, 60, 0.18);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(245, 185, 60, 0.32);
+  --ribbon-active-border: rgba(187, 134, 18, 0.45);
+  --ribbon-checked-grad: rgba(245, 185, 60, 0.24);
+  --hover-ink: #3c2e08;
+  --hover-muted: rgba(60, 46, 8, 0.62);
+  --gold-bar: #d99e1b;
   /* File tab */
-  --file-tab-grad: linear-gradient(180deg, #4283d3 0%, #2d62ab 55%, #245090 100%);
-  --file-tab-hover-grad: linear-gradient(180deg, #5894e0 0%, #3a70bd 55%, #2c5da2 100%);
-  --file-tab-border: #1d4276;
+  --file-tab-grad: #185abd;
+  --file-tab-hover-grad: #2e6fd0;
+  --file-tab-active: #12489c;
   /* Document canvas behind the page (paper view) */
-  --canvas-bg: #93a5c2;
+  --canvas-bg: #dde4ef;
   /* Status bar */
-  --statusbar-grad: linear-gradient(180deg, #e1eaf7 0%, #cddcf0 100%);
-  --statusbar-border: #93a6c2;
-  /* Windows 7 Aero push buttons (dialogs) */
-  --btn-grad: linear-gradient(180deg, #f2f2f2 0%, #ebebeb 50%, #dddddd 50%, #cfcfcf 100%);
-  --btn-border: #8e9099;
-  --btn-hover-grad: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 50%, #bee6fd 50%, #a7d9f5 100%);
-  --btn-hover-border: #5586a3;
-  --btn-active-grad: linear-gradient(180deg, #e5f4fc 0%, #c4e5f6 50%, #98d1ef 50%, #68b3db 100%);
-  --btn-text: #1e1e1e;
-  --dialog-bg: #f0f0f0;
-  --dialog-border: #767676;
-  /* Menus: white body with the classic icon gutter strip on the left */
+  --statusbar-grad: #eef2f9;
+  --statusbar-border: rgba(70, 95, 130, 0.22);
+  /* Push buttons (dialogs): flat neutral fills */
+  --btn-grad: #ffffff;
+  --btn-border: rgba(60, 85, 120, 0.32);
+  --btn-hover-grad: #f3f6fb;
+  --btn-hover-border: rgba(60, 85, 120, 0.45);
+  --btn-active-grad: #e7edf7;
+  --btn-text: #1e2430;
+  --dialog-bg: #ffffff;
+  --dialog-border: rgba(70, 95, 130, 0.18);
   --menu-bg: #ffffff;
-  --menu-gutter:
-    linear-gradient(90deg, #f3f6fb 0, #f3f6fb 26px, #e2e7f0 26px, #e2e7f0 27px, #ffffff 27px);
-  --menu-border: #9aa7bd;
-  --input-border: #abadb3;
-  --input-focus: #569de5;
+  --menu-border: rgba(70, 95, 130, 0.2);
+  --input-border: rgba(60, 85, 120, 0.38);
+  --input-focus: #185abd;
+  /* Window caption buttons */
+  --caption-hover: rgba(20, 35, 60, 0.07);
+  --caption-active: rgba(20, 35, 60, 0.12);
+}
+
+/*
+ * Light — a true neutral theme. Overrides the blue-tinted Sky defaults above
+ * with white surfaces, light-gray chrome, gray hovers, and neutral shadows.
+ * Interactive accents (--accent, focus rings, primary button, text selection)
+ * stay blue; white surfaces (--paper/--surface/--toolbar) are inherited.
+ */
+:root[data-theme="light"] {
+  color: #1f2225;
+  background: #f0f0f1;
+  --ink: #1f2225;
+  --muted: #6b7077;
+  --line: rgba(0, 0, 0, 0.12);
+  --app-bg: #f0f0f1;
+  --surface-muted: #f4f4f5;
+  --toolbar-hover: rgba(20, 24, 30, 0.06);
+  --toolbar-active: rgba(20, 24, 30, 0.1);
+  --toolbar-shadow: rgba(0, 0, 0, 0.08);
+  --selected-border: rgba(24, 90, 189, 0.55);
+  --tooltip-bg: #2b2d31;
+  --option-highlight: rgba(24, 90, 189, 0.12);
+  --scrollbar-thumb: rgba(20, 24, 30, 0.28);
+  --editor-caret: #1f2225;
+  --editor-active-line: rgba(20, 24, 30, 0.04);
+  --toolbar-icon: #5b6068;
+  --toolbar-icon-active: #185abd;
+  --paper-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 18px 44px rgba(0, 0, 0, 0.12);
+  --floating-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  --dialog-shadow: 0 16px 50px rgba(0, 0, 0, 0.24);
+  --popup-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --context-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --overlay: rgba(0, 0, 0, 0.32);
+  /* Window chrome (titlebar + tab row) */
+  --chrome-grad: #f0f0f1;
+  --chrome-border: rgba(0, 0, 0, 0.14);
+  --chrome-text: #4a4e55;
+  --tab-hover-bg: rgba(20, 24, 30, 0.06);
+  --tab-open-grad: rgba(20, 24, 30, 0.1);
+  --tab-open-text: #1f2225;
+  /* Ribbon */
+  --ribbon-grad: #f7f7f8;
+  --ribbon-border: rgba(0, 0, 0, 0.12);
+  --ribbon-group-label: #797e86;
+  --ribbon-sep: rgba(0, 0, 0, 0.1);
+  --ribbon-hover-grad: rgba(20, 24, 30, 0.06);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(20, 24, 30, 0.12);
+  --ribbon-active-border: rgba(20, 24, 30, 0.14);
+  --ribbon-checked-grad: rgba(24, 90, 189, 0.14);
+  --hover-ink: #1f2225;
+  --hover-muted: rgba(31, 34, 37, 0.62);
+  --gold-bar: #185abd;
+  /* Document canvas behind the page (paper view) */
+  --canvas-bg: #e8e8ea;
+  /* Status bar */
+  --statusbar-grad: #f0f0f1;
+  --statusbar-border: rgba(0, 0, 0, 0.12);
+  /* Push buttons (dialogs) */
+  --btn-border: rgba(0, 0, 0, 0.18);
+  --btn-hover-grad: #f4f4f5;
+  --btn-hover-border: rgba(0, 0, 0, 0.26);
+  --btn-active-grad: #e9e9ea;
+  --btn-text: #1f2225;
+  --dialog-border: rgba(0, 0, 0, 0.12);
+  --menu-border: rgba(0, 0, 0, 0.12);
+  --input-border: rgba(0, 0, 0, 0.22);
+  /* Window caption buttons */
+  --caption-hover: rgba(0, 0, 0, 0.06);
+  --caption-active: rgba(0, 0, 0, 0.1);
+  /* Status-bar zoom slider groove */
+  --slider-track: rgba(20, 24, 30, 0.22);
+  --slider-tick: rgba(20, 24, 30, 0.4);
 }
 
 :root[data-theme="dark"] {
-  color: #e8eaed;
-  background: #3a3c3e;
-  --ink: #e8eaed;
-  --muted: #b3bac4;
-  --paper: #34373c;
-  --line: #56595e;
-  --accent: #569de5;
-  --accent-strong: #7db8f0;
-  --app-bg: #3a3c3e;
-  --surface: #2e3033;
-  --surface-muted: #36383b;
-  --toolbar: #232528;
-  --toolbar-hover: #fdf2cc;
-  --toolbar-active: #fbe49d;
+  color: #e6e9ee;
+  background: #1b1e23;
+  --ink: #e6e9ee;
+  --muted: #9aa4b5;
+  --paper: #24272d;
+  --line: rgba(255, 255, 255, 0.1);
+  --accent: #4d8fe0;
+  --accent-strong: #6ca6ec;
+  --app-bg: #1b1e23;
+  --surface: #2b2f36;
+  --surface-muted: #31353d;
+  --toolbar: #1f2228;
+  --toolbar-hover: rgba(245, 190, 80, 0.15);
+  --toolbar-active: rgba(245, 190, 80, 0.26);
   --toolbar-shadow: rgba(0, 0, 0, 0.4);
-  --focus-ring: rgba(86, 157, 229, 0.35);
-  --focus-ring-strong: rgba(86, 157, 229, 0.5);
-  --selected-border: #d2ab48;
+  --focus-ring: rgba(109, 166, 236, 0.3);
+  --focus-ring-strong: rgba(109, 166, 236, 0.55);
+  --selected-border: rgba(242, 199, 92, 0.45);
   --on-accent: #ffffff;
-  --danger: #ff9f96;
-  --danger-bg: #46282a;
+  --danger: #ff8d80;
+  --danger-bg: #43272a;
   --warning: #f3bf67;
-  --tooltip-bg: #ffffff;
-  --tooltip-color: #44597a;
-  --option-highlight: #fdf2cc;
-  --scrollbar-thumb: rgba(232, 234, 237, 0.3);
+  --option-highlight: rgba(245, 190, 80, 0.15);
+  --scrollbar-thumb: rgba(225, 232, 242, 0.22);
   --editor-caret: #ffffff;
-  --editor-selection: rgba(86, 157, 229, 0.35);
-  --editor-active-line: rgba(86, 157, 229, 0.08);
-  --toolbar-icon: #d7dbe0;
-  --toolbar-icon-active: #2b2105;
+  --editor-selection: rgba(109, 166, 236, 0.32);
+  --editor-active-line: rgba(109, 166, 236, 0.07);
+  --toolbar-icon: #cfd6e0;
+  --toolbar-icon-active: #f2c75c;
   --paper-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
-    0 2px 5px rgba(0, 0, 0, 0.45),
-    0 10px 22px rgba(0, 0, 0, 0.35);
-  --floating-shadow: 0 5px 14px rgba(0, 0, 0, 0.4);
-  --dialog-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
-  --popup-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-  --context-shadow: 0 7px 18px rgba(0, 0, 0, 0.48);
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 18px 44px rgba(0, 0, 0, 0.4);
+  --floating-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --dialog-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+  --popup-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --context-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   --overlay: rgba(0, 0, 0, 0.55);
-  --chrome-grad: linear-gradient(180deg, #515356 0%, #46484b 45%, #3c3e41 100%);
-  --chrome-border: #2a2b2d;
-  --chrome-text: #d9d9d9;
-  --chrome-text-glow: rgba(0, 0, 0, 0.45);
-  --tab-hover-bg: rgba(255, 255, 255, 0.09);
-  --tab-hover-border: rgba(255, 255, 255, 0.18);
-  --tab-open-grad: linear-gradient(180deg, #64666a 0%, #56585c 60%, #505255 100%);
-  --tab-open-text: #f2f2f2;
-  --ribbon-grad: linear-gradient(180deg, #5d5f62 0%, #4d4f52 42%, #45474a 58%, #3f4144 100%);
-  --ribbon-border: #2a2b2d;
-  --ribbon-highlight: rgba(255, 255, 255, 0.12);
-  --ribbon-group-label: #c3c7cd;
-  --ribbon-sep-dark: rgba(0, 0, 0, 0.38);
-  --ribbon-sep-light: rgba(255, 255, 255, 0.14);
-  --canvas-bg: #2b2c2e;
-  --statusbar-grad: linear-gradient(180deg, #4a4c4f 0%, #3c3e41 100%);
-  --statusbar-border: #2a2b2d;
-  --btn-grad: linear-gradient(180deg, #55585c 0%, #4a4d51 50%, #404347 50%, #383b3f 100%);
-  --btn-border: #26282a;
-  --btn-hover-grad: linear-gradient(180deg, #6f93b3 0%, #58809f 50%, #41698c 50%, #36587a 100%);
-  --btn-hover-border: #2d4a66;
-  --btn-active-grad: linear-gradient(180deg, #587e9e 0%, #466e90 50%, #34587a 50%, #2b4a68 100%);
-  --btn-text: #f0f1f3;
-  --dialog-bg: #3b3d40;
-  --dialog-border: #1f2022;
-  --menu-bg: #2f3134;
-  --menu-gutter:
-    linear-gradient(90deg, #383a3e 0, #383a3e 26px, #232527 26px, #232527 27px, #2f3134 27px);
-  --menu-border: #1c1d1f;
-  --input-border: #595c61;
-  --input-focus: #569de5;
+  --chrome-grad: #22252b;
+  --chrome-border: rgba(255, 255, 255, 0.1);
+  --chrome-text: #cdd3dd;
+  --tab-hover-bg: rgba(255, 255, 255, 0.07);
+  --tab-open-grad: rgba(125, 176, 240, 0.16);
+  --tab-open-text: #9cc4f2;
+  --ribbon-grad: #262a31;
+  --ribbon-border: rgba(255, 255, 255, 0.1);
+  --ribbon-group-label: #a8b2c2;
+  --ribbon-sep: rgba(255, 255, 255, 0.1);
+  --ribbon-hover-grad: rgba(245, 190, 80, 0.15);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(245, 190, 80, 0.28);
+  --ribbon-active-border: rgba(242, 199, 92, 0.45);
+  --ribbon-checked-grad: rgba(245, 190, 80, 0.2);
+  --hover-ink: #f8ecca;
+  --hover-muted: rgba(248, 236, 202, 0.65);
+  --gold-bar: #f2c75c;
+  --file-tab-grad: #2563c4;
+  --file-tab-hover-grad: #2e6fd0;
+  --file-tab-active: #1c4f9e;
+  --canvas-bg: #16181c;
+  --statusbar-grad: #22252b;
+  --statusbar-border: rgba(255, 255, 255, 0.1);
+  --btn-grad: #343a44;
+  --btn-border: rgba(255, 255, 255, 0.14);
+  --btn-hover-grad: #3d4450;
+  --btn-hover-border: rgba(255, 255, 255, 0.22);
+  --btn-active-grad: #2e333d;
+  --btn-text: #eef1f6;
+  --dialog-bg: #2b2e35;
+  --dialog-border: rgba(255, 255, 255, 0.12);
+  --menu-bg: #2b2f36;
+  --menu-border: rgba(255, 255, 255, 0.12);
+  --input-border: rgba(255, 255, 255, 0.2);
+  --input-focus: #4d8fe0;
+  --caption-hover: rgba(255, 255, 255, 0.08);
+  --caption-active: rgba(255, 255, 255, 0.13);
 }
 
 * {
@@ -198,13 +281,17 @@ button {
   align-items: center;
   background: var(--btn-grad);
   border: 1px solid var(--btn-border);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--btn-text);
   cursor: default;
   display: inline-flex;
   gap: 0.45rem;
-  min-height: 30px;
-  padding: 0.35rem 0.8rem;
+  min-height: 32px;
+  padding: 0.4rem 0.9rem;
+  transition:
+    background 100ms ease,
+    border-color 100ms ease,
+    box-shadow 100ms ease;
 }
 
 button:hover {
@@ -215,7 +302,6 @@ button:hover {
 button:active {
   background: var(--btn-active-grad);
   border-color: var(--btn-hover-border);
-  box-shadow: inset 0 1px 2px rgba(0, 30, 60, 0.25);
 }
 
 .nexus-button {
@@ -239,17 +325,22 @@ button:active {
   outline-offset: 2px;
 }
 
-/* Win7 "default button": the regular Aero face plus the blue focus glow. */
+/* Primary action: solid Office blue. */
 .nexus-button-default {
-  background: var(--btn-grad);
-  border-color: #3c7fb1;
-  box-shadow: inset 0 0 3px 1px rgba(108, 178, 235, 0.75);
-  color: var(--btn-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+  color: var(--on-accent);
 }
 
 .nexus-button-default:hover {
-  background: var(--btn-hover-grad);
-  border-color: var(--btn-hover-border);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.nexus-button-default:active {
+  background: var(--file-tab-active);
+  border-color: var(--file-tab-active);
 }
 
 .nexus-button-ghost {
@@ -271,8 +362,8 @@ button:active {
 }
 
 .nexus-button-default-size {
-  min-height: 30px;
-  padding: 0.35rem 0.9rem;
+  min-height: 32px;
+  padding: 0.4rem 0.95rem;
 }
 
 .nexus-button-sm {
@@ -334,7 +425,7 @@ button:active {
   overflow: hidden;
 }
 
-/* Outline header styled like the Word 2010 Navigation pane caption band. */
+/* Outline header: a flat tinted caption band, Navigation-pane style. */
 .nexus-outline-header {
   align-items: center;
   background: var(--statusbar-grad);
@@ -344,7 +435,6 @@ button:active {
   flex: 0 0 auto;
   gap: 0.45rem;
   padding: 0.6rem 0.75rem;
-  text-shadow: 0 1px 0 var(--chrome-text-glow);
 }
 
 .nexus-outline-header-icon {
@@ -427,10 +517,10 @@ button:active {
 
 /* Scroll-spy: the entry for the section currently at the top of the editor viewport.
    Placed after the level rules so the highlight also overrides muted deep levels.
-   Word 2010's Navigation pane marked the current heading with the amber fill. */
+   Amber tint plus a gold edge bar — the 2010 Navigation-pane accent, flattened. */
 .nexus-outline-item-active {
   background: var(--toolbar-active);
-  box-shadow: inset 0 0 0 1px var(--selected-border);
+  box-shadow: inset 3px 0 0 0 var(--gold-bar);
   color: var(--hover-ink);
 }
 
@@ -520,20 +610,19 @@ body.nexus-resizing-col * {
 }
 
 .nexus-context-menu-content {
-  background: var(--menu-gutter);
-  background-color: var(--menu-bg);
+  background: var(--menu-bg);
   border: 1px solid var(--menu-border);
-  border-radius: 3px;
+  border-radius: 10px;
   box-shadow: var(--context-shadow);
   min-width: 11rem;
-  padding: 0.25rem;
+  padding: 0.3rem;
   z-index: 120;
 }
 
 .nexus-context-menu-item {
   align-items: center;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink);
   cursor: default;
   display: flex;
@@ -541,9 +630,9 @@ body.nexus-resizing-col * {
   gap: 1.5rem;
   justify-content: space-between;
   line-height: 1;
-  min-height: 1.9rem;
+  min-height: 2rem;
   outline: none;
-  padding: 0.45rem 0.55rem 0.45rem 1.9rem;
+  padding: 0.45rem 0.6rem;
   user-select: none;
 }
 
@@ -554,7 +643,7 @@ body.nexus-resizing-col * {
 }
 
 .nexus-context-menu-item[data-highlighted] .nexus-context-menu-shortcut {
-  color: rgba(43, 33, 5, 0.62);
+  color: var(--hover-muted);
 }
 
 .nexus-context-menu-item[data-disabled] {
@@ -564,7 +653,7 @@ body.nexus-resizing-col * {
 
 .nexus-context-menu-separator {
   height: 1px;
-  margin: 0.25rem -0.25rem 0.25rem 1.85rem;
+  margin: 0.3rem 0.5rem;
   background: var(--line);
 }
 
@@ -573,16 +662,15 @@ body.nexus-resizing-col * {
   font-size: 0.78rem;
 }
 
-/* ── Custom window titlebar (Office chrome + ribbon tab row) ──────────── */
+/* ── Custom window titlebar (flat Office chrome + pill tab row) ───────── */
 .nexus-titlebar {
   -webkit-app-region: drag;
   align-items: center;
   background: var(--chrome-grad);
   border-bottom: 1px solid var(--chrome-border);
-  box-shadow: inset 0 1px 0 var(--chrome-text-glow);
   display: flex;
   flex: 0 0 auto;
-  height: 38px;
+  height: 40px;
   justify-content: space-between;
   position: relative;
   user-select: none;
@@ -599,8 +687,6 @@ body.nexus-resizing-col * {
 }
 
 .nexus-titlebar-left {
-  align-items: flex-end;
-  align-self: stretch;
   padding-left: 0.45rem;
 }
 
@@ -618,7 +704,6 @@ body.nexus-resizing-col * {
   max-width: 40vw;
   pointer-events: none;
   position: absolute;
-  text-shadow: 0 1px 0 var(--chrome-text-glow);
   top: 50%;
   transform: translate(-50%, -50%);
 }
@@ -641,7 +726,7 @@ body.nexus-resizing-col * {
 .nexus-window-controls {
   -webkit-app-region: no-drag;
   display: flex;
-  height: 38px;
+  height: 40px;
 }
 
 .nexus-window-control {
@@ -652,37 +737,24 @@ body.nexus-resizing-col * {
   color: var(--chrome-text);
   cursor: default;
   display: inline-flex;
-  height: 38px;
+  height: 40px;
   justify-content: center;
   min-height: 0;
   padding: 0;
   transition:
-    background 120ms ease,
-    color 120ms ease;
+    background 100ms ease,
+    color 100ms ease;
   width: 46px;
 }
 
-/* Aero glass caption buttons: blue glass for min/max, red glass for close. */
 .nexus-window-control:hover {
-  background:
-    linear-gradient(180deg,
-      rgba(241, 248, 255, 0.95) 0%,
-      rgba(189, 219, 246, 0.95) 48%,
-      rgba(157, 198, 236, 0.95) 52%,
-      rgba(196, 227, 250, 0.95) 100%);
-  box-shadow: inset 0 0 0 1px rgba(60, 100, 140, 0.55);
-  color: #1e3c5f;
+  background: var(--caption-hover);
+  color: var(--ink);
 }
 
 .nexus-window-control:active {
-  background:
-    linear-gradient(180deg,
-      rgba(204, 228, 248, 0.95) 0%,
-      rgba(148, 192, 228, 0.95) 48%,
-      rgba(116, 168, 212, 0.95) 52%,
-      rgba(160, 204, 240, 0.95) 100%);
-  box-shadow: inset 0 1px 3px rgba(20, 50, 80, 0.45);
-  color: #122b46;
+  background: var(--caption-active);
+  color: var(--ink);
 }
 
 .nexus-window-control:focus-visible {
@@ -696,105 +768,76 @@ body.nexus-resizing-col * {
 }
 
 .nexus-window-control-close:hover {
-  background:
-    linear-gradient(180deg, #f2a08c 0%, #e0654a 48%, #d6492c 52%, #c8745c 100%);
-  box-shadow: inset 0 0 0 1px rgba(120, 30, 10, 0.6);
+  background: #c42b1c;
   color: #ffffff;
 }
 
 .nexus-window-control-close:active {
-  background:
-    linear-gradient(180deg, #d98a76 0%, #c4543a 48%, #b83c20 52%, #aa6048 100%);
-  box-shadow: inset 0 1px 3px rgba(70, 15, 5, 0.55);
+  background: #b3271a;
   color: #ffffff;
 }
 
-/* ── Titlebar menu bar, styled as the Office ribbon tab row ───────────── */
+/* ── Titlebar menu bar: rounded pill tabs in the chrome row ───────────── */
 .nexus-menubar {
   -webkit-app-region: no-drag;
-  align-items: flex-end;
+  align-items: center;
   display: flex;
-  gap: 0.1rem;
+  gap: 0.15rem;
 }
 
 .nexus-menubar-trigger {
   background: transparent;
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
+  border-radius: 6px;
   box-shadow: none;
   color: var(--chrome-text);
   cursor: default;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 500;
   line-height: 1;
-  margin-bottom: -1px;
   min-height: 0;
-  padding: 0.4rem 0.8rem 0.46rem;
-  position: relative;
+  padding: 0.4rem 0.75rem;
   transition:
-    background 120ms ease,
-    color 120ms ease;
-  z-index: 1;
+    background 100ms ease,
+    color 100ms ease;
 }
 
 .nexus-menubar-trigger:hover {
   background: var(--tab-hover-bg);
-  border-color: var(--tab-hover-border);
-  border-bottom: 0;
+  border-color: transparent;
+  color: var(--tab-open-text);
 }
 
 .nexus-menubar-trigger:active {
-  box-shadow: none;
+  background: var(--tab-open-grad);
 }
 
 .nexus-menubar-trigger[data-state="open"] {
   background: var(--tab-open-grad);
-  border-color: var(--chrome-border);
-  border-bottom: 0;
+  border-color: transparent;
   color: var(--tab-open-text);
 }
 
-/* The Word 2010 File tab: a saturated blue button in the tab row. */
-.nexus-menubar-trigger.nexus-menubar-trigger-file {
-  background: var(--file-tab-grad);
-  border: 1px solid var(--file-tab-border);
-  border-bottom: 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  color: #ffffff;
-  font-weight: 600;
-  margin-right: 0.25rem;
-  padding-inline: 1.1rem;
-  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.3);
-}
-
-.nexus-menubar-trigger.nexus-menubar-trigger-file:hover {
-  background: var(--file-tab-hover-grad);
-  border-color: var(--file-tab-border);
-  border-bottom: 0;
-}
-
-.nexus-menubar-trigger.nexus-menubar-trigger-file[data-state="open"] {
-  background: var(--file-tab-grad);
-  box-shadow: inset 0 2px 4px rgba(0, 20, 50, 0.45);
-  color: #ffffff;
-}
+/*
+ * The File menu opens like any other top-level menu — it shares the base
+ * .nexus-menubar-trigger styling. The saturated Office blue now lives on the
+ * status bar instead of being an orphaned blue pill in the menu row.
+ */
 
 .nexus-menubar-content {
-  background: var(--menu-gutter);
-  background-color: var(--menu-bg);
+  background: var(--menu-bg);
   border: 1px solid var(--menu-border);
-  border-radius: 3px;
+  border-radius: 10px;
   box-shadow: var(--context-shadow);
   min-width: 13rem;
-  padding: 0.25rem;
+  padding: 0.3rem;
   z-index: 120;
 }
 
 .nexus-menubar-item {
   align-items: center;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink);
   cursor: default;
   display: flex;
@@ -802,9 +845,9 @@ body.nexus-resizing-col * {
   gap: 1.5rem;
   justify-content: space-between;
   line-height: 1;
-  min-height: 1.9rem;
+  min-height: 2rem;
   outline: none;
-  padding: 0.45rem 0.55rem 0.45rem 1.9rem;
+  padding: 0.45rem 0.6rem 0.45rem 1.9rem;
   user-select: none;
 }
 
@@ -815,7 +858,7 @@ body.nexus-resizing-col * {
 }
 
 .nexus-menubar-item[data-highlighted] .nexus-menubar-shortcut {
-  color: rgba(43, 33, 5, 0.62);
+  color: var(--hover-muted);
 }
 
 .nexus-menubar-item[data-disabled] {
@@ -843,11 +886,10 @@ body.nexus-resizing-col * {
   width: 14px;
 }
 
-/* Menu separators start after the icon gutter, like Office menus. */
 .nexus-menubar-separator {
   background: var(--line);
   height: 1px;
-  margin: 0.25rem -0.25rem 0.25rem 1.85rem;
+  margin: 0.3rem 0.5rem;
 }
 
 .nexus-menubar-shortcut {
@@ -856,6 +898,7 @@ body.nexus-resizing-col * {
 }
 
 .nexus-dialog-overlay {
+  backdrop-filter: blur(3px);
   background: var(--overlay);
   inset: 0;
   position: fixed;
@@ -865,7 +908,7 @@ body.nexus-resizing-col * {
 .nexus-dialog-content {
   background: var(--dialog-bg);
   border: 1px solid var(--dialog-border);
-  border-radius: var(--radius);
+  border-radius: 10px;
   box-shadow: var(--dialog-shadow);
   display: grid;
   gap: 1rem;
@@ -874,7 +917,7 @@ body.nexus-resizing-col * {
   max-height: min(85vh, 34rem);
   max-width: calc(100vw - 2rem);
   overflow: hidden;
-  padding: 1rem;
+  padding: 1.25rem;
   position: fixed;
   top: 50%;
   transform: translate(-50%, -50%);
@@ -980,15 +1023,15 @@ body.nexus-resizing-col * {
     linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 11px) 50% / 5px 5px no-repeat,
     var(--surface);
   border: 1px solid var(--input-border);
-  border-radius: 2px;
+  border-radius: 6px;
   color: var(--ink);
-  min-height: 30px;
-  padding: 0.35rem 2rem 0.35rem 0.65rem;
+  min-height: 32px;
+  padding: 0.4rem 2rem 0.4rem 0.65rem;
 }
 
 .nexus-settings-select:focus-visible {
   border-color: var(--input-focus);
-  box-shadow: 0 0 4px rgba(86, 157, 229, 0.55);
+  box-shadow: 0 0 0 3px var(--focus-ring);
   outline: none;
 }
 
@@ -1008,10 +1051,10 @@ body.nexus-resizing-col * {
 .nexus-settings-input {
   background: var(--surface);
   border: 1px solid var(--input-border);
-  border-radius: 2px;
+  border-radius: 6px;
   color: var(--ink);
-  min-height: 30px;
-  padding: 0.35rem 0.65rem;
+  min-height: 32px;
+  padding: 0.4rem 0.65rem;
   width: 100%;
 }
 
@@ -1030,7 +1073,7 @@ body.nexus-resizing-col * {
 
 .nexus-settings-input:focus-visible {
   border-color: var(--input-focus);
-  box-shadow: 0 0 4px rgba(86, 157, 229, 0.55);
+  box-shadow: 0 0 0 3px var(--focus-ring);
   outline: none;
 }
 
@@ -1372,10 +1415,10 @@ body.nexus-resizing-col * {
 .nexus-image-import-textarea {
   background: var(--surface);
   border: 1px solid var(--input-border);
-  border-radius: 2px;
+  border-radius: 6px;
   color: var(--ink);
-  min-height: 30px;
-  padding: 0.35rem 0.65rem;
+  min-height: 32px;
+  padding: 0.4rem 0.65rem;
   width: 100%;
 }
 
@@ -1390,7 +1433,7 @@ body.nexus-resizing-col * {
 .nexus-image-import-input:focus-visible,
 .nexus-image-import-textarea:focus-visible {
   border-color: var(--input-focus);
-  box-shadow: 0 0 4px rgba(86, 157, 229, 0.55);
+  box-shadow: 0 0 0 3px var(--focus-ring);
   outline: none;
 }
 
@@ -1401,12 +1444,11 @@ body.nexus-resizing-col * {
   margin: 0;
 }
 
-/* The ribbon body: vertical Office gradient with a glassy top highlight. */
+/* The ribbon body: a flat tinted band under the chrome. */
 .editor-surface .mdxeditor-toolbar {
   background: var(--ribbon-grad);
   border-bottom: 1px solid var(--ribbon-border);
   border-radius: 0;
-  box-shadow: inset 0 1px 0 var(--ribbon-highlight);
   flex-wrap: wrap;
   flex: 0 0 auto;
   overflow: visible;
@@ -1482,11 +1524,11 @@ body.nexus-resizing-col * {
   align-self: auto;
   background: var(--ribbon-grad);
   border: 1px solid var(--ribbon-border);
-  border-radius: 4px;
+  border-radius: 8px;
   flex-direction: row;
   gap: 0.15rem;
   justify-content: flex-start;
-  padding: 0.18rem;
+  padding: 0.2rem;
 }
 
 /* The attribute selector keeps this ahead of the caption rule below, which
@@ -1533,15 +1575,19 @@ body.nexus-resizing-col * {
 }
 
 .nexus-shadcn-toolbar-group::before {
-  background: linear-gradient(90deg, var(--ribbon-sep-dark), var(--ribbon-sep-light));
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--ribbon-sep) 25%,
+    var(--ribbon-sep) 75%,
+    transparent
+  );
   bottom: 8%;
   content: "";
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
   position: absolute;
   right: 0;
   top: 10%;
-  width: 2px;
+  width: 1px;
 }
 
 .nexus-shadcn-toolbar-group[data-ribbon-label]::after {
@@ -1591,7 +1637,7 @@ body.nexus-resizing-col * {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   box-shadow: none;
   color: var(--toolbar-icon);
   display: inline-flex;
@@ -1601,13 +1647,12 @@ body.nexus-resizing-col * {
   min-width: 30px;
   padding: 0.35rem;
   transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    box-shadow 120ms ease;
+    background 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease;
 }
 
-/* Office gold hover. */
+/* The Office gold hover, as a soft translucent tint. */
 .nexus-shadcn-toolbar [data-toolbar-item]:hover,
 .nexus-shadcn-toolbar button[aria-label]:hover,
 .nexus-shadcn-toolbar [role="button"]:hover {
@@ -1616,23 +1661,21 @@ body.nexus-resizing-col * {
   color: var(--hover-ink);
 }
 
-/* Amber while the mouse is down. */
+/* Deeper amber while the mouse is down — flat, no bevel. */
 .nexus-shadcn-toolbar [data-toolbar-item]:active,
 .nexus-shadcn-toolbar button[aria-label]:active,
 .nexus-shadcn-toolbar [role="button"]:active {
   background: var(--ribbon-active-grad);
   border-color: var(--ribbon-active-border);
-  box-shadow: inset 0 1px 3px rgba(125, 90, 10, 0.45);
   color: var(--toolbar-icon-active);
 }
 
-/* Toggled-on state (e.g. Bold while in bold text): sunken amber. */
+/* Toggled-on state (e.g. Bold while in bold text): amber tint + hairline. */
 .nexus-shadcn-toolbar [data-toolbar-item][data-state="on"],
 .nexus-shadcn-toolbar [data-toolbar-item][aria-pressed="true"],
 .nexus-shadcn-toolbar button[aria-pressed="true"] {
   background: var(--ribbon-checked-grad);
   border-color: var(--ribbon-active-border);
-  box-shadow: inset 0 1px 2px rgba(125, 90, 10, 0.35);
   color: var(--toolbar-icon-active);
 }
 
@@ -1667,13 +1710,12 @@ body.nexus-resizing-col * {
   fill: currentColor;
 }
 
-/* Dropdown fields read as inset combo boxes, like the ribbon's font picker. */
+/* Dropdown fields read as quiet combo boxes, like the ribbon's font picker. */
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Block type"],
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"] {
   background: var(--surface);
   border-color: var(--input-border);
-  border-radius: 2px;
-  box-shadow: inset 0 1px 2px rgba(40, 60, 90, 0.12);
+  border-radius: 6px;
   color: var(--ink);
   gap: 0.25rem;
   min-width: 7.1rem;
@@ -1686,7 +1728,6 @@ body.nexus-resizing-col * {
 .nexus-shadcn-toolbar [data-toolbar-item][aria-label="Code block language"][data-state="open"] {
   background: var(--surface);
   border-color: var(--input-focus);
-  box-shadow: inset 0 1px 2px rgba(40, 60, 90, 0.12);
   color: var(--ink);
 }
 
@@ -1755,7 +1796,7 @@ body.nexus-resizing-col * {
 .nexus-find-input {
   background: var(--surface);
   border: 1px solid var(--input-border);
-  border-radius: 2px;
+  border-radius: 6px;
   color: var(--ink);
   flex: 1 1 auto;
   font: inherit;
@@ -1766,7 +1807,7 @@ body.nexus-resizing-col * {
 
 .nexus-find-input:focus-visible {
   border-color: var(--input-focus);
-  box-shadow: 0 0 4px rgba(86, 157, 229, 0.55);
+  box-shadow: 0 0 0 3px var(--focus-ring);
   outline: none;
 }
 
@@ -1858,16 +1899,17 @@ body.nexus-resizing-col * {
   transform: translateY(var(--nexus-toolbar-popup-clearance));
 }
 
-/* Win7/Office tooltips: white-to-lavender gradient with a cool gray border. */
+/* Flat dark tooltips. */
 .editor-surface [class*="_tooltipContent_"],
 .mdxeditor-popup-container [class*="_tooltipContent_"] {
-  background: linear-gradient(180deg, #ffffff 0%, #e7ecf5 100%);
-  border: 1px solid #98a8c0;
-  border-radius: 3px;
-  box-shadow: var(--floating-shadow);
+  background: var(--tooltip-bg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   color: var(--tooltip-color);
   font-size: 0.76rem;
   line-height: 1.2;
+  padding: 0.3rem 0.55rem;
   z-index: 1210 !important;
 }
 
@@ -1878,7 +1920,7 @@ body.nexus-resizing-col * {
 
 .mdxeditor-select-content [role="option"] {
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink);
   cursor: default;
   font-size: 0.9rem;
@@ -2004,6 +2046,17 @@ body.nexus-resizing-col * {
   margin-top: 0;
 }
 
+/*
+ * A document with YAML frontmatter renders the frontmatter as the first child — an empty Lexical
+ * decorator (<div data-lexical-decorator="true">) — so the first real content element is the SECOND
+ * child and misses the :first-child reset above, leaving a leading heading with its full top margin
+ * (a leading paragraph has none, hence the mismatch). Zero the top margin of the element right after a
+ * leading frontmatter decorator so it matches a true first child.
+ */
+.markdown-body > [data-lexical-decorator="true"]:first-child + * {
+  margin-top: 0;
+}
+
 .markdown-body > :last-child {
   margin-bottom: 0;
 }
@@ -2100,6 +2153,17 @@ body.nexus-resizing-col * {
   font-size: 0.9em;
 }
 
+/*
+ * Dark mode: MDXEditor renders inline code as <code><span class="_code_">…</span></code>, and the
+ * inner span carries MDXEditor's light --baseBg — so light prose text lands on a light chip and is
+ * invisible. Re-skin both the <code> and the inner span to a subtle dark chip with readable text.
+ */
+[data-theme="dark"] .editor-surface .markdown-body code,
+[data-theme="dark"] .editor-surface .markdown-body [class*="_code_"] {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+}
+
 .markdown-body table {
   max-width: 100%;
   width: 100%;
@@ -2110,82 +2174,187 @@ body.nexus-resizing-col * {
   font-size: calc(var(--editor-font-size) * 0.9);
 }
 
+/*
+ * Dark mode: MDXEditor's code block wrapper borders use its --baseLine, which stays a light gray
+ * (its light palette) because the app themes via [data-theme] rather than MDXEditor's own dark mode.
+ * That reads as a jarring bright outline on the dark background; use the app's subtle hairline instead.
+ */
+[data-theme="dark"] .editor-surface [class*="_codeMirrorWrapper_"] {
+  border-color: var(--line);
+}
+
+/*
+ * Dark mode: MDXEditor's code block toolbar (the language-picker chip in the corner) and its dropdown
+ * use MDXEditor's light base palette, so they float as bright chips on the dark code surface. Re-skin
+ * them to sit on the dark surface. The dropdown is portaled to <body>, so it's matched via the
+ * documentElement [data-theme] rather than nested under .editor-surface.
+ */
+[data-theme="dark"] .editor-surface [class*="_codeMirrorToolbar_"] {
+  background-color: transparent;
+  color: var(--ink);
+}
+
+[data-theme="dark"] .editor-surface [class*="_codeMirrorToolbar_"] [class*="_selectTrigger_"] {
+  background-color: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+}
+
+[data-theme="dark"] .editor-surface [class*="_codeMirrorToolbar_"] [class*="_selectTrigger_"]:hover,
+[data-theme="dark"] .editor-surface [class*="_codeMirrorToolbar_"] [class*="_selectTrigger_"][data-state="open"] {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] [class*="_toolbarCodeBlockLanguageSelectContent_"],
+[data-theme="dark"] [class*="_selectContainer_"] {
+  background-color: var(--menu-bg);
+  color: var(--ink);
+  border: 1px solid var(--menu-border);
+}
+
+[data-theme="dark"] [class*="_toolbarCodeBlockLanguageSelectContent_"] [class*="_selectItem_"],
+[data-theme="dark"] [class*="_selectContainer_"] [class*="_selectItem_"] {
+  color: var(--ink);
+}
+
+[data-theme="dark"] [class*="_toolbarCodeBlockLanguageSelectContent_"] [class*="_selectItem_"][data-highlighted],
+[data-theme="dark"] [class*="_toolbarCodeBlockLanguageSelectContent_"] [class*="_selectItem_"][data-state="checked"],
+[data-theme="dark"] [class*="_selectContainer_"] [class*="_selectItem_"][data-highlighted],
+[data-theme="dark"] [class*="_selectContainer_"] [class*="_selectItem_"][data-state="checked"] {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
 .markdown-body:focus {
   outline: none;
 }
 
 /*
- * GitHub alert callouts (`> [!TIP]`). Rendered by githubAlertDirectiveDescriptor;
- * each kind sets --nexus-gh-alert-accent, which drives the rule, title colour and
- * a translucent tint that adapts to either theme.
+ * Callouts — GitHub alerts (`> [!TIP]`) and `:::` admonitions share GitHub's own look: a coloured left
+ * rail and an icon + label header, with the body text sitting directly on the page (no tinted fill or
+ * box, so printing stays light on ink). Each kind class sets --callout-accent, which drives the rail,
+ * icon, and title colour. GitHub alerts keep GitHub's hues; admonitions get their own. The icon + title
+ * are non-editable chrome rendered by GithubAlert.tsx / Admonition.tsx.
  */
-.nexus-gh-alert {
-  --nexus-gh-alert-accent: var(--muted);
+.nexus-callout {
+  --callout-accent: var(--muted);
   margin: 0 0 var(--editor-paragraph-spacing, 16px);
-  padding: 0.6rem 1rem;
-  border-left: 0.25rem solid var(--nexus-gh-alert-accent);
-  border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--nexus-gh-alert-accent) 10%, transparent);
+  padding: 0.5rem 1rem;
+  border-left: 3px solid var(--callout-accent);
 }
 
-.nexus-gh-alert__title {
+/*
+ * MDXEditor's nested block editor (the callout's editable body) defaults its background to the light
+ * --basePageBg, drawing a rounded white box inside the tinted callout. Make it transparent in every
+ * theme so the body text sits directly on the callout's own accent tint (in dark mode this also keeps
+ * the otherwise-light body readable).
+ */
+.nexus-callout [class*="_nestedEditor_"],
+.nexus-callout [class*="_blockEditor_"] {
+  background: transparent;
+}
+
+.nexus-callout__title {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.3rem;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.2;
-  color: var(--nexus-gh-alert-accent);
+  color: var(--callout-accent);
   user-select: none;
 }
 
-.nexus-gh-alert__icon {
+.nexus-callout__icon {
   flex: 0 0 auto;
 }
 
-/* Collapse the trailing margin of the alert's last body block so it sits flush. */
-.nexus-gh-alert :last-child {
+/* Collapse the trailing margin of the body's last block so it sits flush. */
+.nexus-callout :last-child {
   margin-bottom: 0;
 }
 
+/* GitHub alert hues (GitHub's own palette). */
 .nexus-gh-alert--note {
-  --nexus-gh-alert-accent: #0969da;
+  --callout-accent: #0969da;
 }
 
 .nexus-gh-alert--tip {
-  --nexus-gh-alert-accent: #1a7f37;
+  --callout-accent: #1a7f37;
 }
 
 .nexus-gh-alert--important {
-  --nexus-gh-alert-accent: #8250df;
+  --callout-accent: #8250df;
 }
 
 .nexus-gh-alert--warning {
-  --nexus-gh-alert-accent: #9a6700;
+  --callout-accent: #9a6700;
 }
 
 .nexus-gh-alert--caution {
-  --nexus-gh-alert-accent: #cf222e;
+  --callout-accent: #cf222e;
 }
 
 [data-theme="dark"] .nexus-gh-alert--note {
-  --nexus-gh-alert-accent: #58a6ff;
+  --callout-accent: #58a6ff;
 }
 
 [data-theme="dark"] .nexus-gh-alert--tip {
-  --nexus-gh-alert-accent: #3fb950;
+  --callout-accent: #3fb950;
 }
 
 [data-theme="dark"] .nexus-gh-alert--important {
-  --nexus-gh-alert-accent: #a371f7;
+  --callout-accent: #a371f7;
 }
 
 [data-theme="dark"] .nexus-gh-alert--warning {
-  --nexus-gh-alert-accent: #d29922;
+  --callout-accent: #d29922;
 }
 
 [data-theme="dark"] .nexus-gh-alert--caution {
-  --nexus-gh-alert-accent: #f85149;
+  --callout-accent: #f85149;
+}
+
+/* Admonition hues (`:::note` … `:::caution`). */
+.nexus-admonition--note {
+  --callout-accent: #0969da;
+}
+
+.nexus-admonition--tip {
+  --callout-accent: #1a7f37;
+}
+
+.nexus-admonition--info {
+  --callout-accent: #0e7490;
+}
+
+.nexus-admonition--caution {
+  --callout-accent: #9a6700;
+}
+
+.nexus-admonition--danger {
+  --callout-accent: #cf222e;
+}
+
+[data-theme="dark"] .nexus-admonition--note {
+  --callout-accent: #58a6ff;
+}
+
+[data-theme="dark"] .nexus-admonition--tip {
+  --callout-accent: #3fb950;
+}
+
+[data-theme="dark"] .nexus-admonition--info {
+  --callout-accent: #2dd4bf;
+}
+
+[data-theme="dark"] .nexus-admonition--caution {
+  --callout-accent: #d29922;
+}
+
+[data-theme="dark"] .nexus-admonition--danger {
+  --callout-accent: #f85149;
 }
 
 .nexus-js-runner-block {
@@ -2316,8 +2485,7 @@ body.nexus-resizing-col * {
 }
 
 .nexus-math-block {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: transparent;
   border-radius: calc(var(--radius) - 2px);
   color: var(--ink);
   overflow: auto;
@@ -2535,19 +2703,15 @@ body.nexus-resizing-col * {
   justify-content: flex-end;
 }
 
-/* ── Status bar (Word 2010: word count left, zoom slider right) ──────── */
+/* ── Status bar (word count left, zoom slider right) ─────────────────── */
 :root {
-  --slider-track-grad: linear-gradient(180deg, #99a9c0 0%, #c2cfe0 100%);
-  --slider-track-border: #7c8da6;
-  --slider-thumb-grad: linear-gradient(180deg, #fdfdfd 0%, #e7ecf2 45%, #cfd9e6 100%);
-  --slider-thumb-border: #5d7392;
+  --slider-track: rgba(70, 95, 130, 0.28);
+  --slider-tick: rgba(70, 95, 130, 0.45);
 }
 
 :root[data-theme="dark"] {
-  --slider-track-grad: linear-gradient(180deg, #2c2d2f 0%, #4a4c4f 100%);
-  --slider-track-border: #232425;
-  --slider-thumb-grad: linear-gradient(180deg, #8a8d91 0%, #6a6d71 100%);
-  --slider-thumb-border: #2a2b2d;
+  --slider-track: rgba(255, 255, 255, 0.2);
+  --slider-tick: rgba(255, 255, 255, 0.38);
 }
 
 .nexus-statusbar {
@@ -2557,11 +2721,10 @@ body.nexus-resizing-col * {
   color: var(--chrome-text);
   display: flex;
   flex: 0 0 auto;
-  font-size: 0.76rem;
-  height: 24px;
+  font-size: 0.78rem;
+  height: 26px;
   justify-content: space-between;
-  padding: 0 0.3rem 0 0.45rem;
-  text-shadow: 0 1px 0 var(--chrome-text-glow);
+  padding: 0 0.35rem 0 0.5rem;
   user-select: none;
   z-index: 30;
 }
@@ -2581,9 +2744,8 @@ body.nexus-resizing-col * {
 }
 
 .nexus-statusbar-sep {
-  background: var(--ribbon-sep-dark);
-  box-shadow: 1px 0 0 var(--ribbon-sep-light);
-  height: 60%;
+  background: var(--line);
+  height: 55%;
   width: 1px;
 }
 
@@ -2591,14 +2753,14 @@ body.nexus-resizing-col * {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: 5px;
   box-shadow: none;
   color: var(--chrome-text);
   display: inline-flex;
-  height: 19px;
+  height: 20px;
   justify-content: center;
   min-height: 0;
-  padding: 0 0.3rem;
+  padding: 0 0.35rem;
 }
 
 .nexus-statusbar-button:hover {
@@ -2606,18 +2768,16 @@ body.nexus-resizing-col * {
   border-color: var(--ribbon-hover-border);
   box-shadow: none;
   color: var(--hover-ink);
-  text-shadow: none;
 }
 
 .nexus-statusbar-button:active {
   background: var(--ribbon-active-grad);
   border-color: var(--ribbon-active-border);
-  box-shadow: inset 0 1px 2px rgba(125, 90, 10, 0.4);
   color: var(--toolbar-icon-active);
 }
 
 .nexus-statusbar-button:focus-visible {
-  outline: 1px dotted var(--chrome-text);
+  outline: 2px solid var(--focus-ring-strong);
   outline-offset: 1px;
 }
 
@@ -2626,8 +2786,19 @@ body.nexus-resizing-col * {
   width: 11px;
 }
 
+/* Labeled toggle (Outline) — icon + text with an active/pressed state. */
+.nexus-statusbar-toggle {
+  gap: 0.3rem;
+  padding: 0 0.5rem;
+}
+
+.nexus-statusbar-toggle[aria-pressed="true"] {
+  background: var(--ribbon-checked-grad);
+  color: var(--toolbar-icon-active);
+}
+
 .nexus-statusbar-zoom-value {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   justify-content: center;
   min-width: 2.9rem;
 }
@@ -2636,47 +2807,71 @@ body.nexus-resizing-col * {
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
-  height: 19px;
+  height: 20px;
   margin: 0 0.15rem;
   width: 110px;
 }
 
 .nexus-statusbar-zoom-slider:focus-visible {
-  outline: 1px dotted var(--chrome-text);
+  outline: 2px solid var(--focus-ring-strong);
   outline-offset: 2px;
 }
 
-/* Groove with a tick at the 100% stop, like the Office zoom slider. */
+/* Slim groove with a tick at the 100% stop. */
 .nexus-statusbar-zoom-slider::-webkit-slider-runnable-track {
   background:
     linear-gradient(90deg,
       transparent calc(33.33% - 1px),
-      var(--slider-track-border) calc(33.33% - 1px),
-      var(--slider-track-border) calc(33.33% + 1px),
+      var(--slider-tick) calc(33.33% - 1px),
+      var(--slider-tick) calc(33.33% + 1px),
       transparent calc(33.33% + 1px)),
-    var(--slider-track-grad);
-  border: 1px solid var(--slider-track-border);
-  border-radius: 2px;
-  height: 5px;
+    var(--slider-track);
+  border: 0;
+  border-radius: 999px;
+  height: 4px;
 }
 
+/* Circular Fluent-style thumb in the accent blue. */
 .nexus-statusbar-zoom-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  background: var(--slider-thumb-grad);
-  border: 1px solid var(--slider-thumb-border);
-  border-radius: 2px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  height: 15px;
-  margin-top: -6px;
-  width: 9px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  height: 14px;
+  margin-top: -5px;
+  transition: box-shadow 100ms ease;
+  width: 14px;
 }
 
 .nexus-statusbar-zoom-slider:hover::-webkit-slider-thumb {
-  background: var(--ribbon-hover-grad);
-  border-color: var(--ribbon-active-border);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .nexus-statusbar-zoom-slider:active::-webkit-slider-thumb {
-  background: var(--ribbon-active-grad);
-  border-color: var(--ribbon-active-border);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ── Slim modern scrollbars (editor and canvas surfaces) ─────────────── */
+::-webkit-scrollbar {
+  background: transparent;
+  height: 12px;
+  width: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

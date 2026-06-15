@@ -37,9 +37,32 @@ const documentTools = require("../../electron/mcpDocumentTools.cjs") as {
     truncated: boolean;
     matches: Array<{ line: number; column: number; match: string; preview: string }>;
   };
+  findInDocument: (
+    markdown: string,
+    options: {
+      query: string;
+      isRegex?: boolean;
+      caseSensitive?: boolean;
+      maxResults?: number;
+      contextLines?: number;
+    }
+  ) => {
+    query: string;
+    total: number;
+    matchingLines: number;
+    truncated: boolean;
+    matches: Array<{
+      line: number;
+      columns: number[];
+      matchCount: number;
+      heading: { level: number; text: string; slug: string; index: number; line: number } | null;
+      contextStartLine: number;
+      context: string;
+    }>;
+  };
 };
 
-const { buildDocumentOutline, getDocumentSection, searchDocument } = documentTools;
+const { buildDocumentOutline, getDocumentSection, searchDocument, findInDocument } = documentTools;
 
 const lines = (...parts: string[]) => parts.join("\n");
 
@@ -211,5 +234,71 @@ describe("searchDocument", () => {
 
   it("throws on an invalid regular expression", () => {
     expect(() => searchDocument(doc, { query: "(", isRegex: true })).toThrow(/Invalid regular/);
+  });
+});
+
+describe("findInDocument", () => {
+  const doc = lines(
+    "# Title",
+    "",
+    "Intro mentions the widget once.",
+    "",
+    "## Alpha",
+    "",
+    "The widget appears here and the widget again.",
+    "",
+    "## Beta",
+    "",
+    "Beta body."
+  );
+
+  it("groups matches by line with columns, count, context, and the enclosing heading", () => {
+    const result = findInDocument(doc, { query: "widget", contextLines: 1 });
+    expect(result.total).toBe(3); // intro(1) + body(2)
+    expect(result.matchingLines).toBe(2);
+    expect(result.matches.map((entry) => entry.line)).toEqual([3, 7]);
+
+    const bodyMatch = result.matches.find((entry) => entry.line === 7)!;
+    expect(bodyMatch.matchCount).toBe(2);
+    expect(bodyMatch.columns).toEqual([5, 33]);
+    expect(bodyMatch.heading).toMatchObject({ text: "Alpha", slug: "alpha", level: 2 });
+    // One line of context on each side of line 7.
+    expect(bodyMatch.contextStartLine).toBe(6);
+    expect(bodyMatch.context).toBe(
+      lines("", "The widget appears here and the widget again.", "")
+    );
+  });
+
+  it("returns a null heading for a match that precedes every heading", () => {
+    const result = findInDocument("no heading here\nalpha lives up top", { query: "alpha" });
+    expect(result.matches[0].heading).toBeNull();
+  });
+
+  it("uses the heading line itself as the enclosing heading", () => {
+    const result = findInDocument(doc, { query: "Alpha", caseSensitive: true });
+    // "Alpha" (capitalized) appears in the "## Alpha" heading and the body line under it.
+    const headingLineMatch = result.matches.find((entry) => entry.line === 5)!;
+    expect(headingLineMatch.heading).toMatchObject({ text: "Alpha", line: 5 });
+  });
+
+  it("supports contextLines: 0 (only the matching line)", () => {
+    const result = findInDocument(doc, { query: "Beta body", contextLines: 0 });
+    expect(result.matches[0].context).toBe("Beta body.");
+    expect(result.matches[0].contextStartLine).toBe(result.matches[0].line);
+  });
+
+  it("caps returned lines at maxResults while keeping accurate totals", () => {
+    const many = lines("x", "x", "x", "x", "x");
+    const result = findInDocument(many, { query: "x", maxResults: 2 });
+    expect(result.matchingLines).toBe(5);
+    expect(result.matches).toHaveLength(2);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("supports regex and throws on empty query or invalid regex", () => {
+    const result = findInDocument(doc, { query: "^##", isRegex: true });
+    expect(result.matches.map((entry) => entry.line)).toEqual([5, 9]);
+    expect(() => findInDocument(doc, { query: "" })).toThrow(/non-empty/);
+    expect(() => findInDocument(doc, { query: "(", isRegex: true })).toThrow(/Invalid regular/);
   });
 });

@@ -125,6 +125,19 @@ function mcpSearchDocument(windowId, options) {
   };
 }
 
+function mcpFind(windowId, options) {
+  const record = resolveMcpWindowRecord(windowId);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    windowId: record.windowId,
+    filePath: record.filePath || null,
+    ...mcpDocumentTools.findInDocument(record.markdown ?? "", options || {})
+  };
+}
+
 function normalizeSelectionResult(selection) {
   if (!selection || typeof selection !== "object") {
     return { ok: true, mode: "unknown", hasSelection: false, text: "" };
@@ -269,6 +282,7 @@ mcpServer.setHost({
   getOutline: mcpGetOutline,
   getSection: mcpGetSection,
   searchDocument: mcpSearchDocument,
+  find: mcpFind,
   getSelection: mcpRequestSelection,
   rejectAllPendingWrites: rejectAllPendingMcpWrites,
   requestReplaceDocument: ({ windowId, markdown, clientLabel }) =>
@@ -289,6 +303,7 @@ mcpServer.setHost({
 
 const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
 const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
+const githubAlertTypes = new Set(["note", "tip", "important", "warning", "caution"]);
 const fileWatchDebounceMs = 350;
 const internalWriteSuppressMs = 1500;
 const exportProgressPaintDelayMs = 80;
@@ -955,6 +970,99 @@ async function renderMarkdownAdmonitions(markdown, parseMarkdown) {
   return output.join("\n");
 }
 
+function getGithubAlertClassName(type) {
+  // Reuse the admonition aside/title/content classes (so the Word export's extraction works) plus a
+  // GitHub-specific colour modifier.
+  return `nexus-export-admonition nexus-export-gh-alert-${type}`;
+}
+
+function getGithubAlertStart(line) {
+  const match = line.match(/^[ \t]*>[ \t]*\[!(note|tip|important|warning|caution)\][ \t]*$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const type = match[1].toLowerCase();
+  if (!githubAlertTypes.has(type)) {
+    return null;
+  }
+
+  return {
+    type,
+    title: `${type.slice(0, 1).toUpperCase()}${type.slice(1)}`
+  };
+}
+
+function isBlockquoteLine(line) {
+  return /^[ \t]*>/.test(line);
+}
+
+function stripBlockquoteMarker(line) {
+  return line.replace(/^[ \t]*>[ \t]?/, "");
+}
+
+/**
+ * Turn GitHub alerts (`> [!NOTE]` blockquotes) into the same `<aside>` callout markup the admonition
+ * pre-processor emits, so they export as styled callouts instead of literal `[!NOTE]` blockquotes.
+ */
+async function renderMarkdownGithubAlerts(markdown, parseMarkdown) {
+  const source = String(markdown ?? "");
+  const lines = source.split(/\r?\n/);
+  const output = [];
+  let index = 0;
+  let isInFence = false;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (isFenceBoundary(line)) {
+      isInFence = !isInFence;
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    if (isInFence) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const alert = getGithubAlertStart(line);
+    if (!alert) {
+      output.push(line);
+      index += 1;
+      continue;
+    }
+
+    const contentLines = [];
+    let endIndex = index + 1;
+
+    while (endIndex < lines.length && isBlockquoteLine(lines[endIndex])) {
+      contentLines.push(stripBlockquoteMarker(lines[endIndex]));
+      endIndex += 1;
+    }
+
+    const contentHtml = await parseMarkdown(contentLines.join("\n"));
+    output.push(
+      [
+        "",
+        `<aside class="${getGithubAlertClassName(alert.type)}">`,
+        `<div class="nexus-export-admonition-title">${escapeHtmlText(alert.title)}</div>`,
+        `<div class="nexus-export-admonition-content">`,
+        contentHtml.trim(),
+        "</div>",
+        "</aside>",
+        ""
+      ].join("\n")
+    );
+    index = endIndex;
+  }
+
+  return output.join("\n");
+}
+
 async function buildExportHtmlDocument(title, bodyHtml, options = {}) {
   const escapedTitle = escapeHtmlAttribute(title);
   const fontFamily = getExportFontFamily(options.fontFamily);
@@ -1029,7 +1137,8 @@ ${pdfPrintStyle}
       font-size: ${fontSizePixels}px;
     }
 
-    h1:first-child, h2:first-child, h3:first-child {
+    h1:first-child, h2:first-child, h3:first-child,
+    h4:first-child, h5:first-child, h6:first-child {
       margin-top: 0;
     }
 
@@ -1064,17 +1173,16 @@ ${pdfPrintStyle}
     }
 
     .nexus-export-admonition {
-      border: 1px solid #cbd5e1;
-      border-left-width: 5px;
-      border-radius: 8px;
-      background: #f8fafc;
+      --callout-accent: #6b7280;
+      border-left: 3px solid var(--callout-accent);
       margin: 1.2em 0;
-      padding: 0.85em 1em;
+      padding: 0.2em 0 0.2em 1em;
     }
 
     .nexus-export-admonition-title {
+      color: var(--callout-accent);
       font-weight: 700;
-      margin-bottom: 0.45em;
+      margin-bottom: 0.4em;
     }
 
     .nexus-export-admonition-content > :last-child {
@@ -1082,27 +1190,43 @@ ${pdfPrintStyle}
     }
 
     .nexus-export-admonition-note {
-      border-left-color: #3b82f6;
+      --callout-accent: #0969da;
     }
 
     .nexus-export-admonition-tip {
-      border-left-color: #16a34a;
-      background: #f0fdf4;
+      --callout-accent: #1a7f37;
     }
 
     .nexus-export-admonition-info {
-      border-left-color: #0891b2;
-      background: #ecfeff;
+      --callout-accent: #0e7490;
     }
 
     .nexus-export-admonition-caution {
-      border-left-color: #f59e0b;
-      background: #fffbeb;
+      --callout-accent: #9a6700;
     }
 
     .nexus-export-admonition-danger {
-      border-left-color: #dc2626;
-      background: #fff5f5;
+      --callout-accent: #cf222e;
+    }
+
+    .nexus-export-gh-alert-note {
+      --callout-accent: #0969da;
+    }
+
+    .nexus-export-gh-alert-tip {
+      --callout-accent: #1a7f37;
+    }
+
+    .nexus-export-gh-alert-important {
+      --callout-accent: #8250df;
+    }
+
+    .nexus-export-gh-alert-warning {
+      --callout-accent: #9a6700;
+    }
+
+    .nexus-export-gh-alert-caution {
+      --callout-accent: #cf222e;
     }
 
     code {
@@ -1989,8 +2113,12 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
   const sourceMarkdown = options.excludeFrontmatter
     ? stripMarkdownFrontmatter(markdown)
     : markdown ?? "";
-  const markdownWithAdmonitions = await renderMarkdownAdmonitions(
+  const markdownWithAlerts = await renderMarkdownGithubAlerts(
     sourceMarkdown,
+    (content) => marked.parse(content)
+  );
+  const markdownWithAdmonitions = await renderMarkdownAdmonitions(
+    markdownWithAlerts,
     (content) => marked.parse(content)
   );
   const bodyHtml = await marked.parse(markdownWithAdmonitions);

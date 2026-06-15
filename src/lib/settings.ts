@@ -22,6 +22,7 @@ export const EDITOR_FONT_OPTIONS = [
 export const EDITOR_THEME_OPTIONS = [
   { label: "System", value: "system" },
   { label: "Light", value: "light" },
+  { label: "Sky", value: "sky" },
   { label: "Dark", value: "dark" }
 ] as const;
 
