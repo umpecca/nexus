@@ -69,11 +69,14 @@ function ToolbarButtonGroup({
   "aria-label": ariaLabel,
   children,
   className,
+  ribbonLabel,
   wide = false
 }: {
   "aria-label": string;
   children: React.ReactNode;
   className?: string;
+  /** Office-style group caption rendered under the controls (via CSS). */
+  ribbonLabel?: string;
   wide?: boolean;
 }) {
   const classNames = [
@@ -83,9 +86,10 @@ function ToolbarButtonGroup({
   ]
     .filter(Boolean)
     .join(" ");
+  const ribbonLabelProps = ribbonLabel ? { "data-ribbon-label": ribbonLabel } : {};
 
   return (
-    <ButtonGroup aria-label={ariaLabel} className={classNames}>
+    <ButtonGroup aria-label={ariaLabel} className={classNames} {...ribbonLabelProps}>
       {children}
     </ButtonGroup>
   );
@@ -201,7 +205,7 @@ function RichTextRibbonCommands({
 }) {
   return (
     <>
-      <ToolbarButtonGroup aria-label="Text formatting" wide>
+      <ToolbarButtonGroup aria-label="Text formatting" ribbonLabel="Font" wide>
         <ToolbarRow>
           <BoldItalicUnderlineToggles />
           <CodeToggle />
@@ -211,7 +215,7 @@ function RichTextRibbonCommands({
         </ToolbarRow>
       </ToolbarButtonGroup>
 
-      <ToolbarButtonGroup aria-label="Paragraph formatting">
+      <ToolbarButtonGroup aria-label="Paragraph formatting" ribbonLabel="Paragraph">
         <ToolbarStack>
           <ListsToggle />
           <ConditionalContents
@@ -240,14 +244,14 @@ function RichTextRibbonCommands({
         </ToolbarStack>
       </ToolbarButtonGroup>
 
-      <ToolbarButtonGroup aria-label="Links and media" wide>
+      <ToolbarButtonGroup aria-label="Links and media" ribbonLabel="Links" wide>
         <ToolbarRow>
           <CreateLink />
           <InsertImageImport documentPath={documentPath} />
         </ToolbarRow>
       </ToolbarButtonGroup>
 
-      <ToolbarButtonGroup aria-label="Insert blocks" wide>
+      <ToolbarButtonGroup aria-label="Insert blocks" ribbonLabel="Insert" wide>
         <ToolbarRow>
           <InsertTable />
           <InsertTableOfContents onInsert={onInsertTableOfContents} />
@@ -289,7 +293,12 @@ function ViewRibbonCommands({
   paperViewEnabled: boolean;
 }) {
   return (
-    <ToolbarButtonGroup className="nexus-shadcn-toolbar-group-modes" aria-label="View controls" wide>
+    <ToolbarButtonGroup
+      className="nexus-shadcn-toolbar-group-modes"
+      aria-label="View controls"
+      ribbonLabel="View"
+      wide
+    >
       <div className="nexus-shadcn-toolbar-mode-controls">
         {/* Clean up formatting acts on the raw Markdown, so it is offered only in source mode. */}
         {currentMode === "source" ? (

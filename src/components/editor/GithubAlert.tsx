@@ -33,9 +33,9 @@ function GithubAlertEditor({ mdastNode }: DirectiveEditorProps) {
   const type: GithubAlertType = isGithubAlertType(mdastNode.name) ? mdastNode.name : "note";
   const Icon = ALERT_ICONS[type];
   return (
-    <div className={`nexus-gh-alert nexus-gh-alert--${type}`}>
-      <div className="nexus-gh-alert__title" contentEditable={false}>
-        <Icon aria-hidden className="nexus-gh-alert__icon" size={16} />
+    <div className={`nexus-callout nexus-gh-alert nexus-gh-alert--${type}`}>
+      <div className="nexus-callout__title" contentEditable={false}>
+        <Icon aria-hidden className="nexus-callout__icon" size={16} />
         <span>{GITHUB_ALERT_LABELS[type]}</span>
       </div>
       <NestedLexicalEditor<ContainerDirective>

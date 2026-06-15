@@ -34,7 +34,8 @@
       "Bash(grep -nE \"insertDirective\\\\\\\\\\\\$|ButtonOrDropdownButton|LeafDirective|ContainerDirective|interface DirectiveNode|DirectiveProperties\" node_modules/@mdxeditor/editor/dist/index.d.ts)",
       "Bash(echo \"TSC_EXIT=$?\")",
       "Bash(xargs grep -l \"ChangeAdmonitionType\\\\|ADMONITION_TYPES\")",
-      "Bash(grep -nE \"export declare const \\(Select|editorInFocus\\\\\\\\\\\\$|rootEditor\\\\\\\\\\\\$|activeEditor\\\\\\\\\\\\$\\)|declare const Select:|EditorInFocus\" node_modules/@mdxeditor/editor/dist/index.d.ts)"
+      "Bash(grep -nE \"export declare const \\(Select|editorInFocus\\\\\\\\\\\\$|rootEditor\\\\\\\\\\\\$|activeEditor\\\\\\\\\\\\$\\)|declare const Select:|EditorInFocus\" node_modules/@mdxeditor/editor/dist/index.d.ts)",
+      "PowerShell(npx tsc --noEmit)"
     ]
   }
 }

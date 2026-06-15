@@ -46,7 +46,8 @@ function AppMenuBar({
   return (
     <Menubar className="nexus-titlebar-menu">
       <MenubarMenu>
-        <MenubarTrigger>File</MenubarTrigger>
+        {/* Styled as the Office 2010 File tab (the saturated blue one). */}
+        <MenubarTrigger className="nexus-menubar-trigger-file">File</MenubarTrigger>
         <MenubarContent>
           <MenubarItem onSelect={() => void nexus?.newWindow()}>
             New Window
@@ -273,7 +274,7 @@ export function Titlebar({
         )}
       </div>
       <div className="nexus-titlebar-title">
-        <span className="nexus-titlebar-title-text">{fileName ?? "Untitled"}</span>
+        <span className="nexus-titlebar-title-text">{`${fileName ?? "Untitled"} - Nexus`}</span>
         {isDirty ? <span aria-label="Unsaved changes" className="nexus-titlebar-dirty" /> : null}
       </div>
       <div className="nexus-titlebar-right">{isMac ? null : <WindowControls />}</div>

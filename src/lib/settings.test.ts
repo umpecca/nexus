@@ -180,6 +180,7 @@ describe("settings helpers", () => {
     expect(EDITOR_THEME_OPTIONS.map((option) => option.value)).toEqual([
       "system",
       "light",
+      "sky",
       "dark"
     ]);
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { highlightWhitespace } from "@codemirror/view";
 import {
-  AdmonitionDirectiveDescriptor,
   codeBlockPlugin,
   codeMirrorPlugin,
   directivesPlugin,
@@ -64,11 +63,14 @@ import { katexCodeBlockDescriptor } from "./components/editor/KatexCodeBlock";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
 import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert";
+import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
+import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
+import StatusBar from "./components/statusbar/StatusBar";
 
 const APP_TITLE = "Nexus";
 
@@ -108,7 +110,7 @@ type ProgrammaticMarkdownChange = {
   targetMarkdown: string;
 };
 
-type ResolvedTheme = "light" | "dark";
+type ResolvedTheme = "light" | "sky" | "dark";
 
 function getDocumentName(filePath: string) {
   const parts = filePath.split(/[\\/]/);
@@ -329,11 +331,12 @@ function getRangeElement(range: Range) {
 }
 
 function resolveThemePreference(themePreference: EditorThemePreference): ResolvedTheme {
-  if (themePreference === "light" || themePreference === "dark") {
+  if (themePreference === "light" || themePreference === "sky" || themePreference === "dark") {
     return themePreference;
   }
 
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  // "system" follows the OS light/dark setting; light mode keeps the signature Sky look.
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "sky";
 }
 
 function clampEditorZoomPercent(zoomPercent: number) {
@@ -341,6 +344,22 @@ function clampEditorZoomPercent(zoomPercent: number) {
     MAX_EDITOR_ZOOM_PERCENT,
     Math.max(MIN_EDITOR_ZOOM_PERCENT, zoomPercent)
   );
+}
+
+/**
+ * Approximate word count for the status bar: fenced code is skipped, and a
+ * whitespace-separated token counts as a word when it has a letter or digit
+ * (so bare Markdown punctuation like `*` or `---` is not counted).
+ */
+function countWords(markdown: string) {
+  const withoutCodeBlocks = markdown.replace(/```[\s\S]*?```/g, " ");
+  let count = 0;
+  for (const token of withoutCodeBlocks.split(/\s+/)) {
+    if (/[\p{L}\p{N}]/u.test(token)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function App() {
@@ -478,6 +497,16 @@ function App() {
   const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
   const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
   const outlineHeadings = useMemo(() => extractOutline(markdown), [markdown]);
+  const wordCount = useMemo(() => countWords(markdown), [markdown]);
+  // CodeMirror (code blocks + source mode) gets a theme matched to the app theme: nord for dark,
+  // the idea light theme for sky/light. Whitespace markers layer on top when enabled.
+  const codeMirrorExtensions = useMemo(
+    () => [
+      ...codeMirrorThemeExtensions(resolvedTheme),
+      ...(settings.showInvisibleCharacters ? [highlightWhitespace()] : [])
+    ],
+    [resolvedTheme, settings.showInvisibleCharacters]
+  );
   outlineHeadingsRef.current = outlineHeadings;
   // The outline now follows the document in both rich-text and source mode; diff mode
   // keeps the full editor width for side-by-side review.
@@ -801,7 +830,8 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
-    document.documentElement.style.colorScheme = resolvedTheme;
+    // Sky is a light-based theme; only dark maps to the dark color-scheme keyword.
+    document.documentElement.style.colorScheme = resolvedTheme === "dark" ? "dark" : "light";
 
     return () => {
       delete document.documentElement.dataset.theme;
@@ -1230,12 +1260,13 @@ function App() {
   function loadDocument(
     nextMarkdown: string,
     nextFilePath: string | undefined,
-    options: { previousVersionMarkdown?: string } = {}
+    options: { previousVersionMarkdown?: string; markClean?: boolean } = {}
   ) {
+    const { markClean = true } = options;
     editorScrollSnapshotRef.current = { ratio: 0, top: 0 };
     beginProgrammaticMarkdownChange(nextMarkdown);
     editorRef.current?.setMarkdown(nextMarkdown);
-    setLastSavedMarkdown(nextMarkdown);
+    setLastSavedMarkdown(markClean ? nextMarkdown : "");
     setPreviousVersionMarkdown(options.previousVersionMarkdown);
     setDiffMarkdown(options.previousVersionMarkdown ?? "");
     setMarkdown(nextMarkdown);
@@ -1561,7 +1592,7 @@ function App() {
       return;
     }
 
-    loadDocument(DEMO_DOCUMENT_MARKDOWN, undefined);
+    loadDocument(DEMO_DOCUMENT_MARKDOWN, undefined, { markClean: false });
   }
 
   async function createNewDocument() {
@@ -2019,7 +2050,7 @@ function App() {
             ) : null}
             <EditorContextMenu>
               <MDXEditor
-                key={`editor-${settings.showInvisibleCharacters}`}
+                key={`editor-${settings.showInvisibleCharacters}-${resolvedTheme}`}
                 ref={editorRef}
                 markdown={markdown}
                 onChange={handleMarkdownChange}
@@ -2036,7 +2067,7 @@ function App() {
                   tablePlugin(),
                   frontmatterPlugin(),
                   directivesPlugin({
-                    directiveDescriptors: [githubAlertDirectiveDescriptor, AdmonitionDirectiveDescriptor]
+                    directiveDescriptors: [githubAlertDirectiveDescriptor, admonitionDirectiveDescriptor]
                   }),
                   githubAlertsPlugin(),
                   codeBlockPlugin({
@@ -2063,9 +2094,7 @@ function App() {
                       bash: "Bash",
                       powershell: "PowerShell"
                     },
-                    codeMirrorExtensions: settings.showInvisibleCharacters
-                      ? [highlightWhitespace()]
-                      : []
+                    codeMirrorExtensions
                   }),
                   markdownShortcutPlugin(),
                   searchPlugin(),
@@ -2073,9 +2102,7 @@ function App() {
                     diffMarkdown,
                     readOnlyDiff: true,
                     viewMode: currentViewModeRef.current,
-                    codeMirrorExtensions: settings.showInvisibleCharacters
-                      ? [highlightWhitespace()]
-                      : []
+                    codeMirrorExtensions
                   }),
                   toolbarPlugin({
                     toolbarContents: () => (
@@ -2117,6 +2144,19 @@ function App() {
           </div>
         </div>
       </section>
+      <StatusBar
+        isDirty={isDirty}
+        maxZoom={MAX_EDITOR_ZOOM_PERCENT}
+        minZoom={MIN_EDITOR_ZOOM_PERCENT}
+        onZoomChange={(zoomPercent) => setEditorZoomPercent(clampEditorZoomPercent(zoomPercent))}
+        onZoomIn={zoomEditorIn}
+        onZoomOut={zoomEditorOut}
+        onToggleOutline={() => dispatchMenuAction("toggleOutline")}
+        onZoomReset={resetEditorZoom}
+        outlineVisible={settings.outlineVisible}
+        wordCount={wordCount}
+        zoomPercent={editorZoomPercent}
+      />
       {externalFileChangePrompt ? (
         <FileChangedDialog
           filePath={externalFileChangePrompt.filePath}

@@ -4,7 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // and drives the four read tools end to end through JSON-RPC, backing the host with the same pure
 // logic the production host uses.
 import { configure, getListeningInfo, setHost, stop } from "./mcp-server.cjs";
-import { buildDocumentOutline, getDocumentSection, searchDocument } from "./mcpDocumentTools.cjs";
+import {
+  buildDocumentOutline,
+  findInDocument,
+  getDocumentSection,
+  searchDocument
+} from "./mcpDocumentTools.cjs";
 
 const DOC = [
   "# Title",
@@ -43,6 +48,11 @@ setHost({
     windowId: "w1",
     filePath: null,
     ...searchDocument(DOC, options)
+  }),
+  find: (_windowId: string | undefined, options: Record<string, unknown>) => ({
+    windowId: "w1",
+    filePath: null,
+    ...findInDocument(DOC, options)
   }),
   getSelection: async () => SELECTION,
   rejectAllPendingWrites: () => {},
@@ -89,6 +99,7 @@ describe("MCP server read tools", () => {
         "nexus_get_outline",
         "nexus_get_section",
         "nexus_search_document",
+        "nexus_find",
         "nexus_get_selection"
       ])
     );
@@ -113,6 +124,22 @@ describe("MCP server read tools", () => {
     const result = readToolJson(await callTool("nexus_search_document", { query: "alpha" }));
     expect(result.total).toBe(5);
     expect(result.matches[0].line).toBe(3);
+  });
+
+  it("finds matches with context and the enclosing heading", async () => {
+    const result = readToolJson(await callTool("nexus_find", { query: "alpha", contextLines: 0 }));
+    expect(result.matchingLines).toBe(3);
+    // The body line under "## Alpha" reports its two occurrences and that it sits in the Alpha section.
+    const bodyMatch = result.matches.find((entry: { line: number }) => entry.line === 7);
+    expect(bodyMatch.matchCount).toBe(3);
+    expect(bodyMatch.heading).toMatchObject({ text: "Alpha", slug: "alpha" });
+    expect(bodyMatch.context).toBe("Alpha body mentions alpha twice: alpha.");
+  });
+
+  it("reports an error when find has an empty query", async () => {
+    const envelope = await callTool("nexus_find", { query: "" });
+    expect(envelope.result.isError).toBe(true);
+    expect(envelope.result.content[0].text).toMatch(/non-empty/);
   });
 
   it("returns the editor selection", async () => {
