@@ -144,6 +144,7 @@ export type UserSettings = {
   outlineVisible: boolean;
   outlineWidthPixels: number;
   showInvisibleCharacters: boolean;
+  spellCheckEnabled: boolean;
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
   pageMargins: EditorPageMargins;
@@ -221,6 +222,11 @@ function sanitizeResponsiveContentWrappingEnabled(value: unknown) {
 
 function sanitizeShowInvisibleCharacters(value: unknown) {
   return typeof value === "boolean" ? value : false;
+}
+
+function sanitizeSpellCheckEnabled(value: unknown) {
+  // Spell check is on by default; only an explicit stored `false` disables it.
+  return typeof value === "boolean" ? value : true;
 }
 
 function sanitizeOutlineVisible(value: unknown) {
@@ -437,6 +443,7 @@ export function createDefaultSettings(): UserSettings {
     outlineVisible: false,
     outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
     showInvisibleCharacters: false,
+    spellCheckEnabled: true,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
     pageMargins: createDefaultPageMargins(),
@@ -474,6 +481,7 @@ export function loadSettings(profileName: string): UserSettings {
       outlineVisible: sanitizeOutlineVisible(parsed.outlineVisible),
       outlineWidthPixels: sanitizeOutlineWidth(parsed.outlineWidthPixels),
       showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
+      spellCheckEnabled: sanitizeSpellCheckEnabled(parsed.spellCheckEnabled),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)
         ? parsed.pageOrientation

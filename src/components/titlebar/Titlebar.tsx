@@ -17,6 +17,7 @@ export type TitlebarProps = {
   fileName: string | null;
   isDirty: boolean;
   showInvisibleCharacters: boolean;
+  spellCheckEnabled: boolean;
   outlineVisible: boolean;
   pageOrientation: EditorPageOrientation;
   responsiveContentWrappingEnabled: boolean;
@@ -26,6 +27,7 @@ export type TitlebarProps = {
 
 type AppMenuBarProps = {
   showInvisibleCharacters: boolean;
+  spellCheckEnabled: boolean;
   outlineVisible: boolean;
   pageOrientation: EditorPageOrientation;
   responsiveContentWrappingEnabled: boolean;
@@ -35,6 +37,7 @@ type AppMenuBarProps = {
 
 function AppMenuBar({
   showInvisibleCharacters,
+  spellCheckEnabled,
   outlineVisible,
   pageOrientation,
   responsiveContentWrappingEnabled,
@@ -154,6 +157,12 @@ function AppMenuBar({
           >
             Show Invisible Characters
           </MenubarCheckboxItem>
+          <MenubarCheckboxItem
+            checked={spellCheckEnabled}
+            onCheckedChange={() => dispatchMenuAction("toggleSpellCheck")}
+          >
+            Check Spelling
+          </MenubarCheckboxItem>
           <MenubarSeparator />
           <MenubarCheckboxItem
             checked={outlineVisible}
@@ -250,6 +259,7 @@ export function Titlebar({
   fileName,
   isDirty,
   showInvisibleCharacters,
+  spellCheckEnabled,
   outlineVisible,
   pageOrientation,
   responsiveContentWrappingEnabled,
@@ -270,6 +280,7 @@ export function Titlebar({
             paperViewEnabled={paperViewEnabled}
             responsiveContentWrappingEnabled={responsiveContentWrappingEnabled}
             showInvisibleCharacters={showInvisibleCharacters}
+            spellCheckEnabled={spellCheckEnabled}
           />
         )}
       </div>

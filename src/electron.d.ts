@@ -17,6 +17,7 @@ export type NexusMenuAction =
   | "zoomOut"
   | "resetZoom"
   | "toggleShowInvisibles"
+  | "toggleSpellCheck"
   | "toggleOutline"
   | "togglePageOrientation"
   | "toggleResponsiveWrapping"
@@ -29,6 +30,7 @@ export type NexusMenuAction =
 type NexusMenuState = {
   editorZoomPercent?: number;
   showInvisibleCharacters?: boolean;
+  spellCheckEnabled?: boolean;
   outlineVisible?: boolean;
   pageOrientation?: "portrait" | "landscape";
   responsiveContentWrappingEnabled?: boolean;
@@ -73,6 +75,10 @@ type ExternalFileChangeEvent = {
   kind: "changed" | "missing";
   timestamp: number;
 };
+
+type ExportProgressEvent =
+  | { active: true; title: string; message: string }
+  | { active: false };
 
 type SelectLocalImageResult =
   | { canceled: true }
@@ -224,6 +230,7 @@ declare global {
       onOpenRecentFile(callback: (filePath: string) => void): () => void;
       onCloseRequest(callback: () => void): () => void;
       onExternalFileChange(callback: (event: ExternalFileChangeEvent) => void): () => void;
+      onExportProgress(callback: (event: ExportProgressEvent) => void): () => void;
       resolveCloseRequest(shouldClose: boolean): Promise<void>;
       runEditCommand(command: NexusEditCommand): Promise<void>;
       writeHtmlToClipboard(payload: { html: string; text: string }): Promise<{ written: boolean }>;

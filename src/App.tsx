@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { highlightWhitespace } from "@codemirror/view";
+import { EditorView, highlightWhitespace } from "@codemirror/view";
 import {
   codeBlockPlugin,
   codeMirrorPlugin,
@@ -40,6 +40,7 @@ import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
+import ExportProgressDialog from "./components/editor/ExportProgressDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
@@ -66,6 +67,8 @@ import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert"
 import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
 import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
+import { sourceImagePasteExtension } from "./components/editor/sourceImagePaste";
+import { readImageFileAsDataUrl } from "./lib/imagePaste";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
@@ -383,6 +386,9 @@ function App() {
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ title: string; message: string } | null>(
+    null
+  );
   const [mcpNgrokStatus, setMcpNgrokStatus] = useState<McpNgrokStatus | null>(null);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
     useState<ExternalFileChangePrompt | null>(null);
@@ -400,6 +406,9 @@ function App() {
   >(null);
   const editorRef = useRef<MDXEditorMethods>(null);
   const editorSurfaceRef = useRef<HTMLDivElement>(null);
+  // Counts in-flight exports so overlapping exports keep the progress modal up until the last one
+  // finishes (the renderer can't block the native menu the way the old modal window did).
+  const exportProgressDepthRef = useRef(0);
   const editorScrollSnapshotRef = useRef<ScrollSnapshot>({ ratio: 0, top: 0 });
   const activeScrollElementRef = useRef<HTMLElement | null>(null);
   const isApplyingScrollRef = useRef(false);
@@ -442,6 +451,11 @@ function App() {
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
+      })),
+    toggleSpellCheck: () =>
+      setSettings((current) => ({
+        ...current,
+        spellCheckEnabled: !current.spellCheckEnabled
       })),
     toggleOutline: () =>
       setSettings((current) => ({
@@ -506,6 +520,21 @@ function App() {
       ...(settings.showInvisibleCharacters ? [highlightWhitespace()] : [])
     ],
     [resolvedTheme, settings.showInvisibleCharacters]
+  );
+  // The source/diff editor gets the shared CodeMirror config plus image-paste support, so pasting a
+  // clipboard image embeds it as a base64 markdown image (mirroring rich-text mode). Code blocks keep
+  // the plain `codeMirrorExtensions` so an image paste there is left to the default behavior.
+  const sourceCodeMirrorExtensions = useMemo(
+    () => [
+      ...codeMirrorExtensions,
+      sourceImagePasteExtension(),
+      // CodeMirror disables spell check by default; mirror the editor-wide preference so source mode
+      // matches rich-text mode. (Code blocks keep the plain `codeMirrorExtensions` and stay unchecked.)
+      EditorView.contentAttributes.of({
+        spellcheck: settings.spellCheckEnabled ? "true" : "false"
+      })
+    ],
+    [codeMirrorExtensions, settings.spellCheckEnabled]
   );
   outlineHeadingsRef.current = outlineHeadings;
   // The outline now follows the document in both rich-text and source mode; diff mode
@@ -649,6 +678,11 @@ function App() {
       setSettings((current) => ({
         ...current,
         showInvisibleCharacters: !current.showInvisibleCharacters
+      })),
+    toggleSpellCheck: () =>
+      setSettings((current) => ({
+        ...current,
+        spellCheckEnabled: !current.spellCheckEnabled
       })),
     toggleOutline: () =>
       setSettings((current) => ({
@@ -795,6 +829,7 @@ function App() {
     window.nexus?.setMenuState({
       editorZoomPercent,
       showInvisibleCharacters: settings.showInvisibleCharacters,
+      spellCheckEnabled: settings.spellCheckEnabled,
       outlineVisible: settings.outlineVisible,
       pageOrientation: settings.pageOrientation,
       responsiveContentWrappingEnabled: settings.responsiveContentWrappingEnabled,
@@ -803,6 +838,7 @@ function App() {
   }, [
     editorZoomPercent,
     settings.showInvisibleCharacters,
+    settings.spellCheckEnabled,
     settings.outlineVisible,
     settings.pageOrientation,
     settings.responsiveContentWrappingEnabled,
@@ -927,6 +963,27 @@ function App() {
 
     return window.nexus.onConfirmHostKey((payload) => {
       setPendingHostKey(payload);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
+    // The main process drives this while a long export runs. Counting active exports keeps the modal
+    // visible until the last one settles, even if the user kicks off a second export mid-render.
+    return window.nexus.onExportProgress((event) => {
+      if (event.active) {
+        exportProgressDepthRef.current += 1;
+        setExportProgress({ title: event.title, message: event.message });
+        return;
+      }
+
+      exportProgressDepthRef.current = Math.max(0, exportProgressDepthRef.current - 1);
+      if (exportProgressDepthRef.current === 0) {
+        setExportProgress(null);
+      }
     });
   }, []);
 
@@ -1903,6 +1960,9 @@ function App() {
       case "toggleShowInvisibles":
         h.toggleShowInvisibles();
         break;
+      case "toggleSpellCheck":
+        h.toggleSpellCheck();
+        break;
       case "toggleOutline":
         h.toggleOutline();
         break;
@@ -2025,6 +2085,7 @@ function App() {
         paperViewEnabled={settings.paperViewEnabled}
         responsiveContentWrappingEnabled={settings.responsiveContentWrappingEnabled}
         showInvisibleCharacters={settings.showInvisibleCharacters}
+        spellCheckEnabled={settings.spellCheckEnabled}
       />
       <section className="workspace">
         <div className="editor-column">
@@ -2050,11 +2111,15 @@ function App() {
             ) : null}
             <EditorContextMenu>
               <MDXEditor
-                key={`editor-${settings.showInvisibleCharacters}-${resolvedTheme}`}
+                // spellCheckEnabled is in the key because diffSourcePlugin only reads
+                // codeMirrorExtensions on init: a remount is what lets source mode pick up the new
+                // spell-check contentAttributes (rich text also re-reads the spellCheck prop here).
+                key={`editor-${settings.showInvisibleCharacters}-${resolvedTheme}-${settings.spellCheckEnabled}`}
                 ref={editorRef}
                 markdown={markdown}
                 onChange={handleMarkdownChange}
                 contentEditableClassName="markdown-body"
+                spellCheck={settings.spellCheckEnabled}
                 plugins={[
                   headingsPlugin(),
                   listsPlugin(),
@@ -2063,7 +2128,7 @@ function App() {
                   thematicBreakPlugin(),
                   linkPlugin(),
                   linkDialogPlugin(),
-                  imagePlugin({ imagePreviewHandler }),
+                  imagePlugin({ imagePreviewHandler, imageUploadHandler: readImageFileAsDataUrl }),
                   tablePlugin(),
                   frontmatterPlugin(),
                   directivesPlugin({
@@ -2102,7 +2167,7 @@ function App() {
                     diffMarkdown,
                     readOnlyDiff: true,
                     viewMode: currentViewModeRef.current,
-                    codeMirrorExtensions
+                    codeMirrorExtensions: sourceCodeMirrorExtensions
                   }),
                   toolbarPlugin({
                     toolbarContents: () => (
@@ -2229,6 +2294,11 @@ function App() {
         themePreference={settings.themePreference}
       />
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
+      <ExportProgressDialog
+        open={exportProgress !== null}
+        title={exportProgress?.title ?? ""}
+        message={exportProgress?.message ?? ""}
+      />
       <McpWriteConfirmDialog
         open={pendingMcpWrite !== null}
         clientLabel={pendingMcpWrite?.clientLabel ?? ""}

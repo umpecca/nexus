@@ -4,6 +4,7 @@ const menuActionChannel = "menu:action";
 const openRecentChannel = "menu:open-recent";
 const closeRequestChannel = "app:request-close";
 const externalFileChangeChannel = "file:external-change";
+const exportProgressChannel = "export:progress";
 const mcpConfirmWriteChannel = "mcp:confirm-write";
 const mcpRequestSelectionChannel = "mcp:request-selection";
 const sftpConfirmHostKeyChannel = "sftp:confirm-host-key";
@@ -29,6 +30,11 @@ contextBridge.exposeInMainWorld("nexus", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on(externalFileChangeChannel, listener);
     return () => ipcRenderer.removeListener(externalFileChangeChannel, listener);
+  },
+  onExportProgress(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(exportProgressChannel, listener);
+    return () => ipcRenderer.removeListener(exportProgressChannel, listener);
   },
   resolveCloseRequest(shouldClose) {
     return ipcRenderer.invoke("app:resolve-close-request", shouldClose);

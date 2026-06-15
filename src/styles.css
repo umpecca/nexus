@@ -987,6 +987,43 @@ body.nexus-resizing-col * {
   width: 16px;
 }
 
+/* Export progress modal: a single centered column (spinner + title + message) instead of the
+   header/body/footer grid the form dialogs use. Colors come from the shared dialog theme vars so it
+   matches the preferences modal in every theme. */
+.nexus-export-progress-dialog {
+  grid-template-rows: auto;
+  justify-items: center;
+  text-align: center;
+  width: min(22rem, calc(100vw - 2rem));
+}
+
+.nexus-export-progress-body {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: center;
+}
+
+.nexus-spinner {
+  animation: nexus-spin 0.8s linear infinite;
+  border: 3px solid var(--dialog-border);
+  border-radius: 999px;
+  border-top-color: var(--accent);
+  height: 30px;
+  width: 30px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-spinner {
+    animation-duration: 1.8s;
+  }
+}
+
+@keyframes nexus-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .nexus-settings-form {
   display: grid;
   gap: 0.85rem;
@@ -1387,6 +1424,20 @@ body.nexus-resizing-col * {
 .nexus-image-import-form {
   display: grid;
   gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+/* Keep Cancel/Insert reachable when the form is taller than the dialog (base64 mode is the tallest):
+   the fields scroll while the footer stays pinned to the bottom of the scroll area. The opaque
+   background masks fields scrolling underneath; the form's grid gap keeps the normal-case spacing. */
+.nexus-image-import-form .nexus-dialog-footer {
+  background: var(--dialog-bg);
+  bottom: 0;
+  position: sticky;
 }
 
 .nexus-image-import-modes {
@@ -1459,6 +1510,12 @@ body.nexus-resizing-col * {
 
 .app-shell-windows .editor-surface .mdxeditor-toolbar {
   border-top: 0;
+}
+
+/* Sky theme only: a soft drop shadow lifts the docked ribbon off the page (modernized Office 2010
+   look). Skipped while the toolbar is floating (source/diff mode), where it sits transparent. */
+[data-theme="sky"] .editor-surface .mdxeditor-toolbar:not(:has(.nexus-shadcn-toolbar-floating)) {
+  box-shadow: 0 4px 12px -4px rgba(15, 41, 84, 0.25);
 }
 
 .nexus-editor-toolbar {
@@ -1751,6 +1808,26 @@ body.nexus-resizing-col * {
   min-width: 30px;
   padding: 0;
   width: 30px;
+}
+
+/* Sky theme only: the view-mode toggles (Rich text / Diff / Source) read as royal-blue ribbon
+   toggles — filled royal blue when active, a lighter blue on hover, with a white glyph. These win
+   over the shared amber toggled/hover styling via the data-theme + group scoping. */
+[data-theme="sky"] .nexus-shadcn-toolbar-mode-switch .nexus-shadcn-toolbar-mode-button:hover {
+  background: #2e6fd0;
+  border-color: #2e6fd0;
+  color: #ffffff;
+}
+
+[data-theme="sky"] .nexus-shadcn-toolbar-mode-switch .nexus-shadcn-toolbar-mode-button[aria-pressed="true"] {
+  background: #185abd;
+  border-color: #185abd;
+  color: #ffffff;
+}
+
+[data-theme="sky"] .nexus-shadcn-toolbar-mode-switch .nexus-shadcn-toolbar-mode-button[aria-pressed="true"]:hover {
+  background: #2e6fd0;
+  border-color: #2e6fd0;
 }
 
 .nexus-find-panel {

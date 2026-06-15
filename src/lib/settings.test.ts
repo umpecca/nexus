@@ -62,6 +62,7 @@ describe("settings helpers", () => {
       outlineVisible: false,
       outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
       showInvisibleCharacters: false,
+      spellCheckEnabled: true,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
       pageMargins: {
@@ -120,6 +121,7 @@ describe("settings helpers", () => {
       outlineVisible: false,
       outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
       showInvisibleCharacters: false,
+      spellCheckEnabled: true,
       pageSize: "Letter",
       pageOrientation: "portrait",
       pageMargins: {
@@ -319,6 +321,22 @@ describe("settings helpers", () => {
 
   it("defaults the outline sidebar to hidden", () => {
     expect(createDefaultSettings().outlineVisible).toBe(false);
+  });
+
+  it("defaults spell check to on", () => {
+    expect(createDefaultSettings().spellCheckEnabled).toBe(true);
+  });
+
+  it("keeps spell check on when the stored value is missing, but honors an explicit false", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ fontFamily: DEFAULT_EDITOR_FONT_FAMILY })
+    });
+    expect(loadSettings("default").spellCheckEnabled).toBe(true);
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ spellCheckEnabled: false })
+    });
+    expect(loadSettings("default").spellCheckEnabled).toBe(false);
   });
 
   it("loads a saved enabled outline sidebar setting", () => {
@@ -751,6 +769,7 @@ describe("settings helpers", () => {
       outlineVisible: true,
       outlineWidthPixels: 320,
       showInvisibleCharacters: false,
+      spellCheckEnabled: true,
       pageSize: "A4",
       pageOrientation: "landscape",
       pageMargins: {
@@ -795,6 +814,7 @@ describe("settings helpers", () => {
         outlineVisible: true,
         outlineWidthPixels: 320,
         showInvisibleCharacters: false,
+        spellCheckEnabled: true,
         pageSize: "A4",
         pageOrientation: "landscape",
         pageMargins: {

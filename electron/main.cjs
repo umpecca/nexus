@@ -307,6 +307,7 @@ const githubAlertTypes = new Set(["note", "tip", "important", "warning", "cautio
 const fileWatchDebounceMs = 350;
 const internalWriteSuppressMs = 1500;
 const exportProgressPaintDelayMs = 80;
+const exportProgressChannel = "export:progress";
 const htmlMermaidPngEnhancementTimeoutMs = 12000;
 const htmlMermaidPngCaptureTimeoutMs = 4000;
 const defaultExportFontFamily =
@@ -1552,110 +1553,6 @@ function createExportWindow() {
   });
 }
 
-function createExportProgressWindow(parentWindow, title, message) {
-  const hasParent = parentWindow && !parentWindow.isDestroyed();
-  const progressWindow = new BrowserWindow({
-    parent: hasParent ? parentWindow : undefined,
-    modal: Boolean(hasParent),
-    show: false,
-    width: 380,
-    height: 170,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    closable: false,
-    fullscreenable: false,
-    title,
-    autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
-    }
-  });
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtmlText(title)}</title>
-  <style>
-    :root {
-      color-scheme: light;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #111827;
-      background: #ffffff;
-    }
-
-    body {
-      box-sizing: border-box;
-      min-height: 100vh;
-      margin: 0;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      background: #ffffff;
-    }
-
-    main {
-      width: 100%;
-      display: grid;
-      gap: 14px;
-      justify-items: center;
-      text-align: center;
-    }
-
-    .spinner {
-      width: 28px;
-      height: 28px;
-      border: 3px solid #d1d5db;
-      border-top-color: #2563eb;
-      border-radius: 999px;
-      animation: spin 0.8s linear infinite;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 700;
-      line-height: 1.3;
-    }
-
-    p {
-      margin: 0;
-      max-width: 30ch;
-      color: #4b5563;
-      font-size: 13px;
-      line-height: 1.45;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="spinner" aria-hidden="true"></div>
-    <h1>${escapeHtmlText(title)}</h1>
-    <p>${escapeHtmlText(message)}</p>
-  </main>
-</body>
-</html>`;
-
-  void progressWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-  progressWindow.once("ready-to-show", () => {
-    if (!progressWindow.isDestroyed()) {
-      progressWindow.show();
-    }
-  });
-
-  return progressWindow;
-}
-
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1675,15 +1572,23 @@ async function withTimeout(promise, timeoutMs, description) {
   }
 }
 
-async function withExportProgressWindow(parentWindow, title, message, task) {
-  const progressWindow = createExportProgressWindow(parentWindow, title, message);
+// Drives the in-app export progress modal while a long export runs. Instead of opening a native
+// progress window, we tell the renderer to show its own styled dialog (ExportProgressDialog), so the
+// waiting UI matches the rest of the app. Callers always show the save dialog BEFORE invoking this, so
+// the modal never overlaps file picking.
+async function withExportProgress(parentWindow, title, message, task) {
+  const hasWindow = parentWindow && !parentWindow.isDestroyed();
+  if (hasWindow) {
+    parentWindow.webContents.send(exportProgressChannel, { active: true, title, message });
+  }
 
   try {
+    // Give the renderer a beat to paint the modal before the main process gets busy rendering.
     await delay(exportProgressPaintDelayMs);
     return await task();
   } finally {
-    if (!progressWindow.isDestroyed()) {
-      progressWindow.destroy();
+    if (parentWindow && !parentWindow.isDestroyed()) {
+      parentWindow.webContents.send(exportProgressChannel, { active: false });
     }
   }
 }
@@ -2404,7 +2309,7 @@ async function exportHtmlFromPayload(window, payload) {
 
     await fs.mkdir(path.dirname(result.filePath), { recursive: true });
 
-    return await withExportProgressWindow(
+    return await withExportProgress(
       window,
       "Exporting HTML",
       "Rendering diagrams and writing the HTML file. Please wait.",
@@ -2448,7 +2353,7 @@ async function exportWordFromPayload(window, payload) {
 
     await fs.mkdir(path.dirname(result.filePath), { recursive: true });
 
-    return await withExportProgressWindow(
+    return await withExportProgress(
       window,
       "Exporting Word",
       "Rendering diagrams and writing the Word file. Please wait.",
@@ -2503,7 +2408,7 @@ async function copyHtmlFromPayload(window, payload) {
   const { currentPath, markdown, options } = payload ?? {};
 
   try {
-    return await withExportProgressWindow(
+    return await withExportProgress(
       window,
       "Copying HTML",
       "Rendering diagrams and copying HTML. Please wait.",
@@ -3210,6 +3115,7 @@ function runEditCommand(window, command) {
 const menuState = {
   editorZoomPercent: 100,
   showInvisibleCharacters: false,
+  spellCheckEnabled: true,
   outlineVisible: false,
   pageOrientation: "portrait",
   responsiveContentWrappingEnabled: true,
@@ -3507,6 +3413,12 @@ function buildMenu() {
           type: "checkbox",
           checked: menuState.showInvisibleCharacters,
           click: () => sendMenuAction("toggleShowInvisibles")
+        },
+        {
+          label: "Check Spelling",
+          type: "checkbox",
+          checked: menuState.spellCheckEnabled,
+          click: () => sendMenuAction("toggleSpellCheck")
         },
         {
           type: "separator"
@@ -3818,20 +3730,15 @@ ipcMain.handle("file:export-word", async (event, payload) => {
 });
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
+  console.log("Export PDF IPC handler started");
+  const window = BrowserWindow.fromWebContents(event.sender);
   const { currentPath, markdown, options } = payload ?? {};
   const pageSize = getPdfPageSize(options?.pageSize);
   const pageMargins = getPdfPageMargins(options?.pageMargins);
   const landscape = getPdfPageOrientation(options?.pageOrientation) === "landscape";
-  let exportWindow;
 
   try {
-    const html = await renderMarkdownExportHtml(markdown, currentPath, {
-      excludeFrontmatter: true,
-      fontFamily: options?.fontFamily,
-      fontSizePixels: options?.fontSizePixels,
-      paragraphSpacingPixels: options?.paragraphSpacingPixels
-    });
-    const result = await dialog.showSaveDialog({
+    const result = await showSaveDialogForWindow(window, {
       title: "Export PDF",
       defaultPath: getDefaultExportPath(currentPath, "pdf"),
       filters: pdfFilters
@@ -3841,26 +3748,48 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
       return { canceled: true };
     }
 
-    exportWindow = createExportWindow();
-    await loadExportHtml(exportWindow, html);
-    await renderExportMermaidDiagrams(exportWindow.webContents);
-    await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
-    const pdf = await exportWindow.webContents.printToPDF({
-      landscape,
-      margins: pageMargins,
-      pageSize,
-      printBackground: true
-    });
+    await fs.mkdir(path.dirname(result.filePath), { recursive: true });
 
-    await fs.writeFile(result.filePath, pdf);
-    return { canceled: false, filePath: result.filePath };
+    // Mirror the Word/HTML exports: keep the modal "Exporting PDF" window up while the heavy
+    // rendering + print-to-PDF runs, so the user sees progress instead of a frozen editor. The
+    // save dialog is shown first (above) so the modal never covers it.
+    return await withExportProgress(
+      window,
+      "Exporting PDF",
+      "Rendering diagrams and writing the PDF file. Please wait.",
+      async () => {
+        let exportWindow;
+        try {
+          const html = await renderMarkdownExportHtml(markdown, currentPath, {
+            excludeFrontmatter: true,
+            fontFamily: options?.fontFamily,
+            fontSizePixels: options?.fontSizePixels,
+            paragraphSpacingPixels: options?.paragraphSpacingPixels
+          });
+
+          exportWindow = createExportWindow();
+          await loadExportHtml(exportWindow, html);
+          await renderExportMermaidDiagrams(exportWindow.webContents);
+          await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
+          const pdf = await exportWindow.webContents.printToPDF({
+            landscape,
+            margins: pageMargins,
+            pageSize,
+            printBackground: true
+          });
+
+          await fs.writeFile(result.filePath, pdf);
+          return { canceled: false, filePath: result.filePath };
+        } finally {
+          if (exportWindow && !exportWindow.isDestroyed()) {
+            exportWindow.destroy();
+          }
+        }
+      }
+    );
   } catch (error) {
     await showExportError(event, "PDF", error);
     return { canceled: true };
-  } finally {
-    if (exportWindow && !exportWindow.isDestroyed()) {
-      exportWindow.destroy();
-    }
   }
 });
 
@@ -4489,6 +4418,12 @@ ipcMain.on("menu:set-state", (_event, state) => {
   if (typeof state.showInvisibleCharacters === "boolean" &&
       state.showInvisibleCharacters !== menuState.showInvisibleCharacters) {
     menuState.showInvisibleCharacters = state.showInvisibleCharacters;
+    changed = true;
+  }
+
+  if (typeof state.spellCheckEnabled === "boolean" &&
+      state.spellCheckEnabled !== menuState.spellCheckEnabled) {
+    menuState.spellCheckEnabled = state.spellCheckEnabled;
     changed = true;
   }
 
