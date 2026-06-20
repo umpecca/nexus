@@ -18,12 +18,36 @@ const iconEntries = [
   { type: "ic10", size: 1024 }
 ];
 
+// macOS Big Sur icon grid: the rounded-square artwork occupies an 824×824 area within the
+// 1024×1024 canvas, leaving a transparent margin so the icon matches the size of other dock icons.
+// Our source art is full-bleed, which made the dock icon render oversized — inset it to the grid.
+const ICON_CONTENT_SCALE = 824 / 1024;
+
 async function createPngEntry(size) {
-  return sharp(sourcePath)
-    .resize(size, size, {
+  const contentSize = Math.max(1, Math.round(size * ICON_CONTENT_SCALE));
+  const margin = size - contentSize;
+  const left = Math.round(margin / 2);
+  const top = Math.round(margin / 2);
+
+  const content = await sharp(sourcePath)
+    .resize(contentSize, contentSize, {
       background: { r: 0, g: 0, b: 0, alpha: 0 },
       fit: "contain"
     })
+    .png()
+    .toBuffer();
+
+  // Center the scaled artwork on a transparent canvas of the target size so every entry keeps the
+  // same proportional margin.
+  return sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  })
+    .composite([{ input: content, left, top }])
     .png()
     .toBuffer();
 }

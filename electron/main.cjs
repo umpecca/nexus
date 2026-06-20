@@ -18,6 +18,7 @@ const imagePaths = require("./imagePaths.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
 const appIconPath = path.join(__dirname, "..", "nexus.png");
+const macDockIconPath = path.join(__dirname, "..", "nexus.icns");
 const closeStates = new Map();
 const fileWatchers = new Map();
 const pendingInitialFiles = new Map();
@@ -441,6 +442,12 @@ function isProbablyFilePath(argument) {
 
 function getAppIconPath() {
   return existsSync(appIconPath) ? appIconPath : undefined;
+}
+
+function getMacDockIconPath() {
+  // The dock uses the padded .icns so the icon sits on macOS's grid (matching other dock icons);
+  // fall back to the full-bleed PNG if the .icns is missing.
+  return existsSync(macDockIconPath) ? macDockIconPath : getAppIconPath();
 }
 
 async function getOpenableFilePaths(args) {
@@ -4494,9 +4501,11 @@ if (gotSingleInstanceLock) {
 }
 
 app.whenReady().then(async () => {
-  const iconPath = getAppIconPath();
-  if (process.platform === "darwin" && iconPath) {
-    app.dock?.setIcon(iconPath);
+  if (process.platform === "darwin") {
+    const dockIconPath = getMacDockIconPath();
+    if (dockIconPath) {
+      app.dock?.setIcon(dockIconPath);
+    }
   }
 
   loadRecentFiles();
