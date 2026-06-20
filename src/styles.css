@@ -593,14 +593,37 @@ body.nexus-resizing-col * {
 
 /* Outline overlays the editor's left edge, starting below the toolbar, so the
    toolbar spans the full width and isn't squeezed by the sidebar. It renders in
-   rich-text and source mode, where the toolbar is a fixed 64px bar. */
+   rich-text and source mode. --nexus-toolbar-height is measured live (the ribbon
+   grows when its horizontal scrollbar appears), with 64px as the no-scrollbar
+   fallback, so the panel sits flush under the bar and shares its bottom border.
+   Sits above the toolbar (z-index 20) so the ribbon's Sky drop shadow doesn't fall
+   across it. */
 .editor-surface > .nexus-outline {
   bottom: 0;
   left: 0;
   position: absolute;
-  top: 64px;
+  top: var(--nexus-toolbar-height, 64px);
   width: var(--outline-width, 16rem);
-  z-index: 15;
+  z-index: 25;
+}
+
+/* Sky theme: a soft shadow off the outline's right edge so the panel pops off the editor
+   like the ribbon pops off the page. It rides a surface pseudo-element rather than the panel
+   itself — the panel's overflow:hidden would clip a child shadow, and the panel sits above the
+   toolbar (z-index 25 vs 20), so its own box-shadow would bleed up over the ribbon's scrollbar.
+   This layer sits below the toolbar (z-index 1) so the ribbon masks the upward blur while the
+   rightward blur still falls across the editor. It mirrors the panel's footprint via the live
+   width/height vars so the shadow hugs the right edge and starts flush under the ribbon. */
+[data-theme="sky"] .editor-surface.editor-surface-with-outline::after {
+  content: "";
+  position: absolute;
+  top: var(--nexus-toolbar-height, 64px);
+  bottom: 0;
+  left: 0;
+  width: var(--outline-width, 16rem);
+  box-shadow: 4px 0 12px -4px rgba(15, 41, 84, 0.25);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* Make room so editor content isn't hidden behind the overlaid outline. */
@@ -983,6 +1006,190 @@ body.nexus-resizing-col * {
 }
 
 .nexus-dialog-close svg {
+  height: 16px;
+  width: 16px;
+}
+
+/* MDXEditor's built-in frontmatter dialog ships with the library's own chrome, which clashes with
+   the app's modals. Re-skin it with the shared dialog tokens so it reads as one of our dialogs.
+   Scoped to the frontmatter dialog only, via the data-editor-type hook MDXEditor sets on its
+   content (and the overlay that immediately precedes it). The hashed CSS-module class names are
+   matched with [class*="_name_"], the same way the rest of our MDXEditor chrome overrides are. */
+[class*="_dialogOverlay_"]:has(~ [data-editor-type="frontmatter"]) {
+  /* Our modals appear instantly; drop MDXEditor's fade-in (it animates opacity, fighting ours). */
+  animation: none;
+  backdrop-filter: blur(3px);
+  background: var(--overlay);
+  inset: 0;
+  /* MDXEditor's overlay ships at opacity 0.5; our --overlay already carries its own alpha. */
+  opacity: 1;
+  position: fixed;
+  z-index: 140;
+}
+
+[class*="_largeDialogContent_"][data-editor-type="frontmatter"] {
+  animation: none;
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 10px;
+  box-shadow: var(--dialog-shadow);
+  color: var(--ink);
+  display: flex;
+  /* MDXEditor lifts the dialog with a drop-shadow filter; clear it so only our box-shadow shows. */
+  filter: none;
+  flex-direction: column;
+  font-size: 0.9rem;
+  gap: 1rem;
+  left: 50%;
+  max-height: min(85vh, 34rem);
+  max-width: calc(100vw - 2rem);
+  padding: 1.25rem;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(34rem, calc(100vw - 2rem));
+  z-index: 150;
+}
+
+[data-editor-type="frontmatter"] [class*="_dialogTitle_"] {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 0;
+  padding-right: 2rem;
+}
+
+/* Key/Value property table */
+[data-editor-type="frontmatter"] [class*="_propertyEditorTable_"] {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+[data-editor-type="frontmatter"] [class*="_propertyEditorTable_"] th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 0.4rem 0.4rem 0;
+  text-align: left;
+}
+
+[data-editor-type="frontmatter"] [class*="_propertyEditorTable_"] td {
+  padding: 0.2rem 0.4rem 0.2rem 0;
+  vertical-align: middle;
+}
+
+[data-editor-type="frontmatter"] [class*="_propertyEditorInput_"] {
+  background: var(--surface);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--ink);
+  min-height: 32px;
+  padding: 0.35rem 0.6rem;
+  width: 100%;
+}
+
+[data-editor-type="frontmatter"] [class*="_propertyEditorInput_"]:focus-visible {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+
+/* Shared button shape (Save / Cancel / Add entry), mirroring .nexus-button. */
+[data-editor-type="frontmatter"] [class*="_primaryButton_"],
+[data-editor-type="frontmatter"] [class*="_secondaryButton_"] {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.85rem;
+  font-weight: 500;
+  gap: 0.45rem;
+  justify-content: center;
+  line-height: 1;
+  min-height: 32px;
+  padding: 0.4rem 0.95rem;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+[data-editor-type="frontmatter"] [class*="_primaryButton_"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+[data-editor-type="frontmatter"] [class*="_primaryButton_"]:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+[data-editor-type="frontmatter"] [class*="_secondaryButton_"] {
+  background: var(--btn-grad);
+  border-color: var(--btn-border);
+  color: var(--ink);
+}
+
+[data-editor-type="frontmatter"] [class*="_secondaryButton_"]:hover {
+  background: var(--ribbon-hover-grad);
+  border-color: var(--ribbon-hover-border);
+  color: var(--hover-ink);
+}
+
+/* "Add entry" is a primary + small button. */
+[data-editor-type="frontmatter"] [class*="_smallButton_"] {
+  font-size: 0.85rem;
+  min-height: 26px;
+  padding: 0.25rem 0.6rem;
+}
+
+/* Row delete is an icon button — give it the ghost treatment. */
+[data-editor-type="frontmatter"] [class*="_iconButton_"] {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--toolbar-icon);
+  cursor: pointer;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+[data-editor-type="frontmatter"] [class*="_iconButton_"]:hover {
+  background: var(--toolbar-hover);
+  color: var(--toolbar-icon-active);
+}
+
+/* Top-right close (X), matching .nexus-dialog-close. */
+[data-editor-type="frontmatter"] [class*="_dialogCloseButton_"] {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 0.65rem;
+  top: 0.65rem;
+  width: 30px;
+}
+
+[data-editor-type="frontmatter"] [class*="_dialogCloseButton_"]:hover {
+  background: var(--toolbar-hover);
+  color: var(--ink);
+}
+
+[data-editor-type="frontmatter"] [class*="_dialogCloseButton_"] svg {
   height: 16px;
   width: 16px;
 }
@@ -1670,6 +1877,12 @@ body.nexus-resizing-col * {
 .nexus-shadcn-toolbar-group-modes::before {
   left: 0;
   right: auto;
+}
+
+/* Insert is the last of the left-aligned groups, so its trailing divider just dangles in the gap
+   before the right-aligned View group (which carries its own). Drop it. */
+.nexus-shadcn-toolbar-group[data-ribbon-label="Insert"]::before {
+  content: none;
 }
 
 .nexus-shadcn-toolbar-row,
@@ -2856,6 +3069,17 @@ body.nexus-resizing-col * {
 .nexus-statusbar-button:focus-visible {
   outline: 2px solid var(--focus-ring-strong);
   outline-offset: 1px;
+}
+
+.nexus-statusbar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.nexus-statusbar-button:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--chrome-text);
 }
 
 .nexus-statusbar-button svg {

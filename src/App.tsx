@@ -8,6 +8,7 @@ import {
   frontmatterPlugin,
   headingsPlugin,
   imagePlugin,
+  insertFrontmatter$,
   linkDialogPlugin,
   linkPlugin,
   listsPlugin,
@@ -171,6 +172,25 @@ function DiffViewController({ request }: { request: number }) {
     handledRequestRef.current = request;
     setViewMode("diff");
   }, [request, setViewMode]);
+
+  return null;
+}
+
+// Triggers MDXEditor's frontmatter action from outside the toolbar (the Edit menu lives in the
+// titlebar, outside the editor realm). Publishing insertFrontmatter$ creates the frontmatter
+// block if absent and opens the editor dialog, covering both insert and edit.
+function FrontmatterController({ request }: { request: number }) {
+  const insertFrontmatter = usePublisher(insertFrontmatter$);
+  const handledRequestRef = useRef(0);
+
+  useEffect(() => {
+    if (request <= handledRequestRef.current) {
+      return;
+    }
+
+    handledRequestRef.current = request;
+    insertFrontmatter();
+  }, [request, insertFrontmatter]);
 
   return null;
 }
@@ -375,6 +395,7 @@ function App() {
   const [pendingDiffViewRequest, setPendingDiffViewRequest] = useState(0);
   const [pendingFindRequest, setPendingFindRequest] = useState(0);
   const [pendingReplaceRequest, setPendingReplaceRequest] = useState(0);
+  const [pendingEditFrontmatterRequest, setPendingEditFrontmatterRequest] = useState(0);
   const [editorZoomPercent, setEditorZoomPercent] = useState(100);
   const [profileName, setProfileName] = useState("default");
   const [settings, setSettings] = useState(createDefaultSettings);
@@ -437,6 +458,7 @@ function App() {
     compareWithPreviousVersion,
     openFindPanel,
     openReplacePanel,
+    openFrontmatterEditor,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -471,6 +493,11 @@ function App() {
       setSettings((current) => ({
         ...current,
         responsiveContentWrappingEnabled: !current.responsiveContentWrappingEnabled
+      })),
+    togglePaperView: () =>
+      setSettings((current) => ({
+        ...current,
+        paperViewEnabled: !current.paperViewEnabled
       })),
     copyDocumentAsHtml
   });
@@ -537,9 +564,11 @@ function App() {
     [codeMirrorExtensions, settings.spellCheckEnabled]
   );
   outlineHeadingsRef.current = outlineHeadings;
-  // The outline now follows the document in both rich-text and source mode; diff mode
-  // keeps the full editor width for side-by-side review.
-  const showOutlineSidebar = settings.outlineVisible && editorViewMode !== "diff";
+  // The outline lives only in rich-text mode; source and diff modes hide it and disable the toggle.
+  // settings.outlineVisible is left untouched while in those modes, so the panel's open/closed state
+  // is remembered and restored automatically when the user returns to rich-text.
+  const canToggleOutline = editorViewMode === "rich-text";
+  const showOutlineSidebar = settings.outlineVisible && canToggleOutline;
   const defaultPublishFilename = useMemo(() => {
     if (filePath) {
       const base = getDocumentName(filePath).replace(/\.[^.]+$/, "");
@@ -664,6 +693,7 @@ function App() {
     compareWithPreviousVersion,
     openFindPanel,
     openReplacePanel,
+    openFrontmatterEditor,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -698,6 +728,11 @@ function App() {
       setSettings((current) => ({
         ...current,
         responsiveContentWrappingEnabled: !current.responsiveContentWrappingEnabled
+      })),
+    togglePaperView: () =>
+      setSettings((current) => ({
+        ...current,
+        paperViewEnabled: !current.paperViewEnabled
       })),
     copyDocumentAsHtml
   };
@@ -833,7 +868,8 @@ function App() {
       outlineVisible: settings.outlineVisible,
       pageOrientation: settings.pageOrientation,
       responsiveContentWrappingEnabled: settings.responsiveContentWrappingEnabled,
-      paperViewEnabled: settings.paperViewEnabled
+      paperViewEnabled: settings.paperViewEnabled,
+      editorViewMode
     });
   }, [
     editorZoomPercent,
@@ -842,7 +878,8 @@ function App() {
     settings.outlineVisible,
     settings.pageOrientation,
     settings.responsiveContentWrappingEnabled,
-    settings.paperViewEnabled
+    settings.paperViewEnabled,
+    editorViewMode
   ]);
 
   useEffect(() => {
@@ -874,6 +911,52 @@ function App() {
       document.documentElement.style.colorScheme = "";
     };
   }, [resolvedTheme]);
+
+  // The overlaid outline starts just below the docked ribbon, but the ribbon is not a fixed
+  // 64px bar: its height grows by the height of the horizontal scrollbar when the toolbar
+  // overflows. Track the live toolbar height in a CSS variable so the outline sits flush
+  // beneath it (sharing the ribbon's bottom border) instead of overlapping the scrollbar.
+  // Re-find the toolbar whenever the editor remounts (key change) or the view mode swaps the
+  // docked bar for the floating one; a ResizeObserver keeps it in sync as the window resizes.
+  useEffect(() => {
+    const surface = editorSurfaceRef.current;
+    if (!surface) {
+      return;
+    }
+
+    let frame = 0;
+    let attempts = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const attach = () => {
+      const toolbar = surface.querySelector<HTMLElement>(
+        ".mdxeditor-toolbar:not(:has(.nexus-shadcn-toolbar-floating))"
+      );
+      if (!toolbar) {
+        // No docked bar yet (still mounting) or it is floating (diff mode); fall back to the
+        // CSS default and retry a few frames in case MDXEditor has not painted the bar.
+        surface.style.removeProperty("--nexus-toolbar-height");
+        if (attempts++ < 10) {
+          frame = requestAnimationFrame(attach);
+        }
+        return;
+      }
+
+      const syncHeight = () => {
+        surface.style.setProperty("--nexus-toolbar-height", `${toolbar.offsetHeight}px`);
+      };
+      resizeObserver = new ResizeObserver(syncHeight);
+      resizeObserver.observe(toolbar);
+      syncHeight();
+    };
+
+    attach();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+    };
+  }, [editorViewMode, resolvedTheme, settings.showInvisibleCharacters, settings.spellCheckEnabled]);
 
   useEffect(() => {
     document.title = formatWindowTitle(
@@ -1201,6 +1284,10 @@ function App() {
 
   function openReplacePanel() {
     setPendingReplaceRequest((current) => current + 1);
+  }
+
+  function openFrontmatterEditor() {
+    setPendingEditFrontmatterRequest((current) => current + 1);
   }
 
   function insertTableOfContents() {
@@ -1948,6 +2035,9 @@ function App() {
       case "replace":
         h.openReplacePanel();
         break;
+      case "editFrontmatter":
+        h.openFrontmatterEditor();
+        break;
       case "zoomIn":
         h.zoomEditorIn();
         break;
@@ -1971,6 +2061,9 @@ function App() {
         break;
       case "toggleResponsiveWrapping":
         h.toggleResponsiveWrapping();
+        break;
+      case "togglePaperView":
+        h.togglePaperView();
         break;
       case "settings":
         h.openSettings();
@@ -2077,6 +2170,8 @@ function App() {
   return (
     <main className={appShellClassName} data-theme={resolvedTheme}>
       <Titlebar
+        canEditFrontmatter={editorViewMode === "rich-text"}
+        canToggleOutline={canToggleOutline}
         dispatchMenuAction={dispatchMenuAction}
         fileName={titlebarFileName}
         isDirty={isDirty}
@@ -2173,6 +2268,7 @@ function App() {
                     toolbarContents: () => (
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
+                        <FrontmatterController request={pendingEditFrontmatterRequest} />
                         <FindTextPanel
                           onActiveMatchChange={scrollFindMatchIntoView}
                           openRequest={pendingFindRequest}
@@ -2187,10 +2283,6 @@ function App() {
                           documentPath={filePath}
                           onCleanUpFormatting={cleanUpFormatting}
                           onInsertTableOfContents={insertTableOfContents}
-                          onPaperViewChange={(paperViewEnabled) =>
-                            setSettings((current) => ({ ...current, paperViewEnabled }))
-                          }
-                          paperViewEnabled={settings.paperViewEnabled}
                         />
                       </>
                     ),
@@ -2210,6 +2302,7 @@ function App() {
         </div>
       </section>
       <StatusBar
+        canToggleOutline={canToggleOutline}
         isDirty={isDirty}
         maxZoom={MAX_EDITOR_ZOOM_PERCENT}
         minZoom={MIN_EDITOR_ZOOM_PERCENT}

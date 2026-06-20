@@ -1,0 +1,1079 @@
+/*
+ * Theme tokens for three looks, selected via [data-theme] on :root:
+ *   • Sky (the bare :root defaults below) — "Office 2010, modernized": blue-tinted
+ *     chrome, gold hover / amber pressed states, rendered flat (tinted fills instead of
+ *     glass gradients, hairline borders, 6-10px radii, soft elevation shadows).
+ *   • Light ([data-theme="light"]) — a true neutral variant: white surfaces,
+ *     light-gray chrome, gray hovers, and a single blue accent.
+ *   • Dark ([data-theme="dark"]).
+ *
+ * Every component is styled from these CSS variables, so retheming is a matter of editing
+ * the token blocks below. The class prefix is `nexus-` (inherited from the source design
+ * system); rename it freely — just keep the CSS and component className strings in sync.
+ */
+:root {
+  color: #1e2430;
+  background: #e9eef7;
+  font-family:
+    "Segoe UI Variable Text", "Segoe UI", Tahoma, -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #1e2430;
+  --muted: #5b6b85;
+  --paper: #ffffff;
+  --line: rgba(70, 95, 130, 0.22);
+  --accent: #185abd;
+  --accent-strong: #2e6fd0;
+  --app-bg: #e9eef7;
+  --surface: #ffffff;
+  --surface-muted: #f1f5fb;
+  --toolbar: #ffffff;
+  --toolbar-hover: rgba(245, 185, 60, 0.18);
+  --toolbar-active: rgba(245, 185, 60, 0.28);
+  --toolbar-shadow: rgba(35, 55, 90, 0.1);
+  --focus-ring: rgba(24, 90, 189, 0.25);
+  --focus-ring-strong: rgba(24, 90, 189, 0.5);
+  --selected-border: rgba(187, 134, 18, 0.55);
+  --on-accent: #ffffff;
+  --danger: #c42b1c;
+  --danger-bg: #fdf3f2;
+  --warning: #9a6400;
+  --tooltip-bg: #1f2430;
+  --tooltip-color: #f2f5fa;
+  --option-highlight: rgba(245, 185, 60, 0.18);
+  --scrollbar-thumb: rgba(70, 90, 120, 0.35);
+  --toolbar-icon: #455772;
+  --toolbar-icon-active: #9c6f00;
+  --paper-shadow:
+    0 0 0 1px rgba(50, 70, 100, 0.08),
+    0 2px 6px rgba(35, 55, 90, 0.1),
+    0 18px 44px rgba(35, 55, 90, 0.14);
+  --floating-shadow: 0 6px 20px rgba(35, 55, 90, 0.16);
+  --dialog-shadow: 0 16px 50px rgba(25, 40, 70, 0.28);
+  --popup-shadow: 0 10px 30px rgba(35, 55, 90, 0.18);
+  --context-shadow: 0 10px 30px rgba(35, 55, 90, 0.18);
+  --overlay: rgba(25, 35, 55, 0.32);
+  --radius: 0.5rem;
+  /* Window chrome (titlebar + menu row) */
+  --chrome-grad: #e9eef7;
+  --chrome-border: rgba(70, 95, 130, 0.25);
+  --chrome-text: #41536e;
+  --tab-hover-bg: rgba(24, 90, 189, 0.08);
+  --tab-open-grad: rgba(24, 90, 189, 0.14);
+  --tab-open-text: #185abd;
+  /* Ribbon / hover accents */
+  --ribbon-grad: #f6f8fc;
+  --ribbon-border: rgba(70, 95, 130, 0.25);
+  --ribbon-group-label: #6b7c97;
+  --ribbon-sep: rgba(70, 95, 130, 0.22);
+  --ribbon-hover-grad: rgba(245, 185, 60, 0.18);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(245, 185, 60, 0.32);
+  --ribbon-active-border: rgba(187, 134, 18, 0.45);
+  --ribbon-checked-grad: rgba(245, 185, 60, 0.24);
+  --hover-ink: #3c2e08;
+  --hover-muted: rgba(60, 46, 8, 0.62);
+  --gold-bar: #d99e1b;
+  /* Status bar */
+  --statusbar-grad: #eef2f9;
+  --statusbar-border: rgba(70, 95, 130, 0.22);
+  /* Push buttons (dialogs): flat neutral fills */
+  --btn-grad: #ffffff;
+  --btn-border: rgba(60, 85, 120, 0.32);
+  --btn-hover-grad: #f3f6fb;
+  --btn-hover-border: rgba(60, 85, 120, 0.45);
+  --btn-active-grad: #e7edf7;
+  --btn-text: #1e2430;
+  --dialog-bg: #ffffff;
+  --dialog-border: rgba(70, 95, 130, 0.18);
+  --menu-bg: #ffffff;
+  --menu-border: rgba(70, 95, 130, 0.2);
+  --input-border: rgba(60, 85, 120, 0.38);
+  --input-focus: #185abd;
+  /* Window caption buttons */
+  --caption-hover: rgba(20, 35, 60, 0.07);
+  --caption-active: rgba(20, 35, 60, 0.12);
+  /* Status-bar zoom slider groove */
+  --slider-track: rgba(70, 95, 130, 0.28);
+  --slider-tick: rgba(70, 95, 130, 0.45);
+}
+
+/*
+ * Light — a true neutral theme. Overrides the blue-tinted Sky defaults above
+ * with white surfaces, light-gray chrome, gray hovers, and neutral shadows.
+ */
+:root[data-theme="light"] {
+  color: #1f2225;
+  background: #f0f0f1;
+  --ink: #1f2225;
+  --muted: #6b7077;
+  --line: rgba(0, 0, 0, 0.12);
+  --app-bg: #f0f0f1;
+  --surface-muted: #f4f4f5;
+  --toolbar-hover: rgba(20, 24, 30, 0.06);
+  --toolbar-active: rgba(20, 24, 30, 0.1);
+  --toolbar-shadow: rgba(0, 0, 0, 0.08);
+  --selected-border: rgba(24, 90, 189, 0.55);
+  --tooltip-bg: #2b2d31;
+  --option-highlight: rgba(24, 90, 189, 0.12);
+  --scrollbar-thumb: rgba(20, 24, 30, 0.28);
+  --toolbar-icon: #5b6068;
+  --toolbar-icon-active: #185abd;
+  --paper-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    0 18px 44px rgba(0, 0, 0, 0.12);
+  --floating-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  --dialog-shadow: 0 16px 50px rgba(0, 0, 0, 0.24);
+  --popup-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --context-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --overlay: rgba(0, 0, 0, 0.32);
+  --chrome-grad: #f0f0f1;
+  --chrome-border: rgba(0, 0, 0, 0.14);
+  --chrome-text: #4a4e55;
+  --tab-hover-bg: rgba(20, 24, 30, 0.06);
+  --tab-open-grad: rgba(20, 24, 30, 0.1);
+  --tab-open-text: #1f2225;
+  --ribbon-grad: #f7f7f8;
+  --ribbon-border: rgba(0, 0, 0, 0.12);
+  --ribbon-group-label: #797e86;
+  --ribbon-sep: rgba(0, 0, 0, 0.1);
+  --ribbon-hover-grad: rgba(20, 24, 30, 0.06);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(20, 24, 30, 0.12);
+  --ribbon-active-border: rgba(20, 24, 30, 0.14);
+  --ribbon-checked-grad: rgba(24, 90, 189, 0.14);
+  --hover-ink: #1f2225;
+  --hover-muted: rgba(31, 34, 37, 0.62);
+  --gold-bar: #185abd;
+  --statusbar-grad: #f0f0f1;
+  --statusbar-border: rgba(0, 0, 0, 0.12);
+  --btn-border: rgba(0, 0, 0, 0.18);
+  --btn-hover-grad: #f4f4f5;
+  --btn-hover-border: rgba(0, 0, 0, 0.26);
+  --btn-active-grad: #e9e9ea;
+  --btn-text: #1f2225;
+  --dialog-border: rgba(0, 0, 0, 0.12);
+  --menu-border: rgba(0, 0, 0, 0.12);
+  --input-border: rgba(0, 0, 0, 0.22);
+  --caption-hover: rgba(0, 0, 0, 0.06);
+  --caption-active: rgba(0, 0, 0, 0.1);
+  --slider-track: rgba(20, 24, 30, 0.22);
+  --slider-tick: rgba(20, 24, 30, 0.4);
+}
+
+:root[data-theme="dark"] {
+  color: #e6e9ee;
+  background: #1b1e23;
+  --ink: #e6e9ee;
+  --muted: #9aa4b5;
+  --paper: #24272d;
+  --line: rgba(255, 255, 255, 0.1);
+  --accent: #4d8fe0;
+  --accent-strong: #6ca6ec;
+  --app-bg: #1b1e23;
+  --surface: #2b2f36;
+  --surface-muted: #31353d;
+  --toolbar: #1f2228;
+  --toolbar-hover: rgba(245, 190, 80, 0.15);
+  --toolbar-active: rgba(245, 190, 80, 0.26);
+  --toolbar-shadow: rgba(0, 0, 0, 0.4);
+  --focus-ring: rgba(109, 166, 236, 0.3);
+  --focus-ring-strong: rgba(109, 166, 236, 0.55);
+  --selected-border: rgba(242, 199, 92, 0.45);
+  --on-accent: #ffffff;
+  --danger: #ff8d80;
+  --danger-bg: #43272a;
+  --warning: #f3bf67;
+  --option-highlight: rgba(245, 190, 80, 0.15);
+  --scrollbar-thumb: rgba(225, 232, 242, 0.22);
+  --toolbar-icon: #cfd6e0;
+  --toolbar-icon-active: #f2c75c;
+  --paper-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 18px 44px rgba(0, 0, 0, 0.4);
+  --floating-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --dialog-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+  --popup-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --context-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.55);
+  --chrome-grad: #22252b;
+  --chrome-border: rgba(255, 255, 255, 0.1);
+  --chrome-text: #cdd3dd;
+  --tab-hover-bg: rgba(255, 255, 255, 0.07);
+  --tab-open-grad: rgba(125, 176, 240, 0.16);
+  --tab-open-text: #9cc4f2;
+  --ribbon-grad: #262a31;
+  --ribbon-border: rgba(255, 255, 255, 0.1);
+  --ribbon-group-label: #a8b2c2;
+  --ribbon-sep: rgba(255, 255, 255, 0.1);
+  --ribbon-hover-grad: rgba(245, 190, 80, 0.15);
+  --ribbon-hover-border: transparent;
+  --ribbon-active-grad: rgba(245, 190, 80, 0.28);
+  --ribbon-active-border: rgba(242, 199, 92, 0.45);
+  --ribbon-checked-grad: rgba(245, 190, 80, 0.2);
+  --hover-ink: #f8ecca;
+  --hover-muted: rgba(248, 236, 202, 0.65);
+  --gold-bar: #f2c75c;
+  --statusbar-grad: #22252b;
+  --statusbar-border: rgba(255, 255, 255, 0.1);
+  --btn-grad: #343a44;
+  --btn-border: rgba(255, 255, 255, 0.14);
+  --btn-hover-grad: #3d4450;
+  --btn-hover-border: rgba(255, 255, 255, 0.22);
+  --btn-active-grad: #2e333d;
+  --btn-text: #eef1f6;
+  --dialog-bg: #2b2e35;
+  --dialog-border: rgba(255, 255, 255, 0.12);
+  --menu-bg: #2b2f36;
+  --menu-border: rgba(255, 255, 255, 0.12);
+  --input-border: rgba(255, 255, 255, 0.2);
+  --input-focus: #4d8fe0;
+  --caption-hover: rgba(255, 255, 255, 0.08);
+  --caption-active: rgba(255, 255, 255, 0.13);
+  --slider-track: rgba(255, 255, 255, 0.2);
+  --slider-tick: rgba(255, 255, 255, 0.38);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--app-bg);
+}
+
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  align-items: center;
+  background: var(--btn-grad);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--btn-text);
+  cursor: default;
+  display: inline-flex;
+  gap: 0.45rem;
+  min-height: 32px;
+  padding: 0.4rem 0.9rem;
+  transition:
+    background 100ms ease,
+    border-color 100ms ease,
+    box-shadow 100ms ease;
+}
+
+button:hover {
+  background: var(--btn-hover-grad);
+  border-color: var(--btn-hover-border);
+}
+
+button:active {
+  background: var(--btn-active-grad);
+  border-color: var(--btn-hover-border);
+}
+
+/* ── Buttons (Button component) ──────────────────────────────────────── */
+.nexus-button {
+  align-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  display: inline-flex;
+  font-weight: 500;
+  gap: 0.45rem;
+  justify-content: center;
+  line-height: 1;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+  white-space: nowrap;
+}
+
+.nexus-button:focus-visible {
+  outline: 2px solid var(--focus-ring-strong);
+  outline-offset: 2px;
+}
+
+/* Primary action: solid accent blue. */
+.nexus-button-default {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+  color: var(--on-accent);
+}
+
+.nexus-button-default:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.nexus-button-default:active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.nexus-button-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.nexus-button-ghost:hover {
+  background: var(--ribbon-hover-grad);
+  border-color: var(--ribbon-hover-border);
+  color: var(--hover-ink);
+}
+
+.nexus-button-outline {
+  background: var(--btn-grad);
+  border-color: var(--btn-border);
+}
+
+.nexus-button-default-size {
+  min-height: 32px;
+  padding: 0.4rem 0.95rem;
+}
+
+.nexus-button-sm {
+  min-height: 26px;
+  padding: 0.25rem 0.55rem;
+}
+
+.nexus-button-icon {
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  width: 32px;
+}
+
+.nexus-button-group {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.3rem;
+}
+
+/* ── Separator ───────────────────────────────────────────────────────── */
+.nexus-separator {
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.nexus-separator-horizontal {
+  height: 1px;
+  width: 100%;
+}
+
+.nexus-separator-vertical {
+  height: 1.5rem;
+  width: 1px;
+}
+
+/* ── App shell ───────────────────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.workspace {
+  background: var(--toolbar);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── Custom window titlebar (flat chrome + pill menu tabs) ───────────── */
+.nexus-titlebar {
+  -webkit-app-region: drag;
+  align-items: center;
+  background: var(--chrome-grad);
+  border-bottom: 1px solid var(--chrome-border);
+  display: flex;
+  flex: 0 0 auto;
+  height: 40px;
+  justify-content: space-between;
+  position: relative;
+  user-select: none;
+  z-index: 60;
+}
+
+.nexus-titlebar-left,
+.nexus-titlebar-right {
+  -webkit-app-region: no-drag;
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.nexus-titlebar-left {
+  padding-left: 0.45rem;
+}
+
+/* macOS: leave room for the native traffic lights. */
+.nexus-titlebar[data-platform="darwin"] {
+  padding-left: 78px;
+}
+
+.nexus-titlebar-title {
+  align-items: center;
+  color: var(--chrome-text);
+  display: flex;
+  gap: 0.4rem;
+  left: 50%;
+  max-width: 40vw;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.nexus-titlebar-title-text {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-titlebar-dirty {
+  background: var(--accent);
+  border-radius: 9999px;
+  flex: 0 0 auto;
+  height: 6px;
+  width: 6px;
+}
+
+.nexus-window-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  height: 40px;
+}
+
+.nexus-window-control {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--chrome-text);
+  cursor: default;
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+  width: 46px;
+}
+
+.nexus-window-control:hover {
+  background: var(--caption-hover);
+  color: var(--ink);
+}
+
+.nexus-window-control:active {
+  background: var(--caption-active);
+  color: var(--ink);
+}
+
+.nexus-window-control:focus-visible {
+  outline: 2px solid var(--focus-ring-strong);
+  outline-offset: -2px;
+}
+
+.nexus-window-control svg {
+  height: 16px;
+  width: 16px;
+}
+
+.nexus-window-control-close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+.nexus-window-control-close:active {
+  background: #b3271a;
+  color: #ffffff;
+}
+
+/* ── Menubar: rounded pill tabs in the chrome row ────────────────────── */
+.nexus-menubar {
+  -webkit-app-region: no-drag;
+  align-items: center;
+  display: flex;
+  gap: 0.15rem;
+}
+
+.nexus-menubar-trigger {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--chrome-text);
+  cursor: default;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1;
+  min-height: 0;
+  padding: 0.4rem 0.75rem;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+
+.nexus-menubar-trigger:hover {
+  background: var(--tab-hover-bg);
+  border-color: transparent;
+  color: var(--tab-open-text);
+}
+
+.nexus-menubar-trigger:active {
+  background: var(--tab-open-grad);
+}
+
+.nexus-menubar-trigger[data-state="open"] {
+  background: var(--tab-open-grad);
+  border-color: transparent;
+  color: var(--tab-open-text);
+}
+
+.nexus-menubar-content {
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: 10px;
+  box-shadow: var(--context-shadow);
+  min-width: 13rem;
+  padding: 0.3rem;
+  z-index: 120;
+}
+
+.nexus-menubar-item {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: default;
+  display: flex;
+  font-size: 0.85rem;
+  gap: 1.5rem;
+  justify-content: space-between;
+  line-height: 1;
+  min-height: 2rem;
+  outline: none;
+  padding: 0.45rem 0.6rem 0.45rem 1.9rem;
+  user-select: none;
+}
+
+.nexus-menubar-item[data-highlighted] {
+  background: var(--ribbon-hover-grad);
+  border-color: var(--ribbon-hover-border);
+  color: var(--hover-ink);
+}
+
+.nexus-menubar-item[data-highlighted] .nexus-menubar-shortcut {
+  color: var(--hover-muted);
+}
+
+.nexus-menubar-item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Checkbox items keep a small left pad so the check mark sits in the gutter. */
+.nexus-menubar-checkbox-item {
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding-left: 0.35rem;
+}
+
+.nexus-menubar-item-indicator {
+  align-items: center;
+  display: inline-flex;
+  height: 1rem;
+  justify-content: center;
+  width: 1rem;
+}
+
+.nexus-menubar-item-indicator svg {
+  height: 14px;
+  width: 14px;
+}
+
+.nexus-menubar-separator {
+  background: var(--line);
+  height: 1px;
+  margin: 0.3rem 0.5rem;
+}
+
+.nexus-menubar-shortcut {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+/* ── Context menu ────────────────────────────────────────────────────── */
+.nexus-context-menu-content {
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: 10px;
+  box-shadow: var(--context-shadow);
+  min-width: 11rem;
+  padding: 0.3rem;
+  z-index: 120;
+}
+
+.nexus-context-menu-item {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: default;
+  display: flex;
+  font-size: 0.88rem;
+  gap: 1.5rem;
+  justify-content: space-between;
+  line-height: 1;
+  min-height: 2rem;
+  outline: none;
+  padding: 0.45rem 0.6rem;
+  user-select: none;
+}
+
+.nexus-context-menu-item[data-highlighted] {
+  background: var(--ribbon-hover-grad);
+  border-color: var(--ribbon-hover-border);
+  color: var(--hover-ink);
+}
+
+.nexus-context-menu-item[data-highlighted] .nexus-context-menu-shortcut {
+  color: var(--hover-muted);
+}
+
+.nexus-context-menu-item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.nexus-context-menu-separator {
+  height: 1px;
+  margin: 0.3rem 0.5rem;
+  background: var(--line);
+}
+
+.nexus-context-menu-shortcut {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* ── Dialog ──────────────────────────────────────────────────────────── */
+.nexus-dialog-overlay {
+  backdrop-filter: blur(3px);
+  background: var(--overlay);
+  inset: 0;
+  position: fixed;
+  z-index: 140;
+}
+
+.nexus-dialog-content {
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 10px;
+  box-shadow: var(--dialog-shadow);
+  display: grid;
+  gap: 1rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  left: 50%;
+  max-height: min(85vh, 34rem);
+  max-width: calc(100vw - 2rem);
+  overflow: hidden;
+  padding: 1.25rem;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(28rem, calc(100vw - 2rem));
+  z-index: 150;
+}
+
+.nexus-dialog-header {
+  display: grid;
+  gap: 0.35rem;
+  padding-right: 2rem;
+}
+
+.nexus-dialog-title {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.nexus-dialog-description {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.nexus-dialog-footer {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.nexus-dialog-close {
+  background: transparent;
+  border-color: transparent;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  position: absolute;
+  right: 0.65rem;
+  top: 0.65rem;
+  width: 30px;
+}
+
+.nexus-dialog-close:hover {
+  background: var(--toolbar-hover);
+  border-color: transparent;
+}
+
+.nexus-dialog-close svg {
+  height: 16px;
+  width: 16px;
+}
+
+/* ── Settings form ───────────────────────────────────────────────────── */
+.nexus-settings-form {
+  display: grid;
+  gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.nexus-settings-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.nexus-settings-field-row {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  grid-template-columns: none;
+  justify-content: space-between;
+}
+
+.nexus-settings-field-row input[type="checkbox"] {
+  height: 1rem;
+  width: 1rem;
+}
+
+.nexus-settings-label {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.nexus-settings-select {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%) calc(100% - 16px) 50% / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 11px) 50% / 5px 5px no-repeat,
+    var(--surface);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--ink);
+  min-height: 32px;
+  padding: 0.4rem 2rem 0.4rem 0.65rem;
+}
+
+.nexus-settings-select:focus-visible {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+
+.nexus-settings-preview {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: 4.25rem;
+  padding: 0.75rem;
+}
+
+.nexus-settings-footer {
+  justify-content: space-between;
+}
+
+/* ── Status bar (status text left, zoom slider right) ────────────────── */
+.nexus-statusbar {
+  align-items: center;
+  background: var(--statusbar-grad);
+  border-top: 1px solid var(--statusbar-border);
+  color: var(--chrome-text);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  height: 26px;
+  justify-content: space-between;
+  padding: 0 0.35rem 0 0.5rem;
+  user-select: none;
+  z-index: 30;
+}
+
+.nexus-statusbar-left,
+.nexus-statusbar-right {
+  align-items: center;
+  display: flex;
+  gap: 0.2rem;
+  height: 100%;
+  min-width: 0;
+}
+
+.nexus-statusbar-item {
+  padding: 0 0.45rem;
+  white-space: nowrap;
+}
+
+.nexus-statusbar-sep {
+  background: var(--line);
+  height: 55%;
+  width: 1px;
+}
+
+.nexus-statusbar-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  box-shadow: none;
+  color: var(--chrome-text);
+  display: inline-flex;
+  height: 20px;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 0.35rem;
+}
+
+.nexus-statusbar-button:hover {
+  background: var(--ribbon-hover-grad);
+  border-color: var(--ribbon-hover-border);
+  box-shadow: none;
+  color: var(--hover-ink);
+}
+
+.nexus-statusbar-button:active {
+  background: var(--ribbon-active-grad);
+  border-color: var(--ribbon-active-border);
+  color: var(--toolbar-icon-active);
+}
+
+.nexus-statusbar-button:focus-visible {
+  outline: 2px solid var(--focus-ring-strong);
+  outline-offset: 1px;
+}
+
+.nexus-statusbar-button svg {
+  height: 11px;
+  width: 11px;
+}
+
+.nexus-statusbar-zoom-value {
+  font-size: 0.78rem;
+  justify-content: center;
+  min-width: 2.9rem;
+}
+
+.nexus-statusbar-zoom-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  height: 20px;
+  margin: 0 0.15rem;
+  width: 110px;
+}
+
+.nexus-statusbar-zoom-slider:focus-visible {
+  outline: 2px solid var(--focus-ring-strong);
+  outline-offset: 2px;
+}
+
+/* Slim groove with a tick at the 100% stop. */
+.nexus-statusbar-zoom-slider::-webkit-slider-runnable-track {
+  background:
+    linear-gradient(90deg,
+      transparent calc(33.33% - 1px),
+      var(--slider-tick) calc(33.33% - 1px),
+      var(--slider-tick) calc(33.33% + 1px),
+      transparent calc(33.33% + 1px)),
+    var(--slider-track);
+  border: 0;
+  border-radius: 999px;
+  height: 4px;
+}
+
+/* Circular thumb in the accent blue. */
+.nexus-statusbar-zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  height: 14px;
+  margin-top: -5px;
+  transition: box-shadow 100ms ease;
+  width: 14px;
+}
+
+.nexus-statusbar-zoom-slider:hover::-webkit-slider-thumb {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.nexus-statusbar-zoom-slider:active::-webkit-slider-thumb {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ── Showcase home screen (delete when starting a real app) ──────────── */
+.app-showcase {
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--app-font-family, inherit);
+  font-size: calc(15px * var(--app-zoom, 1));
+  gap: 1.25rem;
+  margin: 0 auto;
+  max-width: 56rem;
+  padding: 2rem 2.5rem 3rem;
+  width: 100%;
+}
+
+.app-showcase-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.app-showcase-title {
+  font-size: 1.9em;
+  font-weight: 700;
+  margin: 0;
+}
+
+.app-showcase-lead {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 44rem;
+}
+
+.app-showcase-heading {
+  font-size: 1.1em;
+  font-weight: 650;
+  margin: 0;
+}
+
+.app-showcase-help {
+  color: var(--muted);
+  font-size: 0.88em;
+  margin: 0;
+}
+
+.app-showcase-contextzone {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  display: flex;
+  justify-content: center;
+  min-height: 5rem;
+  padding: 1rem;
+  text-align: center;
+  user-select: none;
+}
+
+.app-showcase-menuitem {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.app-showcase-menuitem svg {
+  height: 15px;
+  width: 15px;
+}
+
+.app-showcase-textarea {
+  background: var(--surface);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
+  min-height: 9rem;
+  padding: 0.65rem 0.8rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.app-showcase-textarea:focus-visible {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 0;
+  }
+}
+
+/* ── Slim modern scrollbars ──────────────────────────────────────────── */
+::-webkit-scrollbar {
+  background: transparent;
+  height: 12px;
+  width: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

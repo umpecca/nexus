@@ -7,7 +7,6 @@ import {
   CreateLink,
   HighlightToggle,
   InsertCodeBlock,
-  InsertFrontmatter,
   InsertTable,
   InsertThematicBreak,
   ListsToggle,
@@ -20,8 +19,7 @@ import type { ContainerDirective } from "mdast-util-directive";
 import {
   Code2,
   FileText,
-  GitCompareArrows,
-  Newspaper
+  GitCompareArrows
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
@@ -172,30 +170,6 @@ function EditorModeControls() {
   );
 }
 
-function PaperViewToggle({
-  enabled,
-  onChange
-}: {
-  enabled: boolean;
-  onChange: (enabled: boolean) => void;
-}) {
-  return (
-    <TooltipWrap title="Paper view">
-      <Button
-        aria-label={enabled ? "Hide paper view" : "Show paper view"}
-        aria-pressed={enabled}
-        className="nexus-shadcn-toolbar-mode-button"
-        onClick={() => onChange(!enabled)}
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <Newspaper aria-hidden="true" />
-      </Button>
-    </TooltipWrap>
-  );
-}
-
 function RichTextRibbonCommands({
   documentPath,
   onInsertTableOfContents
@@ -257,16 +231,16 @@ function RichTextRibbonCommands({
           <InsertTableOfContents onInsert={onInsertTableOfContents} />
           <InsertThematicBreak />
           <InsertCodeBlock />
-          <Separator orientation="vertical" />
+          <InsertLocalJavaScriptRunner />
           <InsertMermaidDiagram />
           <InsertKatexBlock />
-          <InsertLocalJavaScriptRunner />
           <ConditionalContents
             options={[
               {
                 when: (editorInFocus) => !whenInCallout(editorInFocus),
                 contents: () => (
                   <>
+                    <Separator orientation="vertical" />
                     <InsertAdmonition />
                     <InsertGithubAlert />
                   </>
@@ -274,7 +248,6 @@ function RichTextRibbonCommands({
               }
             ]}
           />
-          <InsertFrontmatter />
         </ToolbarRow>
       </ToolbarButtonGroup>
     </>
@@ -283,14 +256,10 @@ function RichTextRibbonCommands({
 
 function ViewRibbonCommands({
   currentMode,
-  onCleanUpFormatting,
-  onPaperViewChange,
-  paperViewEnabled
+  onCleanUpFormatting
 }: {
   currentMode: ViewMode;
   onCleanUpFormatting: () => void;
-  onPaperViewChange: (enabled: boolean) => void;
-  paperViewEnabled: boolean;
 }) {
   return (
     <ToolbarButtonGroup
@@ -308,8 +277,6 @@ function ViewRibbonCommands({
           </>
         ) : null}
         <EditorModeControls />
-        <Separator orientation="vertical" />
-        <PaperViewToggle enabled={paperViewEnabled} onChange={onPaperViewChange} />
       </div>
     </ToolbarButtonGroup>
   );
@@ -318,15 +285,11 @@ function ViewRibbonCommands({
 function ShadcnMdxToolbar({
   documentPath,
   onCleanUpFormatting,
-  onInsertTableOfContents,
-  onPaperViewChange,
-  paperViewEnabled
+  onInsertTableOfContents
 }: {
   documentPath?: string;
   onCleanUpFormatting: () => void;
   onInsertTableOfContents: () => void;
-  onPaperViewChange: (enabled: boolean) => void;
-  paperViewEnabled: boolean;
 }) {
   const [currentMode] = useCellValues(viewMode$);
   const isRichText = currentMode === "rich-text";
@@ -347,12 +310,7 @@ function ShadcnMdxToolbar({
             onInsertTableOfContents={onInsertTableOfContents}
           />
         ) : null}
-        <ViewRibbonCommands
-          currentMode={currentMode}
-          onCleanUpFormatting={onCleanUpFormatting}
-          onPaperViewChange={onPaperViewChange}
-          paperViewEnabled={paperViewEnabled}
-        />
+        <ViewRibbonCommands currentMode={currentMode} onCleanUpFormatting={onCleanUpFormatting} />
       </div>
     </div>
   );

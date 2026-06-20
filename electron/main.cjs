@@ -3119,7 +3119,8 @@ const menuState = {
   outlineVisible: false,
   pageOrientation: "portrait",
   responsiveContentWrappingEnabled: true,
-  paperViewEnabled: true
+  paperViewEnabled: true,
+  editorViewMode: "rich-text"
 };
 
 const RECENT_FILES_LIMIT = recentFilesStore.DEFAULT_RECENT_FILES_LIMIT;
@@ -3366,6 +3367,10 @@ function buildMenu() {
           click: () => sendMenuAction("comparePreviousVersion")
         },
         {
+          label: "Edit Frontmatter…",
+          click: () => sendMenuAction("editFrontmatter")
+        },
+        {
           type: "separator"
         },
         {
@@ -3427,6 +3432,7 @@ function buildMenu() {
           label: "Show Outline",
           type: "checkbox",
           checked: menuState.outlineVisible,
+          enabled: menuState.editorViewMode === "rich-text",
           click: () => sendMenuAction("toggleOutline")
         },
         {
@@ -3434,6 +3440,12 @@ function buildMenu() {
           type: "checkbox",
           checked: menuState.pageOrientation === "landscape",
           click: () => sendMenuAction("togglePageOrientation")
+        },
+        {
+          label: "Paper View",
+          type: "checkbox",
+          checked: menuState.paperViewEnabled,
+          click: () => sendMenuAction("togglePaperView")
         },
         {
           label: "Responsive Wrapping",
@@ -4448,6 +4460,14 @@ ipcMain.on("menu:set-state", (_event, state) => {
   if (typeof state.paperViewEnabled === "boolean" &&
       state.paperViewEnabled !== menuState.paperViewEnabled) {
     menuState.paperViewEnabled = state.paperViewEnabled;
+    changed = true;
+  }
+
+  if ((state.editorViewMode === "rich-text" ||
+      state.editorViewMode === "source" ||
+      state.editorViewMode === "diff") &&
+      state.editorViewMode !== menuState.editorViewMode) {
+    menuState.editorViewMode = state.editorViewMode;
     changed = true;
   }
 

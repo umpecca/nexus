@@ -21,9 +21,11 @@ export type NexusMenuAction =
   | "toggleOutline"
   | "togglePageOrientation"
   | "toggleResponsiveWrapping"
+  | "togglePaperView"
   | "settings"
   | "about"
   | "copyHtml"
+  | "editFrontmatter"
   | "publishWeb"
   | "publishQuickConnect";
 
@@ -35,6 +37,7 @@ type NexusMenuState = {
   pageOrientation?: "portrait" | "landscape";
   responsiveContentWrappingEnabled?: boolean;
   paperViewEnabled?: boolean;
+  editorViewMode?: "rich-text" | "source" | "diff";
 };
 type NexusEditCommand = "cut" | "copy" | "paste" | "undo" | "redo";
 

@@ -16,6 +16,8 @@ import type { EditorPageOrientation } from "../../lib/settings";
 export type TitlebarProps = {
   fileName: string | null;
   isDirty: boolean;
+  canEditFrontmatter: boolean;
+  canToggleOutline: boolean;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
   outlineVisible: boolean;
@@ -26,6 +28,8 @@ export type TitlebarProps = {
 };
 
 type AppMenuBarProps = {
+  canEditFrontmatter: boolean;
+  canToggleOutline: boolean;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
   outlineVisible: boolean;
@@ -36,6 +40,8 @@ type AppMenuBarProps = {
 };
 
 function AppMenuBar({
+  canEditFrontmatter,
+  canToggleOutline,
   showInvisibleCharacters,
   spellCheckEnabled,
   outlineVisible,
@@ -115,6 +121,12 @@ function AppMenuBar({
           <MenubarItem onSelect={() => dispatchMenuAction("comparePreviousVersion")}>
             Compare with Previous Version
           </MenubarItem>
+          <MenubarItem
+            disabled={!canEditFrontmatter}
+            onSelect={() => dispatchMenuAction("editFrontmatter")}
+          >
+            Edit Frontmatter…
+          </MenubarItem>
           <MenubarSeparator />
           <MenubarItem onSelect={() => void nexus?.runEditCommand("cut")}>
             Cut
@@ -166,6 +178,7 @@ function AppMenuBar({
           <MenubarSeparator />
           <MenubarCheckboxItem
             checked={outlineVisible}
+            disabled={!canToggleOutline}
             onCheckedChange={() => dispatchMenuAction("toggleOutline")}
           >
             Show Outline
@@ -175,6 +188,12 @@ function AppMenuBar({
             onCheckedChange={() => dispatchMenuAction("togglePageOrientation")}
           >
             Landscape Orientation
+          </MenubarCheckboxItem>
+          <MenubarCheckboxItem
+            checked={paperViewEnabled}
+            onCheckedChange={() => dispatchMenuAction("togglePaperView")}
+          >
+            Paper View
           </MenubarCheckboxItem>
           <MenubarCheckboxItem
             checked={responsiveContentWrappingEnabled}
@@ -258,6 +277,8 @@ function WindowControls() {
 export function Titlebar({
   fileName,
   isDirty,
+  canEditFrontmatter,
+  canToggleOutline,
   showInvisibleCharacters,
   spellCheckEnabled,
   outlineVisible,
@@ -274,6 +295,8 @@ export function Titlebar({
       <div className="nexus-titlebar-left">
         {isMac ? null : (
           <AppMenuBar
+            canEditFrontmatter={canEditFrontmatter}
+            canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}
             outlineVisible={outlineVisible}
             pageOrientation={pageOrientation}

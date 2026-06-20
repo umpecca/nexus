@@ -1,57 +1,33 @@
-import { Minus, PanelLeft, Plus } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 
 export type StatusBarProps = {
-  canToggleOutline: boolean;
+  statusText: string;
   isDirty: boolean;
   maxZoom: number;
   minZoom: number;
-  onToggleOutline: () => void;
   onZoomChange: (zoomPercent: number) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
-  outlineVisible: boolean;
-  wordCount: number;
   zoomPercent: number;
 };
 
-/** Word 2010-style status bar: outline toggle + word count on the left, zoom slider on the right. */
+/** Status text + dirty marker on the left, a UI-scale zoom slider on the right. */
 function StatusBar({
-  canToggleOutline,
+  statusText,
   isDirty,
   maxZoom,
   minZoom,
-  onToggleOutline,
   onZoomChange,
   onZoomIn,
   onZoomOut,
   onZoomReset,
-  outlineVisible,
-  wordCount,
   zoomPercent
 }: StatusBarProps) {
   return (
     <footer className="nexus-statusbar">
       <div className="nexus-statusbar-left">
-        <button
-          aria-pressed={outlineVisible}
-          className="nexus-statusbar-button nexus-statusbar-toggle"
-          disabled={!canToggleOutline}
-          onClick={onToggleOutline}
-          title={
-            canToggleOutline
-              ? outlineVisible
-                ? "Hide outline"
-                : "Show outline"
-              : "Outline is available in rich text mode"
-          }
-          type="button"
-        >
-          <PanelLeft aria-hidden="true" />
-          <span>Outline</span>
-        </button>
-        <span aria-hidden="true" className="nexus-statusbar-sep" />
-        <span className="nexus-statusbar-item">Words: {wordCount.toLocaleString()}</span>
+        <span className="nexus-statusbar-item">{statusText}</span>
         {isDirty ? (
           <>
             <span aria-hidden="true" className="nexus-statusbar-sep" />
