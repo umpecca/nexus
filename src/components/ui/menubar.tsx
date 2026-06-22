@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as MenubarPrimitive from "@radix-ui/react-menubar";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const Menubar = React.forwardRef<
@@ -53,6 +53,39 @@ const MenubarItem = React.forwardRef<
 
 MenubarItem.displayName = MenubarPrimitive.Item.displayName;
 
+const MenubarSub = MenubarPrimitive.Sub;
+
+const MenubarSubTrigger = React.forwardRef<
+  React.ElementRef<typeof MenubarPrimitive.SubTrigger>,
+  React.ComponentPropsWithoutRef<typeof MenubarPrimitive.SubTrigger>
+>(({ className, children, ...props }, ref) => (
+  <MenubarPrimitive.SubTrigger
+    ref={ref}
+    className={cn("nexus-menubar-item", "nexus-menubar-sub-trigger", className)}
+    {...props}
+  >
+    {children}
+    <ChevronRight aria-hidden="true" className="nexus-menubar-sub-chevron" />
+  </MenubarPrimitive.SubTrigger>
+));
+
+MenubarSubTrigger.displayName = MenubarPrimitive.SubTrigger.displayName;
+
+const MenubarSubContent = React.forwardRef<
+  React.ElementRef<typeof MenubarPrimitive.SubContent>,
+  React.ComponentPropsWithoutRef<typeof MenubarPrimitive.SubContent>
+>(({ className, ...props }, ref) => (
+  <MenubarPrimitive.Portal>
+    <MenubarPrimitive.SubContent
+      ref={ref}
+      className={cn("nexus-menubar-content", "nexus-menubar-sub-content", className)}
+      {...props}
+    />
+  </MenubarPrimitive.Portal>
+));
+
+MenubarSubContent.displayName = MenubarPrimitive.SubContent.displayName;
+
 const MenubarCheckboxItem = React.forwardRef<
   React.ElementRef<typeof MenubarPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof MenubarPrimitive.CheckboxItem>
@@ -101,5 +134,8 @@ export {
   MenubarMenu,
   MenubarSeparator,
   MenubarShortcut,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarTrigger
 };

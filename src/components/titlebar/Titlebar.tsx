@@ -8,10 +8,19 @@ import {
   MenubarMenu,
   MenubarSeparator,
   MenubarShortcut,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarTrigger
 } from "../ui/menubar";
 import type { NexusMenuAction } from "../../electron";
 import type { EditorPageOrientation } from "../../lib/settings";
+import {
+  AI_SELECTION_ACTIONS,
+  AI_TONE_OPTIONS,
+  AI_TRANSLATE_LANGUAGES
+} from "../../lib/ai/prompts";
+import type { SelectionActionId, SelectionActionOptions } from "../../lib/ai/prompts";
 
 export type TitlebarProps = {
   fileName: string | null;
@@ -25,6 +34,7 @@ export type TitlebarProps = {
   responsiveContentWrappingEnabled: boolean;
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
+  onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
 };
 
 type AppMenuBarProps = {
@@ -37,6 +47,7 @@ type AppMenuBarProps = {
   responsiveContentWrappingEnabled: boolean;
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
+  onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
 };
 
 function AppMenuBar({
@@ -48,7 +59,8 @@ function AppMenuBar({
   pageOrientation,
   responsiveContentWrappingEnabled,
   paperViewEnabled,
-  dispatchMenuAction
+  dispatchMenuAction,
+  onAiSelectionAction
 }: AppMenuBarProps) {
   const nexus = window.nexus;
 
@@ -143,6 +155,42 @@ function AppMenuBar({
           <MenubarItem onSelect={() => void nexus?.runEditCommand("paste")}>
             Paste
             <MenubarShortcut>Ctrl+V</MenubarShortcut>
+          </MenubarItem>
+          <MenubarSeparator />
+          {AI_SELECTION_ACTIONS.map((action) => (
+            <MenubarItem key={action.id} onSelect={() => onAiSelectionAction(action.id)}>
+              {action.label}
+            </MenubarItem>
+          ))}
+          <MenubarSub>
+            <MenubarSubTrigger>Change tone</MenubarSubTrigger>
+            <MenubarSubContent>
+              {AI_TONE_OPTIONS.map((tone) => (
+                <MenubarItem
+                  key={tone.value}
+                  onSelect={() => onAiSelectionAction("tone", { tone: tone.value })}
+                >
+                  {tone.label}
+                </MenubarItem>
+              ))}
+            </MenubarSubContent>
+          </MenubarSub>
+          <MenubarSub>
+            <MenubarSubTrigger>Translate</MenubarSubTrigger>
+            <MenubarSubContent>
+              {AI_TRANSLATE_LANGUAGES.map((language) => (
+                <MenubarItem
+                  key={language}
+                  onSelect={() => onAiSelectionAction("translate", { language })}
+                >
+                  {language}
+                </MenubarItem>
+              ))}
+            </MenubarSubContent>
+          </MenubarSub>
+          <MenubarSeparator />
+          <MenubarItem onSelect={() => dispatchMenuAction("aiSettings")}>
+            AI Providers…
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
@@ -285,7 +333,8 @@ export function Titlebar({
   pageOrientation,
   responsiveContentWrappingEnabled,
   paperViewEnabled,
-  dispatchMenuAction
+  dispatchMenuAction,
+  onAiSelectionAction
 }: TitlebarProps) {
   const platform = window.nexus?.platform;
   const isMac = platform === "darwin";
@@ -298,6 +347,7 @@ export function Titlebar({
             canEditFrontmatter={canEditFrontmatter}
             canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}
+            onAiSelectionAction={onAiSelectionAction}
             outlineVisible={outlineVisible}
             pageOrientation={pageOrientation}
             paperViewEnabled={paperViewEnabled}

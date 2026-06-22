@@ -1,5 +1,8 @@
 export {};
 
+import type { AiChatPayload, AiChatResult, AiProviderId } from "./lib/ai/providers";
+import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
+
 export type NexusMenuAction =
   | "new"
   | "open"
@@ -23,11 +26,22 @@ export type NexusMenuAction =
   | "toggleResponsiveWrapping"
   | "togglePaperView"
   | "settings"
+  | "aiSettings"
   | "about"
   | "copyHtml"
   | "editFrontmatter"
   | "publishWeb"
-  | "publishQuickConnect";
+  | "publishQuickConnect"
+  | "aiSelection";
+
+/**
+ * Payload accompanying the "aiSelection" menu action; every other menu action carries no payload.
+ * Mirrors the arguments of the renderer's selection-AI runner so a native menu click can drive it.
+ */
+export type AiSelectionMenuPayload = {
+  action: SelectionActionId;
+  options?: SelectionActionOptions;
+};
 
 type NexusMenuState = {
   editorZoomPercent?: number;
@@ -229,7 +243,10 @@ declare global {
   interface Window {
     nexus?: {
       platform: NodeJS.Platform;
-      onMenuAction(callback: (action: NexusMenuAction) => void): () => void;
+      getAppVersion(): Promise<string>;
+      onMenuAction(
+        callback: (action: NexusMenuAction, payload?: AiSelectionMenuPayload) => void
+      ): () => void;
       onOpenRecentFile(callback: (filePath: string) => void): () => void;
       onCloseRequest(callback: () => void): () => void;
       onExternalFileChange(callback: (event: ExternalFileChangeEvent) => void): () => void;
@@ -292,6 +309,13 @@ declare global {
       ): Promise<QuickConnectTokenSaveResult>;
       getMcpBearerToken(profileName: string): Promise<string>;
       setMcpBearerToken(profileName: string, token: string): Promise<QuickConnectTokenSaveResult>;
+      getAiProviderKey(profileName: string, providerId: AiProviderId): Promise<string>;
+      setAiProviderKey(
+        profileName: string,
+        providerId: AiProviderId,
+        key: string
+      ): Promise<QuickConnectTokenSaveResult>;
+      aiChat(payload: AiChatPayload): Promise<AiChatResult>;
       selectPrivateKeyFile(): Promise<SelectPrivateKeyResult>;
       onConfirmHostKey(callback: (event: ConfirmHostKeyEvent) => void): () => void;
       resolveHostKey(requestId: string, decision: HostKeyDecision): void;

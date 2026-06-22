@@ -54,6 +54,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          # electron-builder names artifacts "${productName}-${version}", reading version from
+          # package.json. Stamp it from the tag (e.g. v2.0.1 -> 2.0.1; semver has no leading "v")
+          # so released files carry the tag instead of the placeholder version in package.json.
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting package version to $VERSION (from tag $GITHUB_REF_NAME)"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Lint
+        run: npm run lint
+
       - name: Run tests
         run: npm run test
 
@@ -102,6 +116,10 @@ jobs:
           files: |
             release-artifacts/*.exe
             release-artifacts/*.dmg
-            release-artifacts/*.zip
-            release-artifacts/*.blockmap
-            release-artifacts/*.yml
+          # Only the Windows installer (.exe) and macOS disk image (.dmg) are published for now.
+          # To also publish the other build outputs, move these globs back under `files:` above
+          # (they must be indented to match the lines above — kept dedented here so YAML treats
+          # them as comments rather than as glob patterns inside the block scalar):
+          #   release-artifacts/*.zip
+          #   release-artifacts/*.blockmap
+          #   release-artifacts/*.yml

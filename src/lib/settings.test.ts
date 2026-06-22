@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createDefaultAiSettings,
   createDefaultSettings,
   DEFAULT_EDITOR_FONT_FAMILY,
   DEFAULT_EDITOR_FONT_SIZE_PIXELS,
@@ -92,7 +93,8 @@ describe("settings helpers", () => {
       quickConnect: {
         url: "",
         path: ""
-      }
+      },
+      ai: createDefaultAiSettings()
     });
   });
 
@@ -151,7 +153,8 @@ describe("settings helpers", () => {
       quickConnect: {
         url: "",
         path: ""
-      }
+      },
+      ai: createDefaultAiSettings()
     });
   });
 
@@ -799,7 +802,8 @@ describe("settings helpers", () => {
       quickConnect: {
         url: "",
         path: ""
-      }
+      },
+      ai: createDefaultAiSettings()
     });
 
     expect(storage.setItem).toHaveBeenCalledWith(
@@ -844,7 +848,8 @@ describe("settings helpers", () => {
         quickConnect: {
           url: "",
           path: ""
-        }
+        },
+        ai: createDefaultAiSettings()
       })
     );
   });
@@ -863,5 +868,92 @@ describe("settings helpers", () => {
 
     expect(storage.removeItem).toHaveBeenCalledWith(getSettingsStorageKey("default"));
     expect(loadSettings("default")).toEqual(createDefaultSettings());
+  });
+
+  it("defaults AI settings with no default provider and all providers disabled", () => {
+    const ai = createDefaultSettings().ai;
+    expect(ai.defaultProviderId).toBe("");
+    expect(Object.keys(ai.providers)).toEqual(["openai", "azure-openai", "deepseek", "anthropic"]);
+    expect(ai.providers.openai).toEqual({
+      enabled: false,
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      maxTokens: 1024,
+      azureResourceUrl: "",
+      azureDeployment: "",
+      azureApiVersion: ""
+    });
+    // Azure seeds an api-version (it has no base URL / model default).
+    expect(ai.providers["azure-openai"].azureApiVersion).toBe("2024-10-21");
+    expect(ai.providers.anthropic.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("loads saved AI provider config and the default provider", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        ai: {
+          defaultProviderId: "anthropic",
+          providers: {
+            anthropic: { enabled: true, model: "claude-opus-4-8", maxTokens: 2048 },
+            "azure-openai": {
+              enabled: true,
+              azureResourceUrl: "https://r.openai.azure.com/",
+              azureDeployment: "gpt4o",
+              azureApiVersion: "2025-01-01"
+            }
+          }
+        }
+      })
+    });
+
+    const ai = loadSettings("default").ai;
+    expect(ai.defaultProviderId).toBe("anthropic");
+    expect(ai.providers.anthropic.enabled).toBe(true);
+    expect(ai.providers.anthropic.model).toBe("claude-opus-4-8");
+    expect(ai.providers.anthropic.maxTokens).toBe(2048);
+    // Unspecified fields fall back to the provider defaults.
+    expect(ai.providers.anthropic.baseUrl).toBe("https://api.anthropic.com");
+    // The stored value is whitespace-trimmed only; the adapter normalizes the trailing slash later.
+    expect(ai.providers["azure-openai"].azureResourceUrl).toBe("https://r.openai.azure.com/");
+    expect(ai.providers["azure-openai"].azureApiVersion).toBe("2025-01-01");
+    // A provider absent from storage keeps its defaults.
+    expect(ai.providers.openai.model).toBe("gpt-4o-mini");
+  });
+
+  it("sanitizes invalid AI settings (bad provider id, out-of-range numbers)", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({
+        ai: {
+          defaultProviderId: "not-a-provider",
+          providers: {
+            openai: { enabled: "yes", temperature: 99, maxTokens: -5, model: 123 }
+          }
+        }
+      })
+    });
+
+    const ai = loadSettings("default").ai;
+    expect(ai.defaultProviderId).toBe("");
+    expect(ai.providers.openai.enabled).toBe(false);
+    // Temperature clamps to the supported range; maxTokens clamps to its minimum.
+    expect(ai.providers.openai.temperature).toBe(2);
+    expect(ai.providers.openai.maxTokens).toBe(1);
+    // A non-string model falls back to the default rather than persisting garbage.
+    expect(ai.providers.openai.model).toBe("gpt-4o-mini");
+  });
+
+  it("never includes API keys in persisted AI settings", () => {
+    const storage = installLocalStorage();
+    const settings = createDefaultSettings();
+    settings.ai.providers.openai.enabled = true;
+
+    saveSettings("default", settings);
+
+    const written = storage.setItem.mock.calls.at(-1)?.[1] as string;
+    const parsed = JSON.parse(written);
+    // The AI settings model has no field for secrets — keys live only in the main-process store.
+    expect(Object.keys(parsed.ai.providers.openai)).not.toContain("apiKey");
+    expect(parsed.ai.providers.openai.enabled).toBe(true);
   });
 });

@@ -23,7 +23,6 @@ import type {
   Blockquote,
   BlockContent,
   DefinitionContent,
-  Paragraph,
   Parents,
   PhrasingContent,
   Root,

@@ -1,3 +1,17 @@
+import {
+  AI_MAX_TOKENS_MAX,
+  AI_MAX_TOKENS_MIN,
+  AI_PROVIDER_IDS,
+  AI_PROVIDERS,
+  AI_TEMPERATURE_MAX,
+  AI_TEMPERATURE_MIN,
+  DEFAULT_AI_MAX_TOKENS,
+  DEFAULT_AI_TEMPERATURE,
+  DEFAULT_AZURE_API_VERSION,
+  isAiProviderId
+} from "./ai/providers";
+import type { AiProviderConfig, AiProviderId, AiSettings } from "./ai/providers";
+
 export const DEFAULT_EDITOR_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 export const DEFAULT_EDITOR_THEME_PREFERENCE = "system";
@@ -151,6 +165,7 @@ export type UserSettings = {
   mcpServer: McpServerSettings;
   publishTarget: PublishTargetSettings;
   quickConnect: QuickConnectSettings;
+  ai: AiSettings;
 };
 
 const SETTINGS_KEY_PREFIX = "nexus:settings:v1";
@@ -432,6 +447,91 @@ export function sanitizeEditorPageMargins(value: unknown): EditorPageMargins {
   };
 }
 
+function sanitizeAiNumber(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(max, Math.max(min, value));
+  }
+  return fallback;
+}
+
+export function createDefaultAiProviderConfig(providerId: AiProviderId): AiProviderConfig {
+  const meta = AI_PROVIDERS[providerId];
+  return {
+    enabled: false,
+    baseUrl: meta.defaultBaseUrl,
+    model: meta.defaultModel,
+    temperature: DEFAULT_AI_TEMPERATURE,
+    maxTokens: DEFAULT_AI_MAX_TOKENS,
+    azureResourceUrl: "",
+    azureDeployment: "",
+    azureApiVersion: meta.usesAzureFields ? DEFAULT_AZURE_API_VERSION : ""
+  };
+}
+
+export function sanitizeAiProviderConfig(
+  providerId: AiProviderId,
+  value: unknown
+): AiProviderConfig {
+  const defaults = createDefaultAiProviderConfig(providerId);
+  const source =
+    typeof value === "object" && value !== null ? (value as Partial<AiProviderConfig>) : {};
+
+  return {
+    enabled: typeof source.enabled === "boolean" ? source.enabled : defaults.enabled,
+    // An empty string is preserved (meaning "use the provider default base URL" downstream); a
+    // non-string falls back to the default URL so the field is never blank-by-corruption.
+    baseUrl: typeof source.baseUrl === "string" ? source.baseUrl.trim() : defaults.baseUrl,
+    model: typeof source.model === "string" ? source.model.trim() : defaults.model,
+    temperature: sanitizeAiNumber(
+      source.temperature,
+      defaults.temperature,
+      AI_TEMPERATURE_MIN,
+      AI_TEMPERATURE_MAX
+    ),
+    maxTokens: Math.round(
+      sanitizeAiNumber(source.maxTokens, defaults.maxTokens, AI_MAX_TOKENS_MIN, AI_MAX_TOKENS_MAX)
+    ),
+    azureResourceUrl:
+      typeof source.azureResourceUrl === "string"
+        ? source.azureResourceUrl.trim()
+        : defaults.azureResourceUrl,
+    azureDeployment:
+      typeof source.azureDeployment === "string"
+        ? source.azureDeployment.trim()
+        : defaults.azureDeployment,
+    azureApiVersion:
+      typeof source.azureApiVersion === "string" && source.azureApiVersion.trim()
+        ? source.azureApiVersion.trim()
+        : defaults.azureApiVersion
+  };
+}
+
+export function createDefaultAiSettings(): AiSettings {
+  const providers = {} as Record<AiProviderId, AiProviderConfig>;
+  for (const id of AI_PROVIDER_IDS) {
+    providers[id] = createDefaultAiProviderConfig(id);
+  }
+  return { defaultProviderId: "", providers };
+}
+
+export function sanitizeAiSettings(value: unknown): AiSettings {
+  const source = typeof value === "object" && value !== null ? (value as Partial<AiSettings>) : {};
+  const providersSource =
+    typeof source.providers === "object" && source.providers !== null
+      ? (source.providers as Partial<Record<AiProviderId, unknown>>)
+      : {};
+
+  const providers = {} as Record<AiProviderId, AiProviderConfig>;
+  for (const id of AI_PROVIDER_IDS) {
+    providers[id] = sanitizeAiProviderConfig(id, providersSource[id]);
+  }
+
+  return {
+    defaultProviderId: isAiProviderId(source.defaultProviderId) ? source.defaultProviderId : "",
+    providers
+  };
+}
+
 export function createDefaultSettings(): UserSettings {
   return {
     fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
@@ -449,7 +549,8 @@ export function createDefaultSettings(): UserSettings {
     pageMargins: createDefaultPageMargins(),
     mcpServer: createDefaultMcpServerSettings(),
     publishTarget: createDefaultPublishTarget(),
-    quickConnect: createDefaultQuickConnect()
+    quickConnect: createDefaultQuickConnect(),
+    ai: createDefaultAiSettings()
   };
 }
 
@@ -489,7 +590,8 @@ export function loadSettings(profileName: string): UserSettings {
       pageMargins: sanitizeEditorPageMargins(parsed.pageMargins),
       mcpServer: sanitizeMcpServerSettings(parsed.mcpServer),
       publishTarget: sanitizePublishTarget(parsed.publishTarget),
-      quickConnect: sanitizeQuickConnect(parsed.quickConnect)
+      quickConnect: sanitizeQuickConnect(parsed.quickConnect),
+      ai: sanitizeAiSettings(parsed.ai)
     };
   } catch {
     return createDefaultSettings();

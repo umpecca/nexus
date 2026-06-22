@@ -1,6 +1,7 @@
-import { Minus, PanelLeft, Plus } from "lucide-react";
+import { Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
 
 export type StatusBarProps = {
+  aiBusy: boolean;
   canToggleOutline: boolean;
   isDirty: boolean;
   maxZoom: number;
@@ -17,6 +18,7 @@ export type StatusBarProps = {
 
 /** Word 2010-style status bar: outline toggle + word count on the left, zoom slider on the right. */
 function StatusBar({
+  aiBusy,
   canToggleOutline,
   isDirty,
   maxZoom,
@@ -56,6 +58,15 @@ function StatusBar({
           <>
             <span aria-hidden="true" className="nexus-statusbar-sep" />
             <span className="nexus-statusbar-item">Unsaved changes</span>
+          </>
+        ) : null}
+        {aiBusy ? (
+          <>
+            <span aria-hidden="true" className="nexus-statusbar-sep" />
+            <span className="nexus-statusbar-item nexus-statusbar-ai-busy">
+              <Sparkles aria-hidden="true" className="nexus-statusbar-ai-spinner" />
+              AI working…
+            </span>
           </>
         ) : null}
       </div>

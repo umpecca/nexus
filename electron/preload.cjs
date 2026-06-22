@@ -11,8 +11,11 @@ const sftpConfirmHostKeyChannel = "sftp:confirm-host-key";
 
 contextBridge.exposeInMainWorld("nexus", {
   platform: process.platform,
+  getAppVersion() {
+    return ipcRenderer.invoke("app:get-version");
+  },
   onMenuAction(callback) {
-    const listener = (_event, action) => callback(action);
+    const listener = (_event, action, payload) => callback(action, payload);
     ipcRenderer.on(menuActionChannel, listener);
     return () => ipcRenderer.removeListener(menuActionChannel, listener);
   },
@@ -156,6 +159,15 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   setMcpBearerToken(profileName, token) {
     return ipcRenderer.invoke("mcp:set-bearer-token", { profileName, token });
+  },
+  getAiProviderKey(profileName, providerId) {
+    return ipcRenderer.invoke("ai:get-key", { profileName, providerId });
+  },
+  setAiProviderKey(profileName, providerId, key) {
+    return ipcRenderer.invoke("ai:set-key", { profileName, providerId, key });
+  },
+  aiChat(payload) {
+    return ipcRenderer.invoke("ai:chat", payload);
   },
   selectPrivateKeyFile() {
     return ipcRenderer.invoke("dialog:select-private-key");

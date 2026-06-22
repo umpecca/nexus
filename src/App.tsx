@@ -36,7 +36,12 @@ import {
   saveSettings
 } from "./lib/settings";
 import type { EditorThemePreference } from "./lib/settings";
-import type { McpEditorSelection, McpNgrokStatus, NexusMenuAction } from "./electron";
+import type {
+  AiSelectionMenuPayload,
+  McpEditorSelection,
+  McpNgrokStatus,
+  NexusMenuAction
+} from "./electron";
 import AboutDialog from "./components/about/AboutDialog";
 import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
@@ -72,6 +77,12 @@ import { sourceImagePasteExtension } from "./components/editor/sourceImagePaste"
 import { readImageFileAsDataUrl } from "./lib/imagePaste";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
+import AiSettingsDialog from "./components/settings/AiSettingsDialog";
+import AiEditPreviewDialog from "./components/ai/AiEditPreviewDialog";
+import AiNotice from "./components/ai/AiNotice";
+import { resolveActiveProvider, runAiChat } from "./lib/ai/client";
+import { buildSelectionPrompt, describeSelectionAction } from "./lib/ai/prompts";
+import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
 import StatusBar from "./components/statusbar/StatusBar";
@@ -265,10 +276,36 @@ type SourceEditorView = {
       line: (lineNumber: number) => { from: number };
       toString: () => string;
     };
+    selection: { main: { from: number; to: number } };
   };
   dispatch: (spec: { changes: { from: number; to: number; insert: string } }) => void;
   lineBlockAt: (position: number) => { top: number };
   scrollDOM: HTMLElement;
+};
+
+/**
+ * The selection captured for an AI action. Held in a ref and refreshed on every non-empty editor
+ * selection, so an action triggered from the AI menu (which moves focus and may collapse the live
+ * DOM selection) still operates on the user's last real selection. `range` drives the rich-text apply
+ * (restore + `insertMarkdown`); `source` drives the source-mode apply (a CodeMirror range dispatch).
+ */
+type EditorSelectionSnapshot = {
+  mode: ViewMode;
+  text: string;
+  range: Range | null;
+  source: { from: number; to: number } | null;
+  activeElement: HTMLElement | null;
+};
+
+type PendingAiEdit = {
+  actionLabel: string;
+  originalText: string;
+  proposedText: string;
+};
+
+type AiNoticeState = {
+  message: string;
+  needsProvider: boolean;
 };
 
 /**
@@ -406,7 +443,11 @@ function App() {
     resolveThemePreference(createDefaultSettings().themePreference)
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiNotice, setAiNotice] = useState<AiNoticeState | null>(null);
+  const [pendingAiEdit, setPendingAiEdit] = useState<PendingAiEdit | null>(null);
   const [exportProgress, setExportProgress] = useState<{ title: string; message: string } | null>(
     null
   );
@@ -443,6 +484,13 @@ function App() {
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
   const currentViewModeRef = useRef<ViewMode>("rich-text");
+  // The last non-empty editor selection, refreshed continuously so AI actions survive the focus
+  // change of opening the AI menu. `pendingAiApplyRef` carries the snapshot + proposed text from the
+  // preview dialog's accept handler to the deferred apply.
+  const editorSelectionSnapshotRef = useRef<EditorSelectionSnapshot | null>(null);
+  const pendingAiApplyRef = useRef<{ snapshot: EditorSelectionSnapshot; proposedText: string } | null>(
+    null
+  );
   const outlineHeadingsRef = useRef<OutlineHeading[]>([]);
   const menuHandlersRef = useRef({
     createNewDocument,
@@ -466,6 +514,7 @@ function App() {
     focusInitialEmptyEditor,
     loadDocument,
     openSettings: () => setSettingsOpen(true),
+    openAiSettings: () => setAiSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
     openPublishWeb: () => setPublishOpen(true),
     openPublishQuickConnect: () => setQuickConnectOpen(true),
@@ -499,7 +548,8 @@ function App() {
         ...current,
         paperViewEnabled: !current.paperViewEnabled
       })),
-    copyDocumentAsHtml
+    copyDocumentAsHtml,
+    runSelectionAiAction
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const titlebarFileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : null;
@@ -701,6 +751,7 @@ function App() {
     focusInitialEmptyEditor,
     loadDocument,
     openSettings: () => setSettingsOpen(true),
+    openAiSettings: () => setAiSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
     openPublishWeb: () => setPublishOpen(true),
     openPublishQuickConnect: () => setQuickConnectOpen(true),
@@ -734,7 +785,8 @@ function App() {
         ...current,
         paperViewEnabled: !current.paperViewEnabled
       })),
-    copyDocumentAsHtml
+    copyDocumentAsHtml,
+    runSelectionAiAction
   };
 
   useEffect(() => {
@@ -1000,7 +1052,14 @@ function App() {
       dirty: hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown),
       markdown,
       exportOptions: {
-        word: getWordExportOptions()
+        // Derived inline from settings (already a dependency below) so this effect's dependency
+        // list is exhaustive without depending on the per-render getWordExportOptions identity.
+        word: {
+          fontFamily: settings.fontFamily,
+          fontSizePixels: settings.fontSizePixels,
+          paragraphSpacingPixels: settings.paragraphSpacingPixels,
+          pageMargins: settings.pageMargins
+        }
       }
     });
   }, [filePath, lastSavedMarkdown, markdown, settings]);
@@ -1036,7 +1095,6 @@ function App() {
     return window.nexus.onMcpRequestSelection((payload) => {
       window.nexus?.resolveMcpSelection(payload.requestId, readEditorSelection());
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1047,6 +1105,52 @@ function App() {
     return window.nexus.onConfirmHostKey((payload) => {
       setPendingHostKey(payload);
     });
+  }, []);
+
+  // Continuously snapshot the editor's selection so AI actions can run from the AI menu — opening it
+  // moves focus and may collapse the live selection. Only non-empty selections inside the editor
+  // surface update the snapshot, so the last real selection survives the focus change.
+  useEffect(() => {
+    function handleSelectionChange() {
+      const surface = editorSurfaceRef.current;
+      const selection = typeof window !== "undefined" ? window.getSelection() : null;
+      if (!surface || !selection || selection.rangeCount === 0) {
+        return;
+      }
+
+      const anchorNode = selection.anchorNode;
+      if (!anchorNode || !surface.contains(anchorNode)) {
+        return;
+      }
+
+      const text = selection.toString();
+      if (!text.trim()) {
+        return;
+      }
+
+      const mode = currentViewModeRef.current ?? "rich-text";
+      let source: { from: number; to: number } | null = null;
+      if (mode === "source") {
+        const view = getSourceEditorView(surface);
+        const main = view?.state.selection?.main;
+        if (main && main.from !== main.to) {
+          source = { from: main.from, to: main.to };
+        }
+      }
+
+      editorSelectionSnapshotRef.current = {
+        mode,
+        text,
+        range: selection.getRangeAt(0).cloneRange(),
+        source,
+        activeElement: document.activeElement instanceof HTMLElement ? document.activeElement : null
+      };
+    }
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -1466,6 +1570,119 @@ function App() {
     return { ok: true, mode, hasSelection: text.length > 0, text };
   }
 
+  // Run an AI selection action: take the last captured selection, prompt the model, and (on success)
+  // open the preview dialog. Failures and the "no provider" / "no selection" cases surface in the AI
+  // notice banner rather than the preview.
+  async function runSelectionAiAction(
+    action: SelectionActionId,
+    options: SelectionActionOptions = {}
+  ) {
+    const snapshot = editorSelectionSnapshotRef.current;
+    if (!snapshot || !snapshot.text.trim()) {
+      setAiNotice({
+        message: "Select some text in the editor first, then choose an AI action.",
+        needsProvider: false
+      });
+      return;
+    }
+
+    if (!resolveActiveProvider(settings.ai)) {
+      setAiNotice({
+        message: "No AI provider is enabled yet. Open AI ▸ AI Providers… to set one up.",
+        needsProvider: true
+      });
+      return;
+    }
+
+    setAiNotice(null);
+    setAiBusy(true);
+    try {
+      const prompt = buildSelectionPrompt(action, snapshot.text, options);
+      const result = await runAiChat({
+        ai: settings.ai,
+        profileName,
+        system: prompt.system,
+        messages: [{ role: "user", content: prompt.user }]
+      });
+
+      if (!result.ok) {
+        setAiNotice({ message: result.error, needsProvider: false });
+        return;
+      }
+
+      const proposedText = result.text.trim();
+      if (!proposedText) {
+        setAiNotice({
+          message: "The model returned an empty response. Try again or rephrase the selection.",
+          needsProvider: false
+        });
+        return;
+      }
+
+      pendingAiApplyRef.current = { snapshot, proposedText };
+      setPendingAiEdit({
+        actionLabel: describeSelectionAction(action, options),
+        originalText: snapshot.text,
+        proposedText
+      });
+    } catch {
+      setAiNotice({ message: "The AI request failed unexpectedly.", needsProvider: false });
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function restoreEditorSelection(snapshot: EditorSelectionSnapshot) {
+    if (!snapshot.range) {
+      return;
+    }
+    snapshot.activeElement?.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    try {
+      selection?.addRange(snapshot.range);
+    } catch {
+      // The cloned range can be detached if the DOM changed; fall back to the current caret.
+    }
+  }
+
+  function applyPendingAiEdit() {
+    const pending = pendingAiApplyRef.current;
+    pendingAiApplyRef.current = null;
+    setPendingAiEdit(null);
+    if (!pending) {
+      return;
+    }
+
+    const { snapshot, proposedText } = pending;
+
+    // Source mode: replace the exact captured character range in the CodeMirror buffer. This is
+    // reliable regardless of focus, so it does not need the selection restored.
+    if (snapshot.mode === "source" && snapshot.source) {
+      const surface = editorSurfaceRef.current;
+      const view = surface ? getSourceEditorView(surface) : null;
+      if (view) {
+        view.dispatch({
+          changes: { from: snapshot.source.from, to: snapshot.source.to, insert: proposedText }
+        });
+        setMarkdown(view.state.doc.toString());
+        return;
+      }
+    }
+
+    // Rich-text (and the source fallback): restore the captured selection, then replace it via
+    // insertMarkdown (Lexical's $insertNodes replaces a non-collapsed selection). Defer to the next
+    // frames so the dialog's focus handling settles and Lexical reconciles the restored selection
+    // before the insert runs.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        restoreEditorSelection(snapshot);
+        editorRef.current?.insertMarkdown(proposedText);
+        setMarkdown(getCurrentMarkdown());
+      });
+    });
+  }
+
   function focusInitialEmptyEditor() {
     if (hasFocusedInitialEmptyEditorRef.current) {
       return;
@@ -1485,122 +1702,6 @@ function App() {
         });
       });
     });
-  }
-
-  async function rasterizeSvgToPngDataUrl(
-    svg: SVGElement,
-    width: number,
-    height: number
-  ): Promise<string | null> {
-    const clone = svg.cloneNode(true) as SVGElement;
-    clone.setAttribute("width", String(width));
-    clone.setAttribute("height", String(height));
-    if (!clone.getAttribute("xmlns")) {
-      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    }
-
-    const svgString = new XMLSerializer().serializeToString(clone);
-    const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
-    const svgUrl = URL.createObjectURL(svgBlob);
-
-    try {
-      return await new Promise<string | null>((resolve) => {
-        const image = new Image();
-        image.onload = () => {
-          const scale = 2;
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(width * scale));
-          canvas.height = Math.max(1, Math.round(height * scale));
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve(null);
-            return;
-          }
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.scale(scale, scale);
-          ctx.drawImage(image, 0, 0, width, height);
-          try {
-            resolve(canvas.toDataURL("image/png"));
-          } catch {
-            resolve(null);
-          }
-        };
-        image.onerror = () => resolve(null);
-        image.src = svgUrl;
-      });
-    } finally {
-      URL.revokeObjectURL(svgUrl);
-    }
-  }
-
-  async function copyHtmlSelection() {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      return;
-    }
-
-    const text = selection.toString();
-    if (!text) {
-      return;
-    }
-
-    const liveSvgs: { svg: SVGElement; width: number; height: number }[] = [];
-    const allSvgs = Array.from(document.querySelectorAll("svg"));
-    for (let index = 0; index < selection.rangeCount; index += 1) {
-      const range = selection.getRangeAt(index);
-      for (const svg of allSvgs) {
-        if (!range.intersectsNode(svg)) {
-          continue;
-        }
-        const rect = svg.getBoundingClientRect();
-        liveSvgs.push({
-          svg,
-          width: rect.width,
-          height: rect.height
-        });
-      }
-    }
-
-    const container = document.createElement("div");
-    for (let index = 0; index < selection.rangeCount; index += 1) {
-      container.appendChild(selection.getRangeAt(index).cloneContents());
-    }
-
-    const clonedSvgs = Array.from(container.querySelectorAll("svg"));
-    const replaceableCount = Math.min(clonedSvgs.length, liveSvgs.length);
-    for (let i = 0; i < replaceableCount; i += 1) {
-      const cloned = clonedSvgs[i];
-      const { svg, width, height } = liveSvgs[i];
-      if (width <= 0 || height <= 0) {
-        continue;
-      }
-      const dataUrl = await rasterizeSvgToPngDataUrl(svg, width, height);
-      if (!dataUrl) {
-        continue;
-      }
-      const img = document.createElement("img");
-      img.src = dataUrl;
-      img.width = Math.round(width);
-      img.height = Math.round(height);
-      cloned.parentNode?.replaceChild(img, cloned);
-    }
-
-    const imgs = Array.from(container.querySelectorAll("img"));
-    for (const img of imgs) {
-      const src = img.getAttribute("src");
-      if (!src || src.startsWith("data:")) {
-        continue;
-      }
-      const dataUrl = await window.nexus?.convertImageToDataUrl(src);
-      if (dataUrl) {
-        img.setAttribute("src", dataUrl);
-      }
-    }
-
-    const html = container.innerHTML;
-
-    void window.nexus?.writeHtmlToClipboard({ html, text });
   }
 
   async function saveDocument(): Promise<boolean> {
@@ -1996,7 +2097,7 @@ function App() {
     };
   }, [showOutlineSidebar, editorViewMode]);
 
-  const dispatchMenuAction = useCallback((action: NexusMenuAction) => {
+  const dispatchMenuAction = useCallback((action: NexusMenuAction, payload?: AiSelectionMenuPayload) => {
     const h = menuHandlersRef.current;
     switch (action) {
       case "new":
@@ -2068,6 +2169,14 @@ function App() {
       case "settings":
         h.openSettings();
         break;
+      case "aiSettings":
+        h.openAiSettings();
+        break;
+      case "aiSelection":
+        if (payload) {
+          void h.runSelectionAiAction(payload.action, payload.options);
+        }
+        break;
       case "about":
         h.openAbout();
         break;
@@ -2120,7 +2229,7 @@ function App() {
       removeOpenRecentListener();
       removeCloseRequestListener();
     };
-  }, []);
+  }, [dispatchMenuAction]);
 
   useEffect(() => {
     function handleViewShortcut(event: KeyboardEvent) {
@@ -2173,6 +2282,7 @@ function App() {
         canEditFrontmatter={editorViewMode === "rich-text"}
         canToggleOutline={canToggleOutline}
         dispatchMenuAction={dispatchMenuAction}
+        onAiSelectionAction={runSelectionAiAction}
         fileName={titlebarFileName}
         isDirty={isDirty}
         outlineVisible={settings.outlineVisible}
@@ -2301,7 +2411,19 @@ function App() {
           </div>
         </div>
       </section>
+      {aiNotice ? (
+        <AiNotice
+          message={aiNotice.message}
+          needsProvider={aiNotice.needsProvider}
+          onConfigure={() => {
+            setAiNotice(null);
+            setAiSettingsOpen(true);
+          }}
+          onDismiss={() => setAiNotice(null)}
+        />
+      ) : null}
       <StatusBar
+        aiBusy={aiBusy}
         canToggleOutline={canToggleOutline}
         isDirty={isDirty}
         maxZoom={MAX_EDITOR_ZOOM_PERCENT}
@@ -2386,6 +2508,26 @@ function App() {
         profileName={profileName}
         themePreference={settings.themePreference}
       />
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onOpenChange={setAiSettingsOpen}
+        profileName={profileName}
+        ai={settings.ai}
+        onAiChange={(ai) => setSettings((current) => ({ ...current, ai }))}
+      />
+      {pendingAiEdit ? (
+        <AiEditPreviewDialog
+          open
+          actionLabel={pendingAiEdit.actionLabel}
+          originalText={pendingAiEdit.originalText}
+          proposedText={pendingAiEdit.proposedText}
+          onAccept={applyPendingAiEdit}
+          onReject={() => {
+            pendingAiApplyRef.current = null;
+            setPendingAiEdit(null);
+          }}
+        />
+      ) : null}
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
       <ExportProgressDialog
         open={exportProgress !== null}

@@ -15,10 +15,24 @@ const headingSlugger = require("./headingSlugger.cjs");
 const mcpDocumentTools = require("./mcpDocumentTools.cjs");
 const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
+const aiProviders = require("./aiProviders.cjs");
+const {
+  AI_SELECTION_ACTIONS,
+  AI_TONE_OPTIONS,
+  AI_TRANSLATE_LANGUAGES
+} = require("./aiSelectionCatalog.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
+// Routine main-process traces (export/publish progress, IPC handler entry, host-key flow, etc.) are
+// noise in packaged builds, so they go through debugLog and only print in dev mode or when
+// NEXUS_DEBUG is set. Genuine failures use console.error directly so they always surface.
+const isDebugLoggingEnabled = isDev || Boolean(process.env.NEXUS_DEBUG);
+function debugLog(...args) {
+  if (isDebugLoggingEnabled) {
+    console.log(...args);
+  }
+}
 const appIconPath = path.join(__dirname, "..", "nexus.png");
-const macDockIconPath = path.join(__dirname, "..", "nexus.icns");
 const closeStates = new Map();
 const fileWatchers = new Map();
 const pendingInitialFiles = new Map();
@@ -442,12 +456,6 @@ function isProbablyFilePath(argument) {
 
 function getAppIconPath() {
   return existsSync(appIconPath) ? appIconPath : undefined;
-}
-
-function getMacDockIconPath() {
-  // The dock uses the padded .icns so the icon sits on macOS's grid (matching other dock icons);
-  // fall back to the full-bleed PNG if the .icns is missing.
-  return existsSync(macDockIconPath) ? macDockIconPath : getAppIconPath();
 }
 
 async function getOpenableFilePaths(args) {
@@ -2324,7 +2332,7 @@ async function exportHtmlFromPayload(window, payload) {
         const html = await renderBaselineExportHtml(markdown, currentPath, options);
 
         await fs.writeFile(result.filePath, html, "utf8");
-        console.log(`Export HTML wrote baseline rendered HTML file: ${result.filePath}`);
+        debugLog(`Export HTML wrote baseline rendered HTML file: ${result.filePath}`);
 
         const renderedHtml = await tryEnhanceExportHtmlWithMermaidPngs(
           html,
@@ -2332,7 +2340,7 @@ async function exportHtmlFromPayload(window, payload) {
         );
         if (renderedHtml !== html) {
           await fs.writeFile(result.filePath, renderedHtml, "utf8");
-          console.log(`Export HTML wrote Mermaid PNG-enhanced HTML file: ${result.filePath}`);
+          debugLog(`Export HTML wrote Mermaid PNG-enhanced HTML file: ${result.filePath}`);
         }
 
         return { canceled: false, filePath: result.filePath };
@@ -2400,7 +2408,7 @@ async function exportWordFromPayload(window, payload) {
         });
         const docxBuffer = Buffer.isBuffer(docx) ? docx : Buffer.from(docx);
         await fs.writeFile(result.filePath, docxBuffer);
-        console.log(`Export Word wrote DOCX file with ${wordFontFamily} font: ${result.filePath}`);
+        debugLog(`Export Word wrote DOCX file with ${wordFontFamily} font: ${result.filePath}`);
 
         return { canceled: false, filePath: result.filePath };
       }
@@ -2430,7 +2438,7 @@ async function copyHtmlFromPayload(window, payload) {
           html: renderedHtml,
           text: markdown ?? ""
         });
-        console.log("Copy HTML wrote rendered document HTML to clipboard");
+        debugLog("Copy HTML wrote rendered document HTML to clipboard");
 
         return { copied: true };
       }
@@ -2459,7 +2467,7 @@ function requestSftpHostKeyConfirmation(window, payload) {
     sftpPendingHostKeys.set(requestId, { resolve, webContentsId: window.webContents.id });
 
     try {
-      console.log(`[publish] sending host-key prompt to renderer (requestId=${requestId})`);
+      debugLog(`[publish] sending host-key prompt to renderer (requestId=${requestId})`);
       window.webContents.send("sftp:confirm-host-key", {
         requestId,
         host: payload.host,
@@ -2467,7 +2475,7 @@ function requestSftpHostKeyConfirmation(window, payload) {
         fingerprint: payload.fingerprint
       });
     } catch (error) {
-      console.log("[publish] failed to send host-key prompt:", error && error.message);
+      console.error("[publish] failed to send host-key prompt:", error && error.message);
       sftpPendingHostKeys.delete(requestId);
       resolve(false);
     }
@@ -2526,17 +2534,17 @@ async function publishMarkdownOverSftp(window, payload) {
     throw new Error("A remote filename is required to publish.");
   }
 
-  console.log(`[publish] request for ${username}@${host}:${port} -> ${remoteFilename}`);
+  debugLog(`[publish] request for ${username}@${host}:${port} -> ${remoteFilename}`);
 
   // Reuse the existing self-contained HTML export so images, fonts, and Mermaid travel inline.
   // Bound the render so a stalled hidden Mermaid/render window cannot freeze the publish forever.
-  console.log("[publish] rendering self-contained HTML...");
+  debugLog("[publish] rendering self-contained HTML...");
   const html = await withTimeout(
     renderMarkdownSelfContainedHtml(markdown, currentPath, options ?? {}),
     30000,
     "Publish HTML render"
   );
-  console.log(`[publish] HTML rendered (${html.length} bytes); opening SFTP connection...`);
+  debugLog(`[publish] HTML rendered (${html.length} bytes); opening SFTP connection...`);
 
   let hostKeyRejected = false;
   const connectConfig = {
@@ -2549,9 +2557,9 @@ async function publishMarkdownOverSftp(window, payload) {
     // ssh2 hands us the raw host-key buffer; verify it through the renderer prompt before connecting.
     hostVerifier: (hostKey, verify) => {
       const fingerprint = formatHostKeyFingerprint(hostKey);
-      console.log(`[publish] host key presented (${fingerprint}); awaiting user confirmation...`);
+      debugLog(`[publish] host key presented (${fingerprint}); awaiting user confirmation...`);
       requestSftpHostKeyConfirmation(window, { host, port, fingerprint }).then((accepted) => {
-        console.log(`[publish] host key ${accepted ? "ACCEPTED" : "REJECTED"} by user`);
+        debugLog(`[publish] host key ${accepted ? "ACCEPTED" : "REJECTED"} by user`);
         if (!accepted) {
           hostKeyRejected = true;
         }
@@ -2588,7 +2596,7 @@ async function publishMarkdownOverSftp(window, payload) {
       throw error;
     }
 
-    console.log("[publish] SFTP connected; preparing remote directory...");
+    debugLog("[publish] SFTP connected; preparing remote directory...");
     const remoteDir = normalizeRemoteDirectory(conn.remoteDirectory);
     if (remoteDir !== "." && remoteDir !== "/") {
       const exists = await client.exists(remoteDir);
@@ -2599,7 +2607,7 @@ async function publishMarkdownOverSftp(window, payload) {
 
     const remotePath = joinRemotePath(conn.remoteDirectory, remoteFilename);
     await client.put(Buffer.from(html, "utf8"), remotePath);
-    console.log(`[publish] upload complete -> ${remotePath}`);
+    debugLog(`[publish] upload complete -> ${remotePath}`);
 
     return {
       published: true,
@@ -2651,16 +2659,16 @@ async function publishMarkdownOverQuickConnect(payload) {
     throw new Error("A QuickConnect path is required to publish.");
   }
 
-  console.log(`[publish] QuickConnect POST to ${url} (path=${targetPath})`);
+  debugLog(`[publish] QuickConnect POST to ${url} (path=${targetPath})`);
 
   // Reuse the same self-contained HTML render used by SFTP publish and HTML export.
-  console.log("[publish] rendering self-contained HTML...");
+  debugLog("[publish] rendering self-contained HTML...");
   const html = await withTimeout(
     renderMarkdownSelfContainedHtml(markdown, currentPath, options ?? {}),
     30000,
     "Publish HTML render"
   );
-  console.log(`[publish] HTML rendered (${html.length} bytes); sending HTTP POST...`);
+  debugLog(`[publish] HTML rendered (${html.length} bytes); sending HTTP POST...`);
 
   let response;
   try {
@@ -2694,7 +2702,7 @@ async function publishMarkdownOverQuickConnect(payload) {
     throw new Error(`The QuickConnect server responded ${response.status} ${response.statusText}${snippet}`);
   }
 
-  console.log(`[publish] QuickConnect succeeded (${response.status})`);
+  debugLog(`[publish] QuickConnect succeeded (${response.status})`);
   return { published: true, url: parseQuickConnectResultUrl(bodyText) };
 }
 
@@ -3086,10 +3094,10 @@ async function openFilesFromArgs(args) {
   return true;
 }
 
-function sendMenuAction(action) {
+function sendMenuAction(action, payload) {
   const window = BrowserWindow.getFocusedWindow();
   if (window) {
-    window.webContents.send("menu:action", action);
+    window.webContents.send("menu:action", action, payload);
   }
 }
 
@@ -3224,6 +3232,34 @@ function buildRecentFilesSubmenu() {
   return items;
 }
 
+// The AI selection items shared by the Edit menu: simple one-shot actions plus the "Change tone"
+// and "Translate" submenus. The catalog comes from aiSelectionCatalog.cjs (kept in sync with
+// src/lib/ai/prompts.ts by aiSelectionCatalog.test.ts). Each click sends an `aiSelection` menu
+// action carrying the prompt id (and any options) to the renderer, which runs it against the
+// current editor selection (see runSelectionAiAction in src/App.tsx).
+function buildAiSelectionMenuItems() {
+  return [
+    ...AI_SELECTION_ACTIONS.map((action) => ({
+      label: action.label,
+      click: () => sendMenuAction("aiSelection", { action: action.id })
+    })),
+    {
+      label: "Change tone",
+      submenu: AI_TONE_OPTIONS.map((tone) => ({
+        label: tone.label,
+        click: () => sendMenuAction("aiSelection", { action: "tone", options: { tone: tone.value } })
+      }))
+    },
+    {
+      label: "Translate",
+      submenu: AI_TRANSLATE_LANGUAGES.map((language) => ({
+        label: language,
+        click: () => sendMenuAction("aiSelection", { action: "translate", options: { language } })
+      }))
+    }
+  ];
+}
+
 function buildMenu() {
   const template = [
     {
@@ -3271,7 +3307,7 @@ function buildMenu() {
         {
           label: "Export as HTML",
           click: (_menuItem, browserWindow) => {
-            console.log("Export as HTML menu item clicked");
+            debugLog("Export as HTML menu item clicked");
             const window =
               browserWindow && !browserWindow.isDestroyed()
                 ? browserWindow
@@ -3279,7 +3315,7 @@ function buildMenu() {
             const record = window ? mcpWindowRecords.get(window.webContents.id) : null;
 
             if (record) {
-              console.log("Export as HTML menu item using main-process document snapshot");
+              debugLog("Export as HTML menu item using main-process document snapshot");
               void exportHtmlFromPayload(window, {
                 currentPath: record.filePath,
                 markdown: record.markdown ?? "",
@@ -3288,14 +3324,14 @@ function buildMenu() {
               return;
             }
 
-            console.log("Export as HTML menu item forwarding to renderer");
+            debugLog("Export as HTML menu item forwarding to renderer");
             sendMenuAction("exportHtml");
           }
         },
         {
           label: "Export to Word",
           click: (_menuItem, browserWindow) => {
-            console.log("Export to Word menu item clicked");
+            debugLog("Export to Word menu item clicked");
             const window =
               browserWindow && !browserWindow.isDestroyed()
                 ? browserWindow
@@ -3303,7 +3339,7 @@ function buildMenu() {
             const record = window ? mcpWindowRecords.get(window.webContents.id) : null;
 
             if (record) {
-              console.log("Export to Word menu item using main-process document snapshot");
+              debugLog("Export to Word menu item using main-process document snapshot");
               void exportWordFromPayload(window, {
                 currentPath: record.filePath,
                 markdown: record.markdown ?? "",
@@ -3312,7 +3348,7 @@ function buildMenu() {
               return;
             }
 
-            console.log("Export to Word menu item forwarding to renderer");
+            debugLog("Export to Word menu item forwarding to renderer");
             sendMenuAction("exportWord");
           }
         },
@@ -3396,6 +3432,17 @@ function buildMenu() {
         {
           label: "Paste",
           role: "paste"
+        },
+        {
+          type: "separator"
+        },
+        ...buildAiSelectionMenuItems(),
+        {
+          type: "separator"
+        },
+        {
+          label: "AI Providers…",
+          click: () => sendMenuAction("aiSettings")
         }
       ]
     },
@@ -3739,17 +3786,17 @@ ipcMain.handle("file:saveAs", async (event, payload) => {
 });
 
 ipcMain.handle("file:export-html", async (event, payload) => {
-  console.log("Export HTML IPC handler started");
+  debugLog("Export HTML IPC handler started");
   return exportHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
 ipcMain.handle("file:export-word", async (event, payload) => {
-  console.log("Export Word IPC handler started");
+  debugLog("Export Word IPC handler started");
   return exportWordFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
 ipcMain.handle("file:export-pdf", async (event, payload) => {
-  console.log("Export PDF IPC handler started");
+  debugLog("Export PDF IPC handler started");
   const window = BrowserWindow.fromWebContents(event.sender);
   const { currentPath, markdown, options } = payload ?? {};
   const pageSize = getPdfPageSize(options?.pageSize);
@@ -3823,7 +3870,7 @@ ipcMain.handle("sftp:publish", async (event, payload) => {
     return { ok: true, remotePath: result.remotePath, url: result.url ?? null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log("[publish] FAILED:", message);
+    console.error("[publish] FAILED:", message);
     await showPublishErrorForWindow(window, message);
     return { ok: false, error: message };
   }
@@ -3837,7 +3884,7 @@ ipcMain.handle("quickconnect:publish", async (event, payload) => {
     return { ok: true, url: result.url ?? null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log("[publish] QuickConnect FAILED:", message);
+    console.error("[publish] QuickConnect FAILED:", message);
     await showPublishErrorForWindow(window, message);
     return { ok: false, error: message };
   }
@@ -3986,6 +4033,167 @@ ipcMain.handle("mcp:set-bearer-token", async (_event, payload) => {
   return { stored: true, encryptionAvailable: true };
 });
 
+// AI provider API keys are secrets, so — like the MCP bearer and QuickConnect tokens — they are never
+// written to localStorage. The renderer hands each key to the main process, which encrypts it at rest
+// with Electron safeStorage and persists the ciphertext in a per-(profile, provider) map. Keys are
+// read back here only to authenticate an `ai:chat` request and are never returned to the renderer in
+// bulk (the setup dialog reads one provider's key at a time to populate its field).
+function getAiProviderKeyStorePath() {
+  return path.join(app.getPath("userData"), "ai-provider-keys.json");
+}
+
+const AI_PROVIDER_IDS = ["openai", "azure-openai", "deepseek", "anthropic"];
+
+function aiKeyEntryKey(profileName, providerId) {
+  const profile = typeof profileName === "string" && profileName.trim() ? profileName.trim() : "default";
+  const provider = AI_PROVIDER_IDS.includes(providerId) ? providerId : "";
+  return provider ? `${profile}:${provider}` : "";
+}
+
+async function readAiProviderKeyStore() {
+  try {
+    const raw = await fs.readFile(getAiProviderKeyStorePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    // Missing or corrupt store: start from an empty map rather than failing the lookup.
+    return {};
+  }
+}
+
+async function writeAiProviderKeyStore(store) {
+  const filePath = getAiProviderKeyStorePath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(store), "utf8");
+}
+
+async function readAiProviderKey(profileName, providerId) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return "";
+  }
+
+  const entryKey = aiKeyEntryKey(profileName, providerId);
+  if (!entryKey) {
+    return "";
+  }
+
+  const store = await readAiProviderKeyStore();
+  const encoded = store[entryKey];
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    return "";
+  }
+
+  try {
+    return safeStorage.decryptString(Buffer.from(encoded, "base64"));
+  } catch {
+    // A key encrypted under a different OS user/key cannot be read back here; treat as absent.
+    return "";
+  }
+}
+
+ipcMain.handle("ai:get-key", async (_event, payload) => {
+  const profileName = payload && typeof payload === "object" ? payload.profileName : undefined;
+  const providerId = payload && typeof payload === "object" ? payload.providerId : undefined;
+  return readAiProviderKey(profileName, providerId);
+});
+
+ipcMain.handle("ai:set-key", async (_event, payload) => {
+  const entryKey = aiKeyEntryKey(payload?.profileName, payload?.providerId);
+  const key = typeof payload?.key === "string" ? payload.key : "";
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+
+  if (!entryKey) {
+    return { stored: false, encryptionAvailable };
+  }
+
+  const store = await readAiProviderKeyStore();
+
+  // An empty key clears any stored entry, regardless of encryption support.
+  if (!key) {
+    if (Object.prototype.hasOwnProperty.call(store, entryKey)) {
+      delete store[entryKey];
+      await writeAiProviderKeyStore(store);
+    }
+    return { stored: false, encryptionAvailable };
+  }
+
+  // Never fall back to plaintext on disk: the whole point is encryption at rest.
+  if (!encryptionAvailable) {
+    return { stored: false, encryptionAvailable: false };
+  }
+
+  store[entryKey] = safeStorage.encryptString(key).toString("base64");
+  await writeAiProviderKeyStore(store);
+  return { stored: true, encryptionAvailable: true };
+});
+
+const AI_CHAT_TIMEOUT_MS = 30000;
+
+// Run a chat completion through the provider abstraction. Network I/O lives here in the main process
+// (Node fetch) to avoid CORS and keep API keys out of the renderer; the request shape and response
+// parsing are the pure adapter's job (`aiProviders.cjs`), so this handler is thin glue. Used by the
+// setup dialog's "Test connection" now, and reusable by future in-app AI features.
+ipcMain.handle("ai:chat", async (_event, payload) => {
+  if (!payload || typeof payload !== "object") {
+    return { ok: false, error: "Invalid AI request." };
+  }
+
+  const { profileName, providerId, config, messages, system, temperature, maxTokens } = payload;
+  if (!AI_PROVIDER_IDS.includes(providerId)) {
+    return { ok: false, error: `Unknown AI provider: ${String(providerId)}` };
+  }
+
+  const apiKey = await readAiProviderKey(profileName, providerId);
+  const missing = aiProviders.describeMissingConfig({ providerId, config, apiKey });
+  if (missing) {
+    return { ok: false, error: missing };
+  }
+
+  let request;
+  try {
+    request = aiProviders.buildChatHttpRequest({
+      providerId,
+      config,
+      apiKey,
+      messages,
+      system,
+      temperature,
+      maxTokens
+    });
+  } catch (error) {
+    return { ok: false, error: `Failed to build the request: ${error?.message ?? error}` };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_CHAT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+      signal: controller.signal
+    });
+
+    let json = null;
+    try {
+      json = await response.json();
+    } catch {
+      // Some error responses are not JSON (e.g. an HTML gateway page); parseChatResult handles null.
+      json = null;
+    }
+
+    return aiProviders.parseChatResult({ providerId, status: response.status, json });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return { ok: false, error: `Request timed out after ${AI_CHAT_TIMEOUT_MS / 1000}s.` };
+    }
+    return { ok: false, error: `Network error: ${error?.message ?? error}` };
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
 ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
@@ -3998,11 +4206,11 @@ ipcMain.on("sftp:host-key-decision", (_event, payload) => {
 
   const pending = sftpPendingHostKeys.get(requestId);
   if (!pending) {
-    console.log(`[publish] host-key decision for unknown requestId=${requestId} (ignored)`);
+    debugLog(`[publish] host-key decision for unknown requestId=${requestId} (ignored)`);
     return;
   }
 
-  console.log(`[publish] host-key decision received: ${decision} (requestId=${requestId})`);
+  debugLog(`[publish] host-key decision received: ${decision} (requestId=${requestId})`);
   sftpPendingHostKeys.delete(requestId);
   pending.resolve(decision === "accept");
 });
@@ -4119,7 +4327,7 @@ ipcMain.handle("clipboard:write-html", (_event, payload) => {
 });
 
 ipcMain.handle("clipboard:copy-html-document", async (event, payload) => {
-  console.log("Copy HTML IPC handler started");
+  debugLog("Copy HTML IPC handler started");
   return copyHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
@@ -4163,6 +4371,8 @@ ipcMain.handle("app:get-profile-name", () => {
     return "default";
   }
 });
+
+ipcMain.handle("app:get-version", () => app.getVersion());
 
 ipcMain.handle("dialog:confirmSaveChanges", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
@@ -4501,24 +4711,59 @@ if (gotSingleInstanceLock) {
 }
 
 app.whenReady().then(async () => {
-  if (process.platform === "darwin") {
-    const dockIconPath = getMacDockIconPath();
+  if (process.platform === "darwin" && !app.isPackaged) {
+    // Packaged builds already get the padded dock icon from the bundle's nexus.icns
+    // (electron-builder applies build.mac.icon at build time), so we only override the
+    // dock icon in dev, where the dock would otherwise show Electron's default icon.
+    // Note: pass the PNG, not the .icns — nativeImage cannot decode the ICNS container,
+    // and passing it to dock.setIcon throws, which used to abort startup before the
+    // window was ever created. Keep this in a try/catch so a cosmetic dock-icon failure
+    // can never block window creation.
+    const dockIconPath = getAppIconPath();
     if (dockIconPath) {
-      app.dock?.setIcon(dockIconPath);
+      try {
+        app.dock?.setIcon(dockIconPath);
+      } catch (error) {
+        console.error("Failed to set macOS dock icon:", error);
+      }
     }
   }
 
-  loadRecentFiles();
-  buildMenu();
-  const initialFilePaths = [
-    ...(await getOpenableFilePaths(process.argv)),
-    ...pendingExternalFilePaths
-  ];
+  // None of the remaining startup steps are essential to actually showing a window, so each is
+  // guarded: a failure in recent-files loading, menu building, or initial-file resolution must not
+  // black-hole startup. (An unguarded throw here previously left the app running with a dock icon
+  // but no window and the default menu — the macOS dock-icon regression.)
+  try {
+    loadRecentFiles();
+  } catch (error) {
+    console.error("Failed to load recent files:", error);
+  }
+
+  try {
+    buildMenu();
+  } catch (error) {
+    console.error("Failed to build the application menu:", error);
+  }
+
+  let argvFilePaths = [];
+  try {
+    argvFilePaths = await getOpenableFilePaths(process.argv);
+  } catch (error) {
+    console.error("Failed to resolve files from launch arguments:", error);
+  }
+  const initialFilePaths = [...argvFilePaths, ...pendingExternalFilePaths];
   pendingExternalFilePaths.length = 0;
 
   if (initialFilePaths.length > 0) {
-    await openFilesInNewWindows(initialFilePaths);
-  } else {
+    try {
+      await openFilesInNewWindows(initialFilePaths);
+    } catch (error) {
+      console.error("Failed to open initial files:", error);
+    }
+  }
+
+  // Whatever happened above, guarantee the user ends up with a window.
+  if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 
@@ -4527,7 +4772,19 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
-});
+})
+  .catch((error) => {
+    // Last-resort net: the steps above are individually guarded, so reaching here means something
+    // unexpected threw. Still try to surface a window so the app is never a dock icon with no UI.
+    console.error("Unexpected error during startup:", error);
+    if (BrowserWindow.getAllWindows().length === 0) {
+      try {
+        createWindow();
+      } catch (fallbackError) {
+        console.error("Failed to create fallback window:", fallbackError);
+      }
+    }
+  });
 
 app.on("before-quit", (event) => {
   if (!isQuitting) {

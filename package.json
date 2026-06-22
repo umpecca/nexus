@@ -1,6 +1,6 @@
 {
   "name": "nexus",
-  "version": "0.1.0",
+  "version": "2.0.1",
   "description": "A visual-first Markdown editor with local draft persistence.",
   "author": "Vince",
   "main": "electron/main.cjs",
@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "start:electron": "npm run build && electron .",
+    "lint": "eslint .",
     "test": "vitest run",
     "generate:mac-icon": "node scripts/generate-mac-icon.mjs",
     "dist:win": "electron-builder --win --x64 --publish never",
@@ -93,16 +94,21 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^38.0.0",
     "electron-builder": "^26.8.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-to-markdown": "^2.1.2",
     "micromark-extension-directive": "^3.0.2",
     "sharp": "^0.34.5",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^5.4.11",
     "vitest": "^2.1.5"
   }
