@@ -24,6 +24,7 @@ import type { SelectionActionId, SelectionActionOptions } from "../../lib/ai/pro
 
 export type TitlebarProps = {
   fileName: string | null;
+  filePath: string | null;
   isDirty: boolean;
   canEditFrontmatter: boolean;
   canToggleOutline: boolean;
@@ -324,6 +325,7 @@ function WindowControls() {
 
 export function Titlebar({
   fileName,
+  filePath,
   isDirty,
   canEditFrontmatter,
   canToggleOutline,
@@ -358,7 +360,9 @@ export function Titlebar({
         )}
       </div>
       <div className="nexus-titlebar-title">
-        <span className="nexus-titlebar-title-text">{`${fileName ?? "Untitled"} - Nexus`}</span>
+        <span className="nexus-titlebar-title-text" title={filePath ?? undefined}>
+          {fileName ?? "Untitled"}
+        </span>
         {isDirty ? <span aria-label="Unsaved changes" className="nexus-titlebar-dirty" /> : null}
       </div>
       <div className="nexus-titlebar-right">{isMac ? null : <WindowControls />}</div>

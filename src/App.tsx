@@ -87,8 +87,6 @@ import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
 import StatusBar from "./components/statusbar/StatusBar";
 
-const APP_TITLE = "Nexus";
-
 const MCP_WINDOW_ID = (() => {
   const cryptoApi = typeof globalThis !== "undefined" ? (globalThis as { crypto?: Crypto }).crypto : undefined;
   if (cryptoApi?.randomUUID) {
@@ -145,10 +143,10 @@ function formatWindowTitle(filePath: string | undefined, isDirty: boolean) {
   const dirtyPrefix = isDirty ? "*" : "";
 
   if (!filePath) {
-    return `${APP_TITLE} - ${dirtyPrefix}Untitled`;
+    return `${dirtyPrefix}Untitled`;
   }
 
-  return `${APP_TITLE} - ${dirtyPrefix}${getDocumentName(filePath)} (${filePath})`;
+  return `${dirtyPrefix}${getDocumentName(filePath)} (${filePath})`;
 }
 
 function hasUnsavedMarkdownChanges(markdown: string, lastSavedMarkdown: string) {
@@ -2284,6 +2282,7 @@ function App() {
         dispatchMenuAction={dispatchMenuAction}
         onAiSelectionAction={runSelectionAiAction}
         fileName={titlebarFileName}
+        filePath={filePath ?? null}
         isDirty={isDirty}
         outlineVisible={settings.outlineVisible}
         pageOrientation={settings.pageOrientation}
