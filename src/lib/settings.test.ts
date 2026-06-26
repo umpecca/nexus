@@ -62,6 +62,8 @@ describe("settings helpers", () => {
       responsiveContentWrappingEnabled: true,
       outlineVisible: false,
       outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
+      aiChatVisible: false,
+      aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
@@ -122,6 +124,8 @@ describe("settings helpers", () => {
       responsiveContentWrappingEnabled: true,
       outlineVisible: false,
       outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
+      aiChatVisible: false,
+      aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
       pageSize: "Letter",
@@ -771,6 +775,8 @@ describe("settings helpers", () => {
       responsiveContentWrappingEnabled: false,
       outlineVisible: true,
       outlineWidthPixels: 320,
+      aiChatVisible: false,
+      aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
       pageSize: "A4",
@@ -817,6 +823,8 @@ describe("settings helpers", () => {
         responsiveContentWrappingEnabled: false,
         outlineVisible: true,
         outlineWidthPixels: 320,
+        aiChatVisible: false,
+        aiChatWidthPixels: 360,
         showInvisibleCharacters: false,
         spellCheckEnabled: true,
         pageSize: "A4",
@@ -873,7 +881,14 @@ describe("settings helpers", () => {
   it("defaults AI settings with no default provider and all providers disabled", () => {
     const ai = createDefaultSettings().ai;
     expect(ai.defaultProviderId).toBe("");
-    expect(Object.keys(ai.providers)).toEqual(["openai", "azure-openai", "deepseek", "anthropic"]);
+    expect(Object.keys(ai.providers)).toEqual([
+      "openai",
+      "azure-openai",
+      "deepseek",
+      "anthropic",
+      "ollama",
+      "lm-studio"
+    ]);
     expect(ai.providers.openai).toEqual({
       enabled: false,
       baseUrl: "https://api.openai.com/v1",

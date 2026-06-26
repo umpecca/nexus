@@ -16,6 +16,7 @@ const mcpDocumentTools = require("./mcpDocumentTools.cjs");
 const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
 const aiProviders = require("./aiProviders.cjs");
+const { createDrawioSession } = require("./drawioEmbed.cjs");
 const {
   AI_SELECTION_ACTIONS,
   AI_TONE_OPTIONS,
@@ -1565,6 +1566,136 @@ function createExportWindow() {
       sandbox: true,
       webSecurity: false
     }
+  });
+}
+
+// The host page embeds the bundled drawio web app in an iframe in embed mode (the query string and
+// iframe live in public/drawio-host.html); the pure session in drawioEmbed.cjs handles the
+// resulting init/save/export/exit messages relayed by drawioPreload.cjs.
+function loadDrawioEditor(editorWindow) {
+  if (isDev) {
+    // Vite serves everything under public/ at the web root, so public/drawio-host.html is here.
+    return editorWindow.loadURL(new URL("drawio-host.html", process.env.NEXUS_DEV_SERVER_URL).toString());
+  }
+  // Packaged: public/ was copied to dist/ at build time. The host page (and the drawio app it
+  // iframes) are unpacked from the asar — see build.asarUnpack — so drawio's many sub-resources and
+  // workers load over file://.
+  return editorWindow.loadFile(path.join(__dirname, "..", "dist", "drawio-host.html"));
+}
+
+// Shown in the editor window when the drawio web app cannot be loaded — almost always because it
+// was never vendored — instead of letting the window flash open and closed with no explanation.
+function buildDrawioErrorHtml(detail) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Diagram editor unavailable</title></head>
+<body style="font-family: system-ui, -apple-system, sans-serif; padding: 2rem; color: #1f2937; line-height: 1.5;">
+<h2 style="margin-top:0;">Diagram editor could not load</h2>
+<p>The bundled drawio web app is missing or failed to load. From the project root, run:</p>
+<pre style="background:#f3f4f6;padding:0.75rem 1rem;border-radius:6px;">npm run fetch:drawio</pre>
+<p>then rebuild and try again. You can close this window.</p>
+<p style="color:#6b7280;font-size:0.85rem;">Details: ${escapeHtmlText(String(detail || "unknown error"))}</p>
+</body></html>`;
+}
+
+// Opens the bundled drawio editor in a modal window over `parentWindow`, loads `initialXml` (empty
+// for a new diagram), and resolves when the user saves (with an editable-SVG data URL) or cancels
+// by closing the window. The embed protocol is driven by the pure session in drawioEmbed.cjs; this
+// function owns only the window lifecycle and the IPC relay to/from drawioPreload.cjs.
+function openDrawioEditor(parentWindow, initialXml) {
+  return new Promise((resolve) => {
+    const session = createDrawioSession(initialXml);
+    const hasParent = Boolean(parentWindow && !parentWindow.isDestroyed());
+    const editorWindow = new BrowserWindow({
+      parent: hasParent ? parentWindow : undefined,
+      modal: hasParent,
+      width: 1200,
+      height: 820,
+      minWidth: 800,
+      minHeight: 600,
+      title: "Edit diagram",
+      backgroundColor: "#ffffff",
+      autoHideMenuBar: true,
+      icon: getAppIconPath(),
+      webPreferences: {
+        preload: path.join(__dirname, "drawioPreload.cjs"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: false
+      }
+    });
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      ipcMain.removeListener("drawio:from-editor", onFromEditor);
+      if (!editorWindow.isDestroyed()) {
+        editorWindow.destroy();
+      }
+      resolve(result);
+    };
+
+    function onFromEditor(event, raw) {
+      // Scope to this window's editor so multiple diagram editors can be open at once.
+      if (event.sender !== editorWindow.webContents) {
+        return;
+      }
+      let message;
+      try {
+        message = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const { reply, result } = session.handleMessage(message);
+      if (reply && !editorWindow.isDestroyed()) {
+        editorWindow.webContents.send("drawio:to-editor", JSON.stringify(reply));
+      }
+      if (result) {
+        finish(result);
+      }
+    }
+
+    ipcMain.on("drawio:from-editor", onFromEditor);
+    // Closing the window (the cancel affordance) resolves as canceled; a successful save resolves
+    // first and destroys the window, so this becomes a no-op via the settled guard.
+    editorWindow.on("closed", () => finish({ canceled: true }));
+
+    // Surface the drawio app's own console output while debugging the embed protocol.
+    editorWindow.webContents.on("console-message", (...args) => {
+      const details = args[0];
+      const message =
+        details && typeof details === "object" && "message" in details ? details.message : args[2];
+      debugLog("[drawio editor]", message);
+    });
+
+    // A genuine load failure (most often: the drawio web app was never vendored — run
+    // `npm run fetch:drawio`) should explain itself in the window rather than flash closed. The
+    // window stays open with the message; the user closes it, which resolves as canceled.
+    editorWindow.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
+        // ERR_ABORTED (-3) is benign: drawio navigates in-page while booting, aborting the initial
+        // load even though the editor is fine. Only treat real main-frame failures as errors.
+        if (!isMainFrame || errorCode === -3 || settled || editorWindow.isDestroyed()) {
+          return;
+        }
+        console.error(`drawio editor failed to load (${errorCode}): ${errorDescription}`);
+        void editorWindow.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(buildDrawioErrorHtml(errorDescription))}`
+        );
+      }
+    );
+
+    // drawio's in-page boot navigation rejects the initial load promise with ERR_ABORTED even on
+    // success, so do NOT close the window here; real failures are handled by did-fail-load above.
+    loadDrawioEditor(editorWindow).catch((error) => {
+      if (error && (error.code === "ERR_ABORTED" || error.errno === -3)) {
+        return;
+      }
+      console.error("Failed to load the drawio editor:", error);
+    });
   });
 }
 
@@ -3135,6 +3266,7 @@ const menuState = {
   pageOrientation: "portrait",
   responsiveContentWrappingEnabled: true,
   paperViewEnabled: true,
+  aiChatVisible: false,
   editorViewMode: "rich-text"
 };
 
@@ -3232,7 +3364,7 @@ function buildRecentFilesSubmenu() {
   return items;
 }
 
-// The AI selection items shared by the Edit menu: simple one-shot actions plus the "Change tone"
+// The AI selection items for the AI menu: simple one-shot actions plus the "Change tone"
 // and "Translate" submenus. The catalog comes from aiSelectionCatalog.cjs (kept in sync with
 // src/lib/ai/prompts.ts by aiSelectionCatalog.test.ts). Each click sends an `aiSelection` menu
 // action carrying the prompt id (and any options) to the renderer, which runs it against the
@@ -3432,19 +3564,12 @@ function buildMenu() {
         {
           label: "Paste",
           role: "paste"
-        },
-        {
-          type: "separator"
-        },
-        ...buildAiSelectionMenuItems(),
-        {
-          type: "separator"
-        },
-        {
-          label: "AI Providers…",
-          click: () => sendMenuAction("aiSettings")
         }
       ]
+    },
+    {
+      label: "AI",
+      submenu: buildAiSelectionMenuItems()
     },
     {
       label: "View",
@@ -3490,6 +3615,13 @@ function buildMenu() {
           click: () => sendMenuAction("toggleOutline")
         },
         {
+          label: "Show AI Chat",
+          type: "checkbox",
+          accelerator: "CmdOrCtrl+Shift+A",
+          checked: menuState.aiChatVisible,
+          click: () => sendMenuAction("toggleAiChat")
+        },
+        {
           label: "Landscape Orientation",
           type: "checkbox",
           checked: menuState.pageOrientation === "landscape",
@@ -3517,6 +3649,10 @@ function buildMenu() {
           label: "Preferences",
           accelerator: "CmdOrCtrl+,",
           click: () => sendMenuAction("settings")
+        },
+        {
+          label: "AI Providers…",
+          click: () => sendMenuAction("aiSettings")
         }
       ]
     },
@@ -4042,7 +4178,8 @@ function getAiProviderKeyStorePath() {
   return path.join(app.getPath("userData"), "ai-provider-keys.json");
 }
 
-const AI_PROVIDER_IDS = ["openai", "azure-openai", "deepseek", "anthropic"];
+// Mirrors AI_PROVIDER_IDS in src/lib/ai/providers.ts (main runs raw CJS, so it can't import the TS).
+const AI_PROVIDER_IDS = ["openai", "azure-openai", "deepseek", "anthropic", "ollama", "lm-studio"];
 
 function aiKeyEntryKey(profileName, providerId) {
   const profile = typeof profileName === "string" && profileName.trim() ? profileName.trim() : "default";
@@ -4194,6 +4331,234 @@ ipcMain.handle("ai:chat", async (_event, payload) => {
   }
 });
 
+// In-app AI chat — tool surface. Expose the MCP tool catalog and a direct tool-call path so the
+// chat panel offers exactly the same tools (and the same write-confirmation gate) as the network
+// MCP server, without requiring that server to be enabled.
+ipcMain.handle("mcp:list-tools", () => {
+  return mcpServer.listTools();
+});
+
+ipcMain.handle("mcp:call-tool", async (_event, payload) => {
+  const name = payload && typeof payload === "object" ? payload.name : undefined;
+  const args = payload && typeof payload === "object" ? payload.args : undefined;
+  if (typeof name !== "string" || !name) {
+    return { isError: true, content: [{ type: "text", text: "A tool name is required." }] };
+  }
+  try {
+    return await mcpServer.callTool(name, args, { clientLabel: "Nexus AI chat" });
+  } catch (error) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }]
+    };
+  }
+});
+
+// In-app AI chat — streaming bridge. ipcMain.handle can't stream, so the renderer sends
+// "ai:chat-stream" with a requestId, we forward normalized SSE deltas on "ai:chat-stream-event",
+// and "ai:chat-abort" cancels the in-flight fetch via its AbortController. This is one provider turn
+// per call; the renderer's agent loop reissues for tool follow-ups.
+const AI_CHAT_STREAM_TIMEOUT_MS = 120000;
+const aiChatStreamControllers = new Map();
+
+function sendAiChatStreamEvent(sender, requestId, event) {
+  if (!sender || sender.isDestroyed()) {
+    return;
+  }
+  sender.send("ai:chat-stream-event", { requestId, event });
+}
+
+async function runAiChatStream(sender, requestId, payload) {
+  const {
+    profileName,
+    providerId,
+    config,
+    messages,
+    system,
+    tools,
+    temperature,
+    maxTokens
+  } = payload && typeof payload === "object" ? payload : {};
+
+  if (!AI_PROVIDER_IDS.includes(providerId)) {
+    sendAiChatStreamEvent(sender, requestId, {
+      type: "error",
+      error: `Unknown AI provider: ${String(providerId)}`
+    });
+    return;
+  }
+
+  const apiKey = await readAiProviderKey(profileName, providerId);
+  const missing = aiProviders.describeMissingConfig({ providerId, config, apiKey });
+  if (missing) {
+    sendAiChatStreamEvent(sender, requestId, { type: "error", error: missing });
+    return;
+  }
+
+  let request;
+  try {
+    request = aiProviders.buildAgentChatHttpRequest({
+      providerId,
+      config,
+      apiKey,
+      messages,
+      system,
+      tools,
+      temperature,
+      maxTokens
+    });
+  } catch (error) {
+    sendAiChatStreamEvent(sender, requestId, {
+      type: "error",
+      error: `Failed to build the request: ${error?.message ?? error}`
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  aiChatStreamControllers.set(requestId, controller);
+  // A safety timeout so a stalled stream cannot hang the controller map forever; a normal Stop or
+  // completion clears it well before this fires.
+  const timeout = setTimeout(() => controller.abort(), AI_CHAT_STREAM_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      let json = null;
+      try {
+        json = await response.json();
+      } catch {
+        json = null;
+      }
+      const parsed = aiProviders.parseAgentChatResult({ providerId, status: response.status, json });
+      sendAiChatStreamEvent(sender, requestId, {
+        type: "error",
+        status: response.status,
+        error: parsed.ok ? `Request failed with HTTP ${response.status}` : parsed.error
+      });
+      return;
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    // Fallback: a provider/proxy that ignored stream:true returns one JSON body — parse it once.
+    if (!contentType.includes("text/event-stream") || !response.body) {
+      let json = null;
+      try {
+        json = await response.json();
+      } catch {
+        json = null;
+      }
+      const parsed = aiProviders.parseAgentChatResult({ providerId, status: response.status, json });
+      if (!parsed.ok) {
+        sendAiChatStreamEvent(sender, requestId, {
+          type: "error",
+          status: parsed.status,
+          error: parsed.error
+        });
+        return;
+      }
+      if (parsed.text) {
+        sendAiChatStreamEvent(sender, requestId, { type: "text", text: parsed.text });
+      }
+      sendAiChatStreamEvent(sender, requestId, { type: "result", result: parsed });
+      return;
+    }
+
+    const decoder = aiProviders.createSseDecoder();
+    const parseEvent = aiProviders.getStreamEventParser(providerId);
+    const state = aiProviders.createStreamState();
+    const reader = response.body.getReader();
+    const textDecoder = new TextDecoder();
+    let streamError = null;
+
+    for (;;) {
+      if (controller.signal.aborted) {
+        break;
+      }
+      let chunk;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        if (controller.signal.aborted) {
+          break;
+        }
+        throw error;
+      }
+      if (chunk.done) {
+        break;
+      }
+      for (const sseEvent of decoder.push(textDecoder.decode(chunk.value, { stream: true }))) {
+        if (sseEvent.done || !sseEvent.json) {
+          continue;
+        }
+        for (const normalized of parseEvent(sseEvent.json)) {
+          if (normalized.type === "stream_error") {
+            streamError = normalized.message;
+            continue;
+          }
+          aiProviders.applyStreamEvent(state, normalized);
+          // Forward only the events the UI renders live; the final result carries the rest.
+          if (normalized.type === "text" || normalized.type === "tool_call_delta") {
+            sendAiChatStreamEvent(sender, requestId, normalized);
+          }
+        }
+      }
+    }
+
+    if (controller.signal.aborted) {
+      return; // The renderer already tore down its side; stay silent.
+    }
+    if (streamError) {
+      sendAiChatStreamEvent(sender, requestId, { type: "error", error: streamError });
+      return;
+    }
+    sendAiChatStreamEvent(sender, requestId, {
+      type: "result",
+      result: aiProviders.finalizeStreamState(state)
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return;
+    }
+    sendAiChatStreamEvent(sender, requestId, {
+      type: "error",
+      error: `Network error: ${error?.message ?? error}`
+    });
+  } finally {
+    clearTimeout(timeout);
+    aiChatStreamControllers.delete(requestId);
+  }
+}
+
+ipcMain.on("ai:chat-stream", (event, payload) => {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  const { requestId, payload: chatPayload } = payload;
+  if (typeof requestId !== "string" || !requestId) {
+    return;
+  }
+  void runAiChatStream(event.sender, requestId, chatPayload);
+});
+
+ipcMain.on("ai:chat-abort", (_event, payload) => {
+  const requestId = payload && typeof payload === "object" ? payload.requestId : undefined;
+  if (typeof requestId !== "string") {
+    return;
+  }
+  const controller = aiChatStreamControllers.get(requestId);
+  if (controller) {
+    controller.abort();
+    aiChatStreamControllers.delete(requestId);
+  }
+});
+
 ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
@@ -4268,6 +4633,12 @@ ipcMain.handle("image:select-base64", async () => {
 ipcMain.handle("image:resolve-preview", (_event, payload) => {
   const { documentPath, imageSource } = payload ?? {};
   return resolveImagePreviewSource(documentPath, imageSource);
+});
+
+ipcMain.handle("drawio:edit", (event, payload) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender);
+  const initialXml = typeof payload?.xml === "string" ? payload.xml : "";
+  return openDrawioEditor(parentWindow, initialXml);
 });
 
 ipcMain.handle("edit:command", (event, command) => {
@@ -4677,6 +5048,12 @@ ipcMain.on("menu:set-state", (_event, state) => {
   if (typeof state.paperViewEnabled === "boolean" &&
       state.paperViewEnabled !== menuState.paperViewEnabled) {
     menuState.paperViewEnabled = state.paperViewEnabled;
+    changed = true;
+  }
+
+  if (typeof state.aiChatVisible === "boolean" &&
+      state.aiChatVisible !== menuState.aiChatVisible) {
+    menuState.aiChatVisible = state.aiChatVisible;
     changed = true;
   }
 

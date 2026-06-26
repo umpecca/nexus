@@ -1246,11 +1246,30 @@ async function testConnection(options = {}) {
   return { local, ngrok };
 }
 
+// The full tool catalog the server advertises over `tools/list`. Exposed so the in-app AI chat
+// panel can offer exactly the same tools the network MCP server does (no drift between the two).
+function listTools() {
+  return [...READ_ONLY_TOOLS, WRITE_TOOL, ...WRITE_TOOLS];
+}
+
+// Invoke a tool through the very same dispatch path the JSON-RPC server uses, so an in-app caller
+// (the AI chat panel) and an external MCP client get identical behavior — including routing writes
+// through the in-app diff confirmation. `clientLabel` is what the write-confirmation dialog shows.
+function callTool(name, args, context) {
+  const clientLabel =
+    context && typeof context.clientLabel === "string" && context.clientLabel
+      ? context.clientLabel
+      : lastClientLabel || "unknown";
+  return dispatchToolCall(name, args, { clientLabel });
+}
+
 module.exports = {
   setHost,
   configure,
   stop,
   getListeningInfo,
   getLastClientLabel,
-  testConnection
+  testConnection,
+  listTools,
+  callTool
 };

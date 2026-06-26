@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_SELECTION_ACTIONS,
   AI_SELECTION_BASE_SYSTEM,
+  buildChatSystemPrompt,
   buildSelectionPrompt,
   describeSelectionAction
 } from "./prompts";
@@ -39,6 +40,28 @@ describe("describeSelectionAction", () => {
   it("appends the option for tone and translate", () => {
     expect(describeSelectionAction("tone", { tone: "casual" })).toBe("Change tone · casual");
     expect(describeSelectionAction("translate", { language: "French" })).toBe("Translate · French");
+  });
+});
+
+describe("buildChatSystemPrompt", () => {
+  it("frames the assistant around the nexus_* tools and approval gate", () => {
+    const system = buildChatSystemPrompt();
+    expect(system).toContain("Nexus AI");
+    expect(system).toContain("nexus_get_outline");
+    expect(system).toContain("nexus_apply_edits");
+    expect(system.toLowerCase()).toContain("approval");
+  });
+
+  it("includes the file name when provided", () => {
+    expect(buildChatSystemPrompt({ fileName: "notes.md" })).toContain("notes.md");
+  });
+
+  it("tells the model tools are scoped to the document so no windowId is needed", () => {
+    expect(buildChatSystemPrompt().toLowerCase()).toContain("never need to pass a windowid");
+  });
+
+  it("describes an untitled document when no file name is given", () => {
+    expect(buildChatSystemPrompt().toLowerCase()).toContain("untitled");
   });
 });
 

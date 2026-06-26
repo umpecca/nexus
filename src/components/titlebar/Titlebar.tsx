@@ -31,6 +31,7 @@ export type TitlebarProps = {
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
   outlineVisible: boolean;
+  aiChatVisible: boolean;
   pageOrientation: EditorPageOrientation;
   responsiveContentWrappingEnabled: boolean;
   paperViewEnabled: boolean;
@@ -44,6 +45,7 @@ type AppMenuBarProps = {
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
   outlineVisible: boolean;
+  aiChatVisible: boolean;
   pageOrientation: EditorPageOrientation;
   responsiveContentWrappingEnabled: boolean;
   paperViewEnabled: boolean;
@@ -57,6 +59,7 @@ function AppMenuBar({
   showInvisibleCharacters,
   spellCheckEnabled,
   outlineVisible,
+  aiChatVisible,
   pageOrientation,
   responsiveContentWrappingEnabled,
   paperViewEnabled,
@@ -126,8 +129,12 @@ function AppMenuBar({
           </MenubarItem>
           <MenubarSeparator />
           <MenubarItem onSelect={() => dispatchMenuAction("find")}>
-            Find
+            Find…
             <MenubarShortcut>Ctrl+F</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem onSelect={() => dispatchMenuAction("replace")}>
+            Replace…
+            <MenubarShortcut>Ctrl+H</MenubarShortcut>
           </MenubarItem>
           <MenubarSeparator />
           <MenubarItem onSelect={() => dispatchMenuAction("refresh")}>Refresh</MenubarItem>
@@ -157,7 +164,12 @@ function AppMenuBar({
             Paste
             <MenubarShortcut>Ctrl+V</MenubarShortcut>
           </MenubarItem>
-          <MenubarSeparator />
+        </MenubarContent>
+      </MenubarMenu>
+
+      <MenubarMenu>
+        <MenubarTrigger>AI</MenubarTrigger>
+        <MenubarContent>
           {AI_SELECTION_ACTIONS.map((action) => (
             <MenubarItem key={action.id} onSelect={() => onAiSelectionAction(action.id)}>
               {action.label}
@@ -189,10 +201,6 @@ function AppMenuBar({
               ))}
             </MenubarSubContent>
           </MenubarSub>
-          <MenubarSeparator />
-          <MenubarItem onSelect={() => dispatchMenuAction("aiSettings")}>
-            AI Providers…
-          </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
 
@@ -233,6 +241,12 @@ function AppMenuBar({
             Show Outline
           </MenubarCheckboxItem>
           <MenubarCheckboxItem
+            checked={aiChatVisible}
+            onCheckedChange={() => dispatchMenuAction("toggleAiChat")}
+          >
+            Show AI Chat
+          </MenubarCheckboxItem>
+          <MenubarCheckboxItem
             checked={pageOrientation === "landscape"}
             onCheckedChange={() => dispatchMenuAction("togglePageOrientation")}
           >
@@ -260,6 +274,9 @@ function AppMenuBar({
           <MenubarItem onSelect={() => dispatchMenuAction("settings")}>
             Preferences
             <MenubarShortcut>Ctrl+,</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem onSelect={() => dispatchMenuAction("aiSettings")}>
+            AI Providers…
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
@@ -332,6 +349,7 @@ export function Titlebar({
   showInvisibleCharacters,
   spellCheckEnabled,
   outlineVisible,
+  aiChatVisible,
   pageOrientation,
   responsiveContentWrappingEnabled,
   paperViewEnabled,
@@ -346,6 +364,7 @@ export function Titlebar({
       <div className="nexus-titlebar-left">
         {isMac ? null : (
           <AppMenuBar
+            aiChatVisible={aiChatVisible}
             canEditFrontmatter={canEditFrontmatter}
             canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}

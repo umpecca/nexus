@@ -1,7 +1,26 @@
 export {};
 
-import type { AiChatPayload, AiChatResult, AiProviderId } from "./lib/ai/providers";
+import type {
+  AiAgentChatPayload,
+  AiChatPayload,
+  AiChatResult,
+  AiChatStreamEvent,
+  AiProviderId
+} from "./lib/ai/providers";
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
+
+/** A tool advertised by the in-process MCP host (mirrors an MCP `tools/list` entry). */
+export type McpToolDefinition = {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+};
+
+/** The content envelope an MCP tool call returns (matches the JSON-RPC `tools/call` result). */
+export type McpToolResult = {
+  content?: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+};
 
 export type NexusMenuAction =
   | "new"
@@ -32,6 +51,7 @@ export type NexusMenuAction =
   | "editFrontmatter"
   | "publishWeb"
   | "publishQuickConnect"
+  | "toggleAiChat"
   | "aiSelection";
 
 /**
@@ -51,6 +71,7 @@ type NexusMenuState = {
   pageOrientation?: "portrait" | "landscape";
   responsiveContentWrappingEnabled?: boolean;
   paperViewEnabled?: boolean;
+  aiChatVisible?: boolean;
   editorViewMode?: "rich-text" | "source" | "diff";
 };
 type NexusEditCommand = "cut" | "copy" | "paste" | "undo" | "redo";
@@ -104,6 +125,12 @@ type SelectLocalImageResult =
 type SelectBase64ImageResult =
   | { canceled: true }
   | { canceled: false; filePath: string; mimeType: string; dataUrl: string };
+
+// Result of editing a diagram in the drawio editor window. On save, `dataUrl` is an editable-SVG
+// `data:image/svg+xml` URL (the diagram source XML is embedded in the SVG) and `xml` is that source.
+type EditDiagramResult =
+  | { canceled: true }
+  | { canceled: false; dataUrl: string; xml: string };
 
 type ConfigureMcpServerInput = {
   enabled: boolean;
@@ -287,6 +314,7 @@ declare global {
       selectLocalImage(documentPath?: string): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
+      editDiagram(payload: { xml: string }): Promise<EditDiagramResult>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
       setMenuState(state: NexusMenuState): void;
       configureMcpServer(config: ConfigureMcpServerInput): Promise<ConfigureMcpServerResult>;
@@ -316,6 +344,13 @@ declare global {
         key: string
       ): Promise<QuickConnectTokenSaveResult>;
       aiChat(payload: AiChatPayload): Promise<AiChatResult>;
+      listMcpTools(): Promise<McpToolDefinition[]>;
+      callMcpTool(payload: { name: string; args?: unknown }): Promise<McpToolResult>;
+      startAiChatStream(requestId: string, payload: AiAgentChatPayload): void;
+      abortAiChatStream(requestId: string): void;
+      onAiChatStreamEvent(
+        callback: (payload: { requestId: string; event: AiChatStreamEvent }) => void
+      ): () => void;
       selectPrivateKeyFile(): Promise<SelectPrivateKeyResult>;
       onConfirmHostKey(callback: (event: ConfirmHostKeyEvent) => void): () => void;
       resolveHostKey(requestId: string, decision: HostKeyDecision): void;

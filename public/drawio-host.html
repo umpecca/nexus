@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Edit diagram</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #ffffff;
+      }
+      #drawio {
+        display: block;
+        border: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Host page for the bundled drawio editor. drawio runs in this iframe in embed mode
+      (proto=json) and posts its protocol messages to window.parent (this page); the dedicated
+      preload (electron/drawioPreload.cjs) bridges them to the Electron main process, which drives
+      the session via electron/drawioEmbed.cjs. Loading drawio in an iframe (rather than top-level)
+      matches drawio's documented embedding so its postMessage handshake works reliably.
+    -->
+    <iframe
+      id="drawio"
+      src="drawio/index.html?embed=1&proto=json&spin=1&libraries=1"
+      allow="clipboard-read; clipboard-write"
+    ></iframe>
+    <div
+      id="drawio-missing"
+      style="display:none;position:fixed;inset:0;background:#fff;color:#1f2937;font-family:system-ui,-apple-system,sans-serif;padding:2rem;line-height:1.5;"
+    >
+      <h2 style="margin-top:0;">Diagram editor could not load</h2>
+      <p>The bundled drawio web app did not start. From the project root, run:</p>
+      <pre style="background:#f3f4f6;padding:0.75rem 1rem;border-radius:6px;">npm run fetch:drawio</pre>
+      <p>then rebuild and try again. You can close this window.</p>
+    </div>
+    <script>
+      // If drawio never completes its embed handshake (most often: the app was never vendored, so
+      // the iframe is blank), reveal an explanatory overlay instead of leaving the window blank.
+      (function () {
+        var ready = false;
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (typeof data === "string") {
+            try {
+              data = JSON.parse(data);
+            } catch (_error) {
+              return;
+            }
+          }
+          if (data && data.event) {
+            ready = true;
+          }
+        });
+        setTimeout(function () {
+          if (!ready) {
+            document.getElementById("drawio").style.display = "none";
+            document.getElementById("drawio-missing").style.display = "block";
+          }
+        }, 12000);
+      })();
+    </script>
+  </body>
+</html>

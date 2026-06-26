@@ -1,11 +1,13 @@
-import { Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
+import { MessageSquare, Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
 
 export type StatusBarProps = {
   aiBusy: boolean;
+  aiChatVisible: boolean;
   canToggleOutline: boolean;
   isDirty: boolean;
   maxZoom: number;
   minZoom: number;
+  onToggleAiChat: () => void;
   onToggleOutline: () => void;
   onZoomChange: (zoomPercent: number) => void;
   onZoomIn: () => void;
@@ -19,10 +21,12 @@ export type StatusBarProps = {
 /** Word 2010-style status bar: outline toggle + word count on the left, zoom slider on the right. */
 function StatusBar({
   aiBusy,
+  aiChatVisible,
   canToggleOutline,
   isDirty,
   maxZoom,
   minZoom,
+  onToggleAiChat,
   onToggleOutline,
   onZoomChange,
   onZoomIn,
@@ -71,6 +75,17 @@ function StatusBar({
         ) : null}
       </div>
       <div className="nexus-statusbar-right">
+        <button
+          aria-pressed={aiChatVisible}
+          className="nexus-statusbar-button nexus-statusbar-toggle"
+          onClick={onToggleAiChat}
+          title={aiChatVisible ? "Hide AI chat" : "Show AI chat"}
+          type="button"
+        >
+          <MessageSquare aria-hidden="true" />
+          <span>AI Chat</span>
+        </button>
+        <span aria-hidden="true" className="nexus-statusbar-sep" />
         <button
           className="nexus-statusbar-button nexus-statusbar-zoom-value"
           onClick={onZoomReset}

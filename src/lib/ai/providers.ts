@@ -5,13 +5,21 @@
 // persistence build on. Model names are kept as free-text fields seeded by `suggestedModels`, so the
 // suggestions can drift without the configured value ever becoming invalid.
 
-export type AiProviderId = "openai" | "azure-openai" | "deepseek" | "anthropic";
+export type AiProviderId =
+  | "openai"
+  | "azure-openai"
+  | "deepseek"
+  | "anthropic"
+  | "ollama"
+  | "lm-studio";
 
 export const AI_PROVIDER_IDS: readonly AiProviderId[] = [
   "openai",
   "azure-openai",
   "deepseek",
-  "anthropic"
+  "anthropic",
+  "ollama",
+  "lm-studio"
 ];
 
 export type AiMessageRole = "system" | "user" | "assistant";
@@ -53,6 +61,59 @@ export interface AiChatPayload {
   maxTokens?: number;
 }
 
+// --- Agentic (tool-calling, streaming) types, used by the in-app AI chat panel. ---------------
+
+/** A tool the model may call. `inputSchema` is a JSON Schema object (the MCP tool's inputSchema). */
+export interface AiToolDefinition {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+/** A tool call the model emitted. `arguments` is the raw JSON string the model produced. */
+export interface AiToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/** The richer message shape the agent loop exchanges (tool calls + tool results, not just text). */
+export type AiAgentMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string; toolCalls?: AiToolCall[] }
+  | { role: "tool"; toolCallId: string; toolName: string; content: string; isError?: boolean };
+
+/** Full payload for a single streamed agent turn (the API key is added by the main process). */
+export interface AiAgentChatPayload {
+  profileName: string;
+  providerId: AiProviderId;
+  config: AiRequestConfig;
+  messages: AiAgentMessage[];
+  system?: string;
+  tools?: AiToolDefinition[];
+  temperature?: number;
+  maxTokens?: number;
+}
+
+/** Result of one completed agent turn (after the stream is fully assembled). */
+export type AiAgentChatResult =
+  | {
+      ok: true;
+      text: string;
+      toolCalls: AiToolCall[];
+      model: string;
+      finishReason?: string;
+      usage?: AiChatUsage;
+    }
+  | { ok: false; status?: number; error: string };
+
+/** A normalized streaming delta forwarded from the main process during an agent turn. */
+export type AiChatStreamEvent =
+  | { type: "text"; text: string }
+  | { type: "tool_call_delta"; index: number; id?: string; name?: string; argsFragment?: string }
+  | { type: "result"; result: AiAgentChatResult }
+  | { type: "error"; status?: number; error: string };
+
 /** Non-secret, persisted per-provider configuration (see settings.ts for defaults/sanitization). */
 export interface AiProviderConfig {
   enabled: boolean;
@@ -83,6 +144,8 @@ export interface AiProviderMeta {
   usesBaseUrl: boolean;
   /** True when the provider needs the Azure resource/deployment/api-version fields instead. */
   usesAzureFields: boolean;
+  /** False for local runtimes (Ollama, LM Studio) that accept requests with no API key. */
+  requiresApiKey: boolean;
   keyPlaceholder: string;
 }
 
@@ -104,6 +167,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     suggestedModels: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"],
     usesBaseUrl: true,
     usesAzureFields: false,
+    requiresApiKey: true,
     keyPlaceholder: "sk-…"
   },
   "azure-openai": {
@@ -115,6 +179,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     suggestedModels: [],
     usesBaseUrl: false,
     usesAzureFields: true,
+    requiresApiKey: true,
     keyPlaceholder: "Azure API key"
   },
   deepseek: {
@@ -126,6 +191,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     suggestedModels: ["deepseek-v4-flash", "deepseek-v4-pro"],
     usesBaseUrl: true,
     usesAzureFields: false,
+    requiresApiKey: true,
     keyPlaceholder: "sk-…"
   },
   anthropic: {
@@ -137,7 +203,35 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     suggestedModels: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
     usesBaseUrl: true,
     usesAzureFields: false,
+    requiresApiKey: true,
     keyPlaceholder: "sk-ant-…"
+  },
+  // Local runtimes that expose an OpenAI-compatible API on loopback. They need no API key, so the
+  // key field is optional and the adapter omits the Authorization header when none is set. Each just
+  // defaults the base URL to its server's port; the model is whatever the user has pulled/loaded.
+  ollama: {
+    id: "ollama",
+    label: "Ollama (local)",
+    kind: "openai-compatible",
+    defaultBaseUrl: "http://localhost:11434/v1",
+    defaultModel: "llama3.1",
+    suggestedModels: ["llama3.1", "llama3.2", "qwen2.5", "mistral", "gemma2", "phi4"],
+    usesBaseUrl: true,
+    usesAzureFields: false,
+    requiresApiKey: false,
+    keyPlaceholder: "Not required for local servers"
+  },
+  "lm-studio": {
+    id: "lm-studio",
+    label: "LM Studio (local)",
+    kind: "openai-compatible",
+    defaultBaseUrl: "http://localhost:1234/v1",
+    defaultModel: "",
+    suggestedModels: [],
+    usesBaseUrl: true,
+    usesAzureFields: false,
+    requiresApiKey: false,
+    keyPlaceholder: "Not required for local servers"
   }
 };
 

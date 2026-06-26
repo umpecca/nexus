@@ -79,6 +79,65 @@ describe("buildChatHttpRequest — DeepSeek", () => {
   });
 });
 
+describe("buildChatHttpRequest — local runtimes (Ollama / LM Studio)", () => {
+  it("uses the Ollama loopback base URL and omits the Authorization header when no key is set", () => {
+    const request = buildChatHttpRequest({
+      providerId: "ollama",
+      config: { model: "llama3.1" },
+      apiKey: "",
+      messages: userMessages
+    });
+
+    expect(request.url).toBe("http://localhost:11434/v1/chat/completions");
+    expect(request.headers.Authorization).toBeUndefined();
+    expect(request.body.model).toBe("llama3.1");
+  });
+
+  it("uses the LM Studio loopback base URL", () => {
+    const request = buildChatHttpRequest({
+      providerId: "lm-studio",
+      config: { model: "local-model" },
+      apiKey: "",
+      messages: userMessages
+    });
+
+    expect(request.url).toBe("http://localhost:1234/v1/chat/completions");
+    expect(request.headers.Authorization).toBeUndefined();
+  });
+
+  it("still sends a Bearer header when a key is provided (e.g. a secured proxy)", () => {
+    const request = buildChatHttpRequest({
+      providerId: "ollama",
+      config: { model: "llama3.1" },
+      apiKey: "secret",
+      messages: userMessages
+    });
+
+    expect(request.headers.Authorization).toBe("Bearer secret");
+  });
+});
+
+describe("describeMissingConfig — local runtimes", () => {
+  it("does not require an API key for keyless local providers", () => {
+    expect(
+      describeMissingConfig({ providerId: "ollama", config: { model: "llama3.1" }, apiKey: "" })
+    ).toBeNull();
+    expect(
+      describeMissingConfig({ providerId: "lm-studio", config: { model: "local-model" }, apiKey: "" })
+    ).toBeNull();
+  });
+
+  it("still requires a model name for local providers", () => {
+    expect(describeMissingConfig({ providerId: "ollama", config: {}, apiKey: "" })).toMatch(/model/i);
+  });
+
+  it("still requires an API key for cloud providers", () => {
+    expect(
+      describeMissingConfig({ providerId: "openai", config: { model: "gpt-4o" }, apiKey: "" })
+    ).toMatch(/API key/i);
+  });
+});
+
 describe("buildChatHttpRequest — Azure OpenAI", () => {
   it("builds the deployment URL, uses an api-key header, and omits model from the body", () => {
     const request = buildChatHttpRequest({

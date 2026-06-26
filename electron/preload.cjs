@@ -8,6 +8,7 @@ const exportProgressChannel = "export:progress";
 const mcpConfirmWriteChannel = "mcp:confirm-write";
 const mcpRequestSelectionChannel = "mcp:request-selection";
 const sftpConfirmHostKeyChannel = "sftp:confirm-host-key";
+const aiChatStreamEventChannel = "ai:chat-stream-event";
 
 contextBridge.exposeInMainWorld("nexus", {
   platform: process.platform,
@@ -99,6 +100,9 @@ contextBridge.exposeInMainWorld("nexus", {
   resolveImagePreview(documentPath, imageSource) {
     return ipcRenderer.invoke("image:resolve-preview", { documentPath, imageSource });
   },
+  editDiagram(payload) {
+    return ipcRenderer.invoke("drawio:edit", payload);
+  },
   confirmSaveChanges() {
     return ipcRenderer.invoke("dialog:confirmSaveChanges");
   },
@@ -168,6 +172,23 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   aiChat(payload) {
     return ipcRenderer.invoke("ai:chat", payload);
+  },
+  listMcpTools() {
+    return ipcRenderer.invoke("mcp:list-tools");
+  },
+  callMcpTool(payload) {
+    return ipcRenderer.invoke("mcp:call-tool", payload);
+  },
+  startAiChatStream(requestId, payload) {
+    ipcRenderer.send("ai:chat-stream", { requestId, payload });
+  },
+  abortAiChatStream(requestId) {
+    ipcRenderer.send("ai:chat-abort", { requestId });
+  },
+  onAiChatStreamEvent(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(aiChatStreamEventChannel, listener);
+    return () => ipcRenderer.removeListener(aiChatStreamEventChannel, listener);
   },
   selectPrivateKeyFile() {
     return ipcRenderer.invoke("dialog:select-private-key");

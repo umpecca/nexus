@@ -1498,6 +1498,507 @@ body.nexus-resizing-col * {
   }
 }
 
+/* Visually-hidden label for icon-only buttons. */
+.nexus-sr-only {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* ---- AI chat side panel -------------------------------------------------- */
+.nexus-ai-chat {
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.nexus-ai-chat-resizer {
+  cursor: col-resize;
+  inset-block: 0;
+  inset-inline-start: -3px;
+  position: absolute;
+  width: 6px;
+  z-index: 2;
+}
+
+.nexus-ai-chat-resizer:hover,
+.nexus-ai-chat-resizer:focus-visible {
+  background: var(--focus-ring);
+  outline: none;
+}
+
+.nexus-ai-chat-header {
+  align-items: center;
+  background: var(--statusbar-grad);
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.nexus-ai-chat-header-icon {
+  color: var(--accent);
+  flex: none;
+  height: 16px;
+  width: 16px;
+}
+
+.nexus-ai-chat-header-titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nexus-ai-chat-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.nexus-ai-chat-subtitle {
+  color: var(--muted);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-ai-chat-header-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  padding: 0.25rem;
+}
+
+.nexus-ai-chat-header-button:hover:not(:disabled) {
+  background: var(--toolbar-hover);
+  color: var(--ink);
+}
+
+.nexus-ai-chat-header-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.nexus-ai-chat-header-button svg {
+  height: 15px;
+  width: 15px;
+}
+
+.nexus-ai-chat-empty {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.85rem;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.nexus-ai-chat-empty-icon {
+  color: var(--accent);
+  height: 28px;
+  width: 28px;
+}
+
+.nexus-ai-chat-empty-text {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.nexus-ai-chat-empty-button {
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--on-accent);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.9rem;
+}
+
+.nexus-ai-chat-empty-button:hover {
+  background: var(--accent-strong);
+}
+
+.nexus-ai-chat-transcript {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.85rem;
+}
+
+.nexus-ai-chat-placeholder {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: auto 0;
+  text-align: center;
+}
+
+.nexus-ai-chat-msg {
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+.nexus-ai-chat-msg-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--on-accent);
+  max-width: 85%;
+  padding: 0.5rem 0.7rem;
+  white-space: pre-wrap;
+}
+
+.nexus-ai-chat-msg-assistant {
+  align-self: stretch;
+  color: var(--ink);
+}
+
+.nexus-ai-chat-markdown {
+  display: inline;
+}
+
+.nexus-ai-chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.nexus-ai-chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.nexus-ai-chat-markdown p,
+.nexus-ai-chat-markdown ul,
+.nexus-ai-chat-markdown ol,
+.nexus-ai-chat-markdown pre,
+.nexus-ai-chat-markdown blockquote {
+  margin: 0.4rem 0;
+}
+
+.nexus-ai-chat-markdown ul,
+.nexus-ai-chat-markdown ol {
+  padding-inline-start: 1.3rem;
+}
+
+.nexus-ai-chat-markdown code {
+  background: var(--surface-muted);
+  border-radius: 4px;
+  font-family: "JetBrains Mono", "Roboto Mono", "Courier New", monospace;
+  font-size: 0.8em;
+  padding: 0.1em 0.35em;
+}
+
+.nexus-ai-chat-markdown pre {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  padding: 0.6rem 0.7rem;
+}
+
+.nexus-ai-chat-markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.nexus-ai-chat-markdown a {
+  color: var(--accent);
+}
+
+.nexus-ai-chat-markdown table {
+  border-collapse: collapse;
+}
+
+.nexus-ai-chat-markdown th,
+.nexus-ai-chat-markdown td {
+  border: 1px solid var(--line);
+  padding: 0.25rem 0.5rem;
+}
+
+.nexus-ai-chat-caret {
+  animation: nexus-ai-pulse 1s ease-in-out infinite;
+  background: var(--accent);
+  display: inline-block;
+  height: 1em;
+  margin-inline-start: 2px;
+  vertical-align: text-bottom;
+  width: 2px;
+}
+
+.nexus-ai-chat-stopped {
+  color: var(--muted);
+  display: block;
+  font-size: 0.72rem;
+  font-style: italic;
+  margin-top: 0.3rem;
+}
+
+/* Tool call disclosure chip. */
+.nexus-ai-chat-tool {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.nexus-ai-chat-tool-error {
+  border-color: var(--danger);
+}
+
+.nexus-ai-chat-tool-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 0.4rem;
+  list-style: none;
+  padding: 0.4rem 0.6rem;
+}
+
+.nexus-ai-chat-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.nexus-ai-chat-tool-icon,
+.nexus-ai-chat-tool-spinner {
+  color: var(--muted);
+  flex: none;
+  height: 14px;
+  width: 14px;
+}
+
+.nexus-ai-chat-tool-spinner {
+  animation: nexus-ai-spin 0.9s linear infinite;
+}
+
+.nexus-ai-chat-tool-name {
+  flex: 1 1 auto;
+  font-family: "JetBrains Mono", "Roboto Mono", "Courier New", monospace;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-ai-chat-tool-status {
+  color: var(--muted);
+  flex: none;
+  font-size: 0.7rem;
+}
+
+.nexus-ai-chat-tool-error .nexus-ai-chat-tool-status {
+  color: var(--danger);
+}
+
+.nexus-ai-chat-tool-body {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.nexus-ai-chat-tool-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.nexus-ai-chat-tool-pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  font-family: "JetBrains Mono", "Roboto Mono", "Courier New", monospace;
+  font-size: 0.72rem;
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.4rem 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nexus-ai-chat-error {
+  align-items: flex-start;
+  background: var(--danger-bg);
+  color: var(--danger);
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.nexus-ai-chat-error-icon {
+  flex: none;
+  height: 15px;
+  margin-top: 1px;
+  width: 15px;
+}
+
+.nexus-ai-chat-composer {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+}
+
+.nexus-ai-chat-composer-row {
+  align-items: flex-end;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* "Selection attached" chip above the composer. */
+.nexus-ai-chat-selection-chip {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.5rem;
+}
+
+.nexus-ai-chat-selection-chip-icon {
+  color: var(--accent);
+  flex: none;
+  height: 13px;
+  width: 13px;
+}
+
+.nexus-ai-chat-selection-chip-text {
+  color: var(--muted);
+  flex: 1 1 auto;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-ai-chat-selection-chip-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  padding: 0.1rem;
+}
+
+.nexus-ai-chat-selection-chip-remove:hover {
+  background: var(--toolbar-hover);
+  color: var(--ink);
+}
+
+.nexus-ai-chat-selection-chip-remove svg {
+  height: 13px;
+  width: 13px;
+}
+
+/* "selection" tag shown on a user message that carried an attached selection. */
+.nexus-ai-chat-msg-selection-tag {
+  align-items: center;
+  display: flex;
+  font-size: 0.68rem;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+  opacity: 0.85;
+}
+
+.nexus-ai-chat-msg-selection-tag svg {
+  height: 12px;
+  width: 12px;
+}
+
+.nexus-ai-chat-input {
+  background: var(--surface);
+  border: 1px solid var(--input-border);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  flex: 1 1 auto;
+  font-family: inherit;
+  font-size: 0.85rem;
+  max-height: 9rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.55rem;
+  resize: none;
+}
+
+.nexus-ai-chat-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.nexus-ai-chat-send {
+  align-items: center;
+  background: var(--accent);
+  border: 0;
+  border-radius: 0.5rem;
+  color: var(--on-accent);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 2.4rem;
+  justify-content: center;
+  width: 2.4rem;
+}
+
+.nexus-ai-chat-send:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.nexus-ai-chat-send:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nexus-ai-chat-send svg {
+  height: 16px;
+  width: 16px;
+}
+
+.nexus-ai-chat-stop {
+  background: var(--danger);
+}
+
+.nexus-ai-chat-stop:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(1.08);
+}
+
+@keyframes nexus-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* AI selection-edit preview dialog: original above proposed, both in scrollable mono panes. */
 .nexus-ai-preview-content {
   max-width: 640px;
@@ -2836,6 +3337,113 @@ body.nexus-resizing-col * {
   --callout-accent: #f85149;
 }
 
+/*
+ * Footnotes — an inline reference (`[^1]`) renders as a small bracketed superscript, and a block
+ * definition (`[^1]: …`) renders with the identifier in a left gutter beside an editable body. The
+ * markers are non-editable chrome (FootnoteReferenceNode.tsx / FootnoteDefinitionNode.tsx); the
+ * definition body is edited through a nested block editor, kept unboxed like the callouts.
+ */
+.nexus-footnote-ref {
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0 0.1em;
+  cursor: default;
+  user-select: none;
+}
+
+.nexus-footnote-ref::before {
+  content: "[";
+}
+
+.nexus-footnote-ref::after {
+  content: "]";
+}
+
+.nexus-footnote-def {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  margin: 0 0 var(--editor-paragraph-spacing, 16px);
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--line);
+}
+
+.nexus-footnote-def__marker {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.15rem;
+  white-space: nowrap;
+}
+
+.nexus-footnote-def__marker::before {
+  content: "[^";
+}
+
+.nexus-footnote-def__marker::after {
+  content: "]:";
+}
+
+/* The editable footnote name sitting between the brackets — a plain-text button that
+ * swaps to an input while renaming (FootnoteDefinitionNode.tsx's FootnoteMarker). */
+.nexus-footnote-def__name {
+  appearance: none;
+  margin: 0;
+  padding: 0 1px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: inherit;
+  line-height: 1.2;
+  cursor: text;
+}
+
+button.nexus-footnote-def__name {
+  user-select: none;
+}
+
+button.nexus-footnote-def__name:hover {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+.nexus-footnote-def__name--editing {
+  min-width: 1.5ch;
+  background: var(--surface);
+  border-color: var(--input-focus);
+  outline: none;
+}
+
+.nexus-footnote-def__name--error {
+  border-color: var(--danger);
+}
+
+.nexus-footnote-def [class*="_nestedEditor_"],
+.nexus-footnote-def [class*="_blockEditor_"] {
+  background: transparent;
+}
+
+.nexus-footnote-def :last-child {
+  margin-bottom: 0;
+}
+
+/* Insert-footnote naming dialog (FootnoteNameDialog.tsx). */
+.nexus-footnote-dialog-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.nexus-footnote-dialog-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
 .nexus-js-runner-block {
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
@@ -2961,6 +3569,55 @@ body.nexus-resizing-col * {
   margin: 0;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+/* Editable drawio diagram: an ordinary image plus a hover/focus "Edit diagram" affordance. */
+.nexus-drawio {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.nexus-drawio-img {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  /* No border-radius: a tightly-cropped diagram fills the image, so rounding would clip its corners. */
+}
+
+.nexus-drawio-edit {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.nexus-drawio:hover .nexus-drawio-edit,
+.nexus-drawio:focus-within .nexus-drawio-edit {
+  opacity: 1;
+}
+
+.nexus-drawio-edit:hover {
+  background: var(--surface-strong, var(--surface));
+}
+
+.nexus-drawio-edit:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .nexus-math-block {

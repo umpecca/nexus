@@ -59,6 +59,10 @@ export const DEFAULT_OUTLINE_WIDTH_PIXELS = 256;
 export const OUTLINE_WIDTH_MIN_PIXELS = 180;
 export const OUTLINE_WIDTH_MAX_PIXELS = 560;
 
+export const DEFAULT_AI_CHAT_WIDTH_PIXELS = 360;
+export const AI_CHAT_WIDTH_MIN_PIXELS = 280;
+export const AI_CHAT_WIDTH_MAX_PIXELS = 640;
+
 export const EDITOR_PAGE_SIZE_OPTIONS = [
   { label: "Letter", value: "Letter", widthInches: 8.5, heightInches: 11 },
   { label: "A4", value: "A4", widthInches: 8.27, heightInches: 11.69 }
@@ -157,6 +161,8 @@ export type UserSettings = {
   responsiveContentWrappingEnabled: boolean;
   outlineVisible: boolean;
   outlineWidthPixels: number;
+  aiChatVisible: boolean;
+  aiChatWidthPixels: number;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
   pageSize: EditorPageSize;
@@ -254,6 +260,18 @@ function sanitizeOutlineWidth(value: unknown) {
   }
 
   return DEFAULT_OUTLINE_WIDTH_PIXELS;
+}
+
+function sanitizeAiChatVisible(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
+function sanitizeAiChatWidth(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(AI_CHAT_WIDTH_MAX_PIXELS, Math.max(AI_CHAT_WIDTH_MIN_PIXELS, Math.round(value)));
+  }
+
+  return DEFAULT_AI_CHAT_WIDTH_PIXELS;
 }
 
 export function createDefaultPageMargins(): EditorPageMargins {
@@ -542,6 +560,8 @@ export function createDefaultSettings(): UserSettings {
     responsiveContentWrappingEnabled: true,
     outlineVisible: false,
     outlineWidthPixels: DEFAULT_OUTLINE_WIDTH_PIXELS,
+    aiChatVisible: false,
+    aiChatWidthPixels: DEFAULT_AI_CHAT_WIDTH_PIXELS,
     showInvisibleCharacters: false,
     spellCheckEnabled: true,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
@@ -581,6 +601,8 @@ export function loadSettings(profileName: string): UserSettings {
       ),
       outlineVisible: sanitizeOutlineVisible(parsed.outlineVisible),
       outlineWidthPixels: sanitizeOutlineWidth(parsed.outlineWidthPixels),
+      aiChatVisible: sanitizeAiChatVisible(parsed.aiChatVisible),
+      aiChatWidthPixels: sanitizeAiChatWidth(parsed.aiChatWidthPixels),
       showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
       spellCheckEnabled: sanitizeSpellCheckEnabled(parsed.spellCheckEnabled),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,

@@ -72,6 +72,8 @@ import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock
 import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert";
 import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
+import { footnotesPlugin } from "./components/editor/footnotesPlugin";
+import { drawioPlugin } from "./components/editor/drawioPlugin";
 import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
 import { sourceImagePasteExtension } from "./components/editor/sourceImagePaste";
 import { readImageFileAsDataUrl } from "./lib/imagePaste";
@@ -79,6 +81,7 @@ import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
 import AiSettingsDialog from "./components/settings/AiSettingsDialog";
 import AiEditPreviewDialog from "./components/ai/AiEditPreviewDialog";
+import AiChatPanel from "./components/ai/AiChatPanel";
 import AiNotice from "./components/ai/AiNotice";
 import { resolveActiveProvider, runAiChat } from "./lib/ai/client";
 import { buildSelectionPrompt, describeSelectionAction } from "./lib/ai/prompts";
@@ -531,6 +534,11 @@ function App() {
         ...current,
         outlineVisible: !current.outlineVisible
       })),
+    toggleAiChat: () =>
+      setSettings((current) => ({
+        ...current,
+        aiChatVisible: !current.aiChatVisible
+      })),
     togglePageOrientation: () =>
       setSettings((current) => ({
         ...current,
@@ -768,6 +776,11 @@ function App() {
         ...current,
         outlineVisible: !current.outlineVisible
       })),
+    toggleAiChat: () =>
+      setSettings((current) => ({
+        ...current,
+        aiChatVisible: !current.aiChatVisible
+      })),
     togglePageOrientation: () =>
       setSettings((current) => ({
         ...current,
@@ -919,6 +932,7 @@ function App() {
       pageOrientation: settings.pageOrientation,
       responsiveContentWrappingEnabled: settings.responsiveContentWrappingEnabled,
       paperViewEnabled: settings.paperViewEnabled,
+      aiChatVisible: settings.aiChatVisible,
       editorViewMode
     });
   }, [
@@ -929,6 +943,7 @@ function App() {
     settings.pageOrientation,
     settings.responsiveContentWrappingEnabled,
     settings.paperViewEnabled,
+    settings.aiChatVisible,
     editorViewMode
   ]);
 
@@ -1123,6 +1138,11 @@ function App() {
 
       const text = selection.toString();
       if (!text.trim()) {
+        // The selection collapsed *inside* the editor (the user clicked or typed here). Forget the
+        // snapshot so the AI chat and selection actions don't act on a selection that no longer
+        // exists. A collapse caused by focus moving into the chat keeps the snapshot, because that
+        // selection change has its anchor outside the surface and returned above.
+        editorSelectionSnapshotRef.current = null;
         return;
       }
 
@@ -1555,17 +1575,27 @@ function App() {
     const surface = editorSurfaceRef.current;
     const selection = typeof window !== "undefined" ? window.getSelection() : null;
 
-    if (!surface || !selection || selection.rangeCount === 0) {
-      return { ok: true, mode, hasSelection: false, text: "" };
-    }
-
     // Only report selections that live inside the editor surface, so a selection in a dialog or
     // elsewhere in the chrome is not leaked to the MCP client as the document selection.
-    const anchorNode = selection.anchorNode;
-    const withinEditor = anchorNode ? surface.contains(anchorNode) : false;
-    const text = withinEditor ? selection.toString() : "";
+    const anchorNode = selection?.anchorNode;
+    const liveText =
+      surface && selection && selection.rangeCount > 0 && anchorNode && surface.contains(anchorNode)
+        ? selection.toString()
+        : "";
 
-    return { ok: true, mode, hasSelection: text.length > 0, text };
+    if (liveText.length > 0) {
+      return { ok: true, mode, hasSelection: true, text: liveText };
+    }
+
+    // Focus may have moved into the AI chat (or elsewhere), collapsing the live DOM selection. Fall
+    // back to the last selection captured inside the editor so nexus_get_selection — and therefore
+    // the AI chat — still sees what the user had highlighted before clicking into the chat.
+    const snapshot = editorSelectionSnapshotRef.current;
+    if (snapshot && snapshot.text.trim()) {
+      return { ok: true, mode: snapshot.mode, hasSelection: true, text: snapshot.text };
+    }
+
+    return { ok: true, mode, hasSelection: false, text: "" };
   }
 
   // Run an AI selection action: take the last captured selection, prompt the model, and (on success)
@@ -2155,6 +2185,9 @@ function App() {
       case "toggleOutline":
         h.toggleOutline();
         break;
+      case "toggleAiChat":
+        h.toggleAiChat();
+        break;
       case "togglePageOrientation":
         h.togglePageOrientation();
         break;
@@ -2285,6 +2318,7 @@ function App() {
         filePath={filePath ?? null}
         isDirty={isDirty}
         outlineVisible={settings.outlineVisible}
+        aiChatVisible={settings.aiChatVisible}
         pageOrientation={settings.pageOrientation}
         paperViewEnabled={settings.paperViewEnabled}
         responsiveContentWrappingEnabled={settings.responsiveContentWrappingEnabled}
@@ -2333,12 +2367,14 @@ function App() {
                   linkPlugin(),
                   linkDialogPlugin(),
                   imagePlugin({ imagePreviewHandler, imageUploadHandler: readImageFileAsDataUrl }),
+                  drawioPlugin(),
                   tablePlugin(),
                   frontmatterPlugin(),
                   directivesPlugin({
                     directiveDescriptors: [githubAlertDirectiveDescriptor, admonitionDirectiveDescriptor]
                   }),
                   githubAlertsPlugin(),
+                  footnotesPlugin(),
                   codeBlockPlugin({
                     defaultCodeBlockLanguage: "txt",
                     codeBlockEditorDescriptors: [
@@ -2409,6 +2445,26 @@ function App() {
             ) : null}
           </div>
         </div>
+        {settings.aiChatVisible ? (
+          <AiChatPanel
+            ai={settings.ai}
+            profileName={profileName}
+            windowId={MCP_WINDOW_ID}
+            fileName={titlebarFileName}
+            width={settings.aiChatWidthPixels}
+            getEditorSelection={() => {
+              const snapshot = editorSelectionSnapshotRef.current;
+              return snapshot && snapshot.text.trim()
+                ? { text: snapshot.text, mode: snapshot.mode }
+                : null;
+            }}
+            onResize={(aiChatWidthPixels) =>
+              setSettings((current) => ({ ...current, aiChatWidthPixels }))
+            }
+            onClose={() => setSettings((current) => ({ ...current, aiChatVisible: false }))}
+            onOpenAiSettings={() => setAiSettingsOpen(true)}
+          />
+        ) : null}
       </section>
       {aiNotice ? (
         <AiNotice
@@ -2423,10 +2479,12 @@ function App() {
       ) : null}
       <StatusBar
         aiBusy={aiBusy}
+        aiChatVisible={settings.aiChatVisible}
         canToggleOutline={canToggleOutline}
         isDirty={isDirty}
         maxZoom={MAX_EDITOR_ZOOM_PERCENT}
         minZoom={MIN_EDITOR_ZOOM_PERCENT}
+        onToggleAiChat={() => dispatchMenuAction("toggleAiChat")}
         onZoomChange={(zoomPercent) => setEditorZoomPercent(clampEditorZoomPercent(zoomPercent))}
         onZoomIn={zoomEditorIn}
         onZoomOut={zoomEditorOut}

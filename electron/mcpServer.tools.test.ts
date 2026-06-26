@@ -3,7 +3,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // server and tool modules directly. It boots the real Streamable-HTTP MCP server on a loopback port
 // and drives the four read tools end to end through JSON-RPC, backing the host with the same pure
 // logic the production host uses.
-import { configure, getListeningInfo, setHost, stop } from "./mcp-server.cjs";
+import {
+  configure,
+  getListeningInfo,
+  setHost,
+  stop,
+  listTools,
+  callTool as callToolInProcess
+} from "./mcp-server.cjs";
 import {
   buildDocumentOutline,
   findInDocument,
@@ -157,5 +164,45 @@ describe("MCP server read tools", () => {
     const envelope = await callTool("nexus_search_document", { query: "" });
     expect(envelope.result.isError).toBe(true);
     expect(envelope.result.content[0].text).toMatch(/non-empty/);
+  });
+});
+
+// The in-app AI chat reaches the same tool host through listTools()/callTool() instead of JSON-RPC,
+// so it must see exactly the same catalog and dispatch behavior the network server exposes.
+describe("in-process tool surface (AI chat)", () => {
+  it("lists the full catalog: read tools plus the write tools", () => {
+    const names = listTools().map((tool: { name: string }) => tool.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "nexus_list_windows",
+        "nexus_get_document",
+        "nexus_get_outline",
+        "nexus_get_section",
+        "nexus_search_document",
+        "nexus_find",
+        "nexus_get_selection",
+        "nexus_replace_document",
+        "nexus_apply_edits",
+        "nexus_replace_section",
+        "nexus_set_frontmatter"
+      ])
+    );
+  });
+
+  it("dispatches a read tool directly and returns the same content shape", async () => {
+    const result = await callToolInProcess("nexus_get_outline", {}, { clientLabel: "Nexus AI chat" });
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.headings.map((heading: { slug: string }) => heading.slug)).toEqual([
+      "title",
+      "alpha",
+      "beta"
+    ]);
+  });
+
+  it("returns an error envelope for an unknown tool", async () => {
+    const result = await callToolInProcess("nexus_not_a_tool", {}, { clientLabel: "Nexus AI chat" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/unknown tool/i);
   });
 });

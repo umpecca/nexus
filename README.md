@@ -2,6 +2,13 @@
 
 Nexus is an application for creating/editing Markdown files. The goal is to have an easy to use visual first editor with inline AI capability that can watch/show the differences when it is modified by Agents. It is useful for people working with Markdown writing technical documentation, business presentations, paperwork heavy bureaucracy nonsense, etc...
 
+## Running
+
+```
+npm run fetch:drawio
+npm run start:electron
+```
+
 ## Tech Stack
 
 - native application based on web technologies using [Electron](https://www.electronjs.org/)

@@ -7,3 +7,7 @@ vite.config.js
 vite.config.d.ts
 vite-dev*.log
 .claude/settings.local.json
+# Vendored drawio web app (populate with `npm run fetch:drawio`); keep the dir + docs tracked.
+public/drawio/*
+!public/drawio/.gitkeep
+!public/drawio/README.md

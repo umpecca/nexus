@@ -26,6 +26,8 @@ import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import ChangeCalloutType from "./ChangeCalloutType";
 import CleanUpFormatting from "./CleanUpFormatting";
 import InsertAdmonition from "./InsertAdmonition";
+import InsertDrawioDiagram from "./InsertDrawioDiagram";
+import InsertFootnote from "./InsertFootnote";
 import InsertGithubAlert from "./InsertGithubAlert";
 import InsertImageImport from "./InsertImageImport";
 import InsertKatexBlock from "./InsertKatexBlock";
@@ -233,7 +235,9 @@ function RichTextRibbonCommands({
           <InsertCodeBlock />
           <InsertLocalJavaScriptRunner />
           <InsertMermaidDiagram />
+          <InsertDrawioDiagram />
           <InsertKatexBlock />
+          <InsertFootnote />
           <ConditionalContents
             options={[
               {

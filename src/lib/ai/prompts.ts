@@ -90,6 +90,37 @@ export function buildSelectionPrompt(
   };
 }
 
+export type ChatPromptContext = {
+  /** The open document's file name (or null/undefined for an untitled draft). */
+  fileName?: string | null;
+};
+
+/**
+ * System prompt for the in-app AI chat panel. It frames the model as an assistant embedded in the
+ * editor that should reach for the `nexus_*` tools to read and edit the open document rather than
+ * guessing, and reminds it that edits are gated by the user's approval. Every tool call is pinned to
+ * this panel's own document by the renderer, so the model never needs to deal with windowId.
+ */
+export function buildChatSystemPrompt(context: ChatPromptContext = {}): string {
+  const documentLine = context.fileName
+    ? `The user is currently editing the document "${context.fileName}".`
+    : "The user is currently editing an untitled document.";
+
+  return [
+    "You are Nexus AI, a helpful assistant embedded in the side panel of the Nexus Markdown editor.",
+    documentLine +
+      " All of your tools operate on this one document automatically, so you never need to pass a windowId.",
+    "You have tools (named nexus_*) to read and edit this document. Before answering questions about " +
+      "its content or structure, read it with the tools (nexus_get_document, nexus_get_outline, " +
+      "nexus_get_section, nexus_search_document, nexus_find, nexus_get_selection) instead of guessing.",
+    "To change the document, use the editing tools (nexus_apply_edits for targeted find/replace, " +
+      "nexus_replace_section for a whole section, nexus_set_frontmatter for metadata, or " +
+      "nexus_replace_document as a last resort). Every edit is shown to the user for approval before " +
+      "it is applied, so keep edits focused and briefly explain what you changed.",
+    "Reply in concise GitHub-flavored Markdown."
+  ].join("\n\n");
+}
+
 /** Human-readable label for an action (used in the preview dialog title and status messages). */
 export function describeSelectionAction(
   action: SelectionActionId,

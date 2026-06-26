@@ -207,7 +207,9 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
         </div>
 
         <label className="nexus-settings-field">
-          <span className="nexus-settings-label">API key</span>
+          <span className="nexus-settings-label">
+            {meta.requiresApiKey ? "API key" : "API key (optional)"}
+          </span>
           <div className="nexus-ai-key-row">
             <input
               className="nexus-settings-input"

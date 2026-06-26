@@ -141,4 +141,14 @@ Export this document to HTML and PDF to verify Mermaid diagrams, tables, code bl
 
 > [!NOTE]
 > I want the readers to read it carefully as it contains many important docs.
+
+## Footnotes
+
+Footnotes add supporting detail without breaking the flow of a sentence.[^1] Custom identifiers work too,[^longnote] not just numbers.
+
+- A list item can carry a footnote as well.[^2]
+
+[^1]: A numbered footnote can contain **Markdown** and a [link](https://www.electronjs.org/).
+[^longnote]: A footnote with a longer, alphanumeric label.
+[^2]: Footnotes work inside list items and other block elements.
 `;

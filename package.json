@@ -11,6 +11,7 @@
     "start:electron": "npm run build && electron .",
     "lint": "eslint .",
     "test": "vitest run",
+    "fetch:drawio": "node scripts/fetch-drawio.mjs",
     "generate:mac-icon": "node scripts/generate-mac-icon.mjs",
     "dist:win": "electron-builder --win --x64 --publish never",
     "dist:mac": "electron-builder --mac --publish never"
@@ -30,6 +31,10 @@
       "nexus.icns"
     ],
     "asar": true,
+    "asarUnpack": [
+      "dist/drawio/**",
+      "dist/drawio-host.html"
+    ],
     "mac": {
       "icon": "nexus.icns",
       "category": "public.app-category.productivity",
@@ -87,7 +92,9 @@
     "lucide-react": "^0.468.0",
     "marked": "^16.4.2",
     "mdast-util-directive": "^3.1.0",
+    "mdast-util-gfm-footnote": "^2.1.0",
     "mermaid": "^11.14.0",
+    "micromark-extension-gfm-footnote": "^2.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ssh2-sftp-client": "^12.1.1",
