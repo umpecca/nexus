@@ -27,6 +27,7 @@ import ChangeCalloutType from "./ChangeCalloutType";
 import CleanUpFormatting from "./CleanUpFormatting";
 import InsertAdmonition from "./InsertAdmonition";
 import InsertDrawioDiagram from "./InsertDrawioDiagram";
+import InsertIsoflowDiagram from "./InsertIsoflowDiagram";
 import InsertFootnote from "./InsertFootnote";
 import InsertGithubAlert from "./InsertGithubAlert";
 import InsertImageImport from "./InsertImageImport";
@@ -236,6 +237,7 @@ function RichTextRibbonCommands({
           <InsertLocalJavaScriptRunner />
           <InsertMermaidDiagram />
           <InsertDrawioDiagram />
+          <InsertIsoflowDiagram />
           <InsertKatexBlock />
           <InsertFootnote />
           <ConditionalContents

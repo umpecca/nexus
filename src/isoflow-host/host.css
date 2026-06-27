@@ -1,0 +1,83 @@
+/* Standalone styling for the isoflow editor window (isoflow-host.html). This window is independent of
+   the main app's theme; keep it simple and neutral. A column layout: a thin action bar on top, the
+   isoflow editor filling the rest. */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.isoflow-host {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.isoflow-host__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 0 0 auto;
+  height: 48px;
+  padding: 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.isoflow-host__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.isoflow-host__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.isoflow-host__actions button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.isoflow-host__actions button:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.isoflow-host__actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.isoflow-host__primary {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.isoflow-host__primary:hover:not(:disabled) {
+  background: #1d4ed8 !important;
+}
+
+.isoflow-host__canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}

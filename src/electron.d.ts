@@ -132,6 +132,13 @@ type EditDiagramResult =
   | { canceled: true }
   | { canceled: false; dataUrl: string; xml: string };
 
+// Result of editing a diagram in the isoflow editor window. On save, `dataUrl` is an editable-SVG
+// `data:image/svg+xml` URL (a PNG snapshot of the diagram with the isoflow model embedded in the
+// SVG's `data-isoflow` attribute) and `model` is that source isoflow `Model` (JSON).
+type EditIsoflowResult =
+  | { canceled: true }
+  | { canceled: false; dataUrl: string; model: unknown };
+
 type ConfigureMcpServerInput = {
   enabled: boolean;
   port: number;
@@ -315,6 +322,7 @@ declare global {
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       editDiagram(payload: { xml: string }): Promise<EditDiagramResult>;
+      editIsoflow(payload: { model: unknown | null }): Promise<EditIsoflowResult>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
       setMenuState(state: NexusMenuState): void;
       configureMcpServer(config: ConfigureMcpServerInput): Promise<ConfigureMcpServerResult>;

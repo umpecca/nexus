@@ -17,6 +17,7 @@ const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
 const aiProviders = require("./aiProviders.cjs");
 const { createDrawioSession } = require("./drawioEmbed.cjs");
+const { ISOFLOW_WINDOW, normalizeSaveResult } = require("./isoflowEmbed.cjs");
 const {
   AI_SELECTION_ACTIONS,
   AI_TONE_OPTIONS,
@@ -1695,6 +1696,131 @@ function openDrawioEditor(parentWindow, initialXml) {
         return;
       }
       console.error("Failed to load the drawio editor:", error);
+    });
+  });
+}
+
+// The isoflow editor host is Nexus's own React app (isoflow-host.html), bundled by Vite as a separate
+// page — not a vendored web app. In dev it is served by Vite at the web root; when packaged it sits
+// in dist/ alongside the main editor. Both load over the normal page graph (no asar-unpack needed).
+function loadIsoflowEditor(editorWindow) {
+  if (isDev) {
+    return editorWindow.loadURL(new URL("isoflow-host.html", process.env.NEXUS_DEV_SERVER_URL).toString());
+  }
+  return editorWindow.loadFile(path.join(__dirname, "..", "dist", "isoflow-host.html"));
+}
+
+// Shown in the editor window when the isoflow host page cannot load (e.g. a bundle/runtime error)
+// instead of letting the window flash open and closed with no explanation.
+function buildIsoflowErrorHtml(detail) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Diagram editor unavailable</title></head>
+<body style="font-family: system-ui, -apple-system, sans-serif; padding: 2rem; color: #1f2937; line-height: 1.5;">
+<h2 style="margin-top:0;">isoflow editor could not load</h2>
+<p>The isoflow editor failed to start. Try rebuilding the app (<code>npm run build</code>) and reopening; you can close this window.</p>
+<p style="color:#6b7280;font-size:0.85rem;">Details: ${escapeHtmlText(String(detail || "unknown error"))}</p>
+</body></html>`;
+}
+
+// Opens the isoflow editor in a modal window over `parentWindow`, seeded with `initialModel` (null
+// for a new diagram), and resolves when the user saves (with an editable-SVG data URL + the source
+// model) or cancels by closing the window. Unlike drawio there is no postMessage protocol: the host
+// is our own React app talking over the `nexusIsoflowHost` preload bridge (electron/isoflowPreload.cjs).
+function openIsoflowEditor(parentWindow, initialModel) {
+  return new Promise((resolve) => {
+    const hasParent = Boolean(parentWindow && !parentWindow.isDestroyed());
+    const editorWindow = new BrowserWindow({
+      parent: hasParent ? parentWindow : undefined,
+      modal: hasParent,
+      width: ISOFLOW_WINDOW.width,
+      height: ISOFLOW_WINDOW.height,
+      minWidth: ISOFLOW_WINDOW.minWidth,
+      minHeight: ISOFLOW_WINDOW.minHeight,
+      title: "Edit isoflow diagram",
+      backgroundColor: "#ffffff",
+      autoHideMenuBar: true,
+      icon: getAppIconPath(),
+      webPreferences: {
+        preload: path.join(__dirname, "isoflowPreload.cjs"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: false
+      }
+    });
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      ipcMain.removeListener("isoflow:ready", onReady);
+      ipcMain.removeListener("isoflow:save", onSave);
+      ipcMain.removeListener("isoflow:cancel", onCancel);
+      if (!editorWindow.isDestroyed()) {
+        editorWindow.destroy();
+      }
+      resolve(result);
+    };
+
+    // Scope every IPC message to this window's host so multiple isoflow editors can be open at once.
+    const isFromThisWindow = (event) => event.sender === editorWindow.webContents;
+
+    function onReady(event) {
+      if (!isFromThisWindow(event) || editorWindow.isDestroyed()) {
+        return;
+      }
+      editorWindow.webContents.send("isoflow:init", initialModel ?? null);
+    }
+    function onSave(event, raw) {
+      if (!isFromThisWindow(event)) {
+        return;
+      }
+      const result = normalizeSaveResult(raw);
+      if (result) {
+        finish(result);
+      }
+    }
+    function onCancel(event) {
+      if (!isFromThisWindow(event)) {
+        return;
+      }
+      finish({ canceled: true });
+    }
+
+    ipcMain.on("isoflow:ready", onReady);
+    ipcMain.on("isoflow:save", onSave);
+    ipcMain.on("isoflow:cancel", onCancel);
+    // Closing the window resolves as canceled; a successful save resolves first and destroys the
+    // window, so this becomes a no-op via the settled guard.
+    editorWindow.on("closed", () => finish({ canceled: true }));
+
+    editorWindow.webContents.on("console-message", (...args) => {
+      const details = args[0];
+      const message =
+        details && typeof details === "object" && "message" in details ? details.message : args[2];
+      debugLog("[isoflow editor]", message);
+    });
+
+    editorWindow.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
+        // ERR_ABORTED (-3) is benign (HMR / in-page navigation). Only surface real main-frame failures.
+        if (!isMainFrame || errorCode === -3 || settled || editorWindow.isDestroyed()) {
+          return;
+        }
+        console.error(`isoflow editor failed to load (${errorCode}): ${errorDescription}`);
+        void editorWindow.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(buildIsoflowErrorHtml(errorDescription))}`
+        );
+      }
+    );
+
+    loadIsoflowEditor(editorWindow).catch((error) => {
+      if (error && (error.code === "ERR_ABORTED" || error.errno === -3)) {
+        return;
+      }
+      console.error("Failed to load the isoflow editor:", error);
     });
   });
 }
@@ -4639,6 +4765,12 @@ ipcMain.handle("drawio:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const initialXml = typeof payload?.xml === "string" ? payload.xml : "";
   return openDrawioEditor(parentWindow, initialXml);
+});
+
+ipcMain.handle("isoflow:edit", (event, payload) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender);
+  const initialModel = payload && typeof payload === "object" ? payload.model ?? null : null;
+  return openIsoflowEditor(parentWindow, initialModel);
 });
 
 ipcMain.handle("edit:command", (event, command) => {

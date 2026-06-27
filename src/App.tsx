@@ -74,6 +74,7 @@ import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
 import { footnotesPlugin } from "./components/editor/footnotesPlugin";
 import { drawioPlugin } from "./components/editor/drawioPlugin";
+import { isoflowPlugin } from "./components/editor/isoflowPlugin";
 import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
 import { sourceImagePasteExtension } from "./components/editor/sourceImagePaste";
 import { readImageFileAsDataUrl } from "./lib/imagePaste";
@@ -2368,6 +2369,7 @@ function App() {
                   linkDialogPlugin(),
                   imagePlugin({ imagePreviewHandler, imageUploadHandler: readImageFileAsDataUrl }),
                   drawioPlugin(),
+                  isoflowPlugin(),
                   tablePlugin(),
                   frontmatterPlugin(),
                   directivesPlugin({

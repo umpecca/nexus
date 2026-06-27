@@ -103,6 +103,9 @@ contextBridge.exposeInMainWorld("nexus", {
   editDiagram(payload) {
     return ipcRenderer.invoke("drawio:edit", payload);
   },
+  editIsoflow(payload) {
+    return ipcRenderer.invoke("isoflow:edit", payload);
+  },
   confirmSaveChanges() {
     return ipcRenderer.invoke("dialog:confirmSaveChanges");
   },

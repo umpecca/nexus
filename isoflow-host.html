@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Edit isoflow diagram</title>
+  </head>
+  <body>
+    <!--
+      Host page for the bundled isoflow editor. Unlike the drawio host (which iframes a vendored web
+      app), isoflow is an npm React component bundled by Vite into this page's module graph. The
+      window is driven by electron/isoflowPreload.cjs over IPC; see src/isoflow-host/IsoflowHostApp.tsx.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/isoflow-host/main.tsx"></script>
+  </body>
+</html>
