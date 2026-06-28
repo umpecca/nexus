@@ -52,7 +52,8 @@ export type NexusMenuAction =
   | "publishWeb"
   | "publishQuickConnect"
   | "toggleAiChat"
-  | "aiSelection";
+  | "aiSelection"
+  | "imageToMarkdown";
 
 /**
  * Payload accompanying the "aiSelection" menu action; every other menu action carries no payload.
@@ -321,6 +322,16 @@ declare global {
       selectLocalImage(documentPath?: string): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
+      readDiagramSvg(documentPath: string | undefined, src: string): Promise<string | null>;
+      writeDiagramSvg(
+        documentPath: string,
+        svgText: string,
+        kind: "drawio" | "isoflow"
+      ): Promise<{ src: string; name: string } | { error: string }>;
+      cleanupDiagramAssets(
+        documentPath: string,
+        keepNames: string[]
+      ): Promise<{ removed: number }>;
       editDiagram(payload: { xml: string }): Promise<EditDiagramResult>;
       editIsoflow(payload: { model: unknown | null }): Promise<EditIsoflowResult>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;

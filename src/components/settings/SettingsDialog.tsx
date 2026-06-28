@@ -59,6 +59,7 @@ type SettingsDialogProps = {
   onParagraphSpacingPixelsChange: (paragraphSpacingPixels: number) => void;
   onResetSettings: () => void;
   onThemePreferenceChange: (themePreference: EditorThemePreference) => void;
+  onDiagramsAsFilesChange: (diagramsAsFiles: boolean) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   pageMargins: EditorPageMargins;
@@ -67,6 +68,7 @@ type SettingsDialogProps = {
   paragraphSpacingPixels: number;
   profileName: string;
   themePreference: EditorThemePreference;
+  diagramsAsFiles: boolean;
 };
 
 function clampFontSize(value: number) {
@@ -124,6 +126,7 @@ function SettingsDialog({
   onParagraphSpacingPixelsChange,
   onResetSettings,
   onThemePreferenceChange,
+  onDiagramsAsFilesChange,
   onOpenChange,
   open,
   pageMargins,
@@ -131,7 +134,8 @@ function SettingsDialog({
   pageSize,
   paragraphSpacingPixels,
   profileName,
-  themePreference
+  themePreference,
+  diagramsAsFiles
 }: SettingsDialogProps) {
   const [mcpTesting, setMcpTesting] = useState(false);
   const [mcpTestResult, setMcpTestResult] = useState<McpConnectionTestResult | null>(null);
@@ -449,6 +453,21 @@ function SettingsDialog({
               ))}
             </div>
           </fieldset>
+
+          <label className="nexus-settings-field">
+            <span className="nexus-settings-label">Store diagrams as .svg files</span>
+            <input
+              type="checkbox"
+              checked={diagramsAsFiles}
+              onChange={(event) => onDiagramsAsFilesChange(event.target.checked)}
+            />
+          </label>
+          <p className="nexus-settings-help">
+            When on, drawio and isoflow diagrams are saved as <code>.svg</code> files next to the
+            document (referenced by relative path) instead of embedded inline as base64 — better for
+            other Markdown readers that struggle with large inline images. Diagrams stay editable in
+            Nexus either way. Off by default.
+          </p>
 
           <fieldset className="nexus-settings-fieldset">
             <legend className="nexus-settings-label">MCP server (experimental)</legend>

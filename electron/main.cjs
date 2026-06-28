@@ -3514,6 +3514,13 @@ function buildAiSelectionMenuItems() {
         label: language,
         click: () => sendMenuAction("aiSelection", { action: "translate", options: { language } })
       }))
+    },
+    { type: "separator" },
+    {
+      // Generate-and-insert action (not a selection transform), so it bypasses the aiSelection
+      // catalog and sends a plain menu action the renderer maps to runImageToMarkdown.
+      label: "Image to Markdown…",
+      click: () => sendMenuAction("imageToMarkdown")
     }
   ];
 }
@@ -4412,49 +4419,60 @@ ipcMain.handle("ai:chat", async (_event, payload) => {
     return { ok: false, error: missing };
   }
 
-  let request;
-  try {
-    request = aiProviders.buildChatHttpRequest({
-      providerId,
-      config,
-      apiKey,
-      messages,
-      system,
-      temperature,
-      maxTokens
-    });
-  } catch (error) {
-    return { ok: false, error: `Failed to build the request: ${error?.message ?? error}` };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_CHAT_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      body: JSON.stringify(request.body),
-      signal: controller.signal
-    });
-
-    let json = null;
+  // One full build+fetch+parse round at a given temperature (undefined to omit it).
+  async function attempt(effectiveTemperature) {
+    let request;
     try {
-      json = await response.json();
-    } catch {
-      // Some error responses are not JSON (e.g. an HTML gateway page); parseChatResult handles null.
-      json = null;
+      request = aiProviders.buildChatHttpRequest({
+        providerId,
+        config,
+        apiKey,
+        messages,
+        system,
+        temperature: effectiveTemperature,
+        maxTokens
+      });
+    } catch (error) {
+      return { ok: false, error: `Failed to build the request: ${error?.message ?? error}` };
     }
 
-    return aiProviders.parseChatResult({ providerId, status: response.status, json });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      return { ok: false, error: `Request timed out after ${AI_CHAT_TIMEOUT_MS / 1000}s.` };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_CHAT_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: JSON.stringify(request.body),
+        signal: controller.signal
+      });
+
+      let json = null;
+      try {
+        json = await response.json();
+      } catch {
+        // Some error responses are not JSON (e.g. an HTML gateway page); parseChatResult handles null.
+        json = null;
+      }
+
+      return aiProviders.parseChatResult({ providerId, status: response.status, json });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return { ok: false, error: `Request timed out after ${AI_CHAT_TIMEOUT_MS / 1000}s.` };
+      }
+      return { ok: false, error: `Network error: ${error?.message ?? error}` };
+    } finally {
+      clearTimeout(timeout);
     }
-    return { ok: false, error: `Network error: ${error?.message ?? error}` };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  const result = await attempt(temperature);
+  // Some OpenAI models (o-series, gpt-5+) reject any explicit temperature and only allow the default;
+  // retry once without it so our non-default default temperature doesn't block those models.
+  if (temperature !== undefined && aiProviders.isUnsupportedTemperatureError(result)) {
+    return attempt(undefined);
+  }
+  return result;
 });
 
 // In-app AI chat — tool surface. Expose the MCP tool catalog and a direct tool-call path so the
@@ -4563,10 +4581,20 @@ async function runAiChatStream(sender, requestId, payload) {
         json = null;
       }
       const parsed = aiProviders.parseAgentChatResult({ providerId, status: response.status, json });
+      const errorMessage = parsed.ok ? `Request failed with HTTP ${response.status}` : parsed.error;
+      // Some OpenAI models (o-series, gpt-5+) reject an explicit temperature and only allow the
+      // default; retry once without it. The recursive call suspends at its first await before
+      // registering its controller, so this attempt's finally cleanup runs first (no clobber).
+      if (
+        temperature !== undefined &&
+        aiProviders.isUnsupportedTemperatureError({ ok: false, error: errorMessage })
+      ) {
+        return runAiChatStream(sender, requestId, { ...payload, temperature: undefined });
+      }
       sendAiChatStreamEvent(sender, requestId, {
         type: "error",
         status: response.status,
-        error: parsed.ok ? `Request failed with HTTP ${response.status}` : parsed.error
+        error: errorMessage
       });
       return;
     }
@@ -4759,6 +4787,76 @@ ipcMain.handle("image:select-base64", async () => {
 ipcMain.handle("image:resolve-preview", (_event, payload) => {
   const { documentPath, imageSource } = payload ?? {};
   return resolveImagePreviewSource(documentPath, imageSource);
+});
+
+// --- Optional "diagrams as files" sidecar I/O (see src/lib/diagramFiles.ts) ---------------------
+// The renderer keeps diagrams as inline base64 while editing, and only externalizes them to sibling
+// `.svg` files at save time (inlining them back at load time). These handlers do just the fs + path
+// work; all diagram detection/encoding stays in the renderer's tested src/lib helpers. A sibling `.svg`
+// write does not trip the per-file `.md` watcher, so no internal-write suppression is needed here.
+
+ipcMain.handle("diagram:read-svg", async (_event, payload) => {
+  const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
+  const src = typeof payload?.src === "string" ? payload.src : "";
+  const filePath = resolveLocalImageFilePath(documentPath, src);
+  if (!filePath || !/\.svg$/i.test(filePath)) {
+    return null;
+  }
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("diagram:write-svg", async (_event, payload) => {
+  const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
+  const svgText = typeof payload?.svgText === "string" ? payload.svgText : "";
+  const kind = payload?.kind === "isoflow" ? "isoflow" : "drawio";
+  if (!documentPath || !svgText) {
+    return { error: "no-document" };
+  }
+  // Content-hash name so an unchanged diagram reuses its file (no churn) and an edit makes a new one.
+  const base = path.basename(documentPath).replace(/\.[^.]+$/, "");
+  const hash = crypto.createHash("sha256").update(svgText, "utf8").digest("hex").slice(0, 10);
+  const name = `${base}.${kind}.${hash}.svg`;
+  const absPath = path.join(path.dirname(documentPath), name);
+  try {
+    await fs.writeFile(absPath, svgText, "utf8");
+  } catch (error) {
+    return { error: `Failed to write diagram file: ${error?.message ?? error}` };
+  }
+  return { src: imagePaths.toMarkdownImageSource(documentPath, absPath), name };
+});
+
+ipcMain.handle("diagram:cleanup-assets", async (_event, payload) => {
+  const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
+  const keep = new Set(Array.isArray(payload?.keepNames) ? payload.keepNames : []);
+  if (!documentPath) {
+    return { removed: 0 };
+  }
+  const base = path.basename(documentPath).replace(/\.[^.]+$/, "");
+  const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Only ever delete files this feature generated for THIS document — never arbitrary user `.svg`.
+  const ownPattern = new RegExp(`^${escapedBase}\\.(?:drawio|isoflow)\\.[0-9a-f]{8,12}\\.svg$`, "i");
+  let removed = 0;
+  let entries;
+  try {
+    entries = await fs.readdir(path.dirname(documentPath));
+  } catch {
+    return { removed: 0 };
+  }
+  for (const entry of entries) {
+    if (ownPattern.test(entry) && !keep.has(entry)) {
+      try {
+        await fs.unlink(path.join(path.dirname(documentPath), entry));
+        removed += 1;
+      } catch {
+        // best-effort cleanup; ignore files we cannot remove
+      }
+    }
+  }
+  return { removed };
 });
 
 ipcMain.handle("drawio:edit", (event, payload) => {

@@ -26,14 +26,12 @@ import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import ChangeCalloutType from "./ChangeCalloutType";
 import CleanUpFormatting from "./CleanUpFormatting";
 import InsertAdmonition from "./InsertAdmonition";
-import InsertDrawioDiagram from "./InsertDrawioDiagram";
-import InsertIsoflowDiagram from "./InsertIsoflowDiagram";
+import InsertDiagram from "./InsertDiagram";
 import InsertFootnote from "./InsertFootnote";
 import InsertGithubAlert from "./InsertGithubAlert";
 import InsertImageImport from "./InsertImageImport";
 import InsertKatexBlock from "./InsertKatexBlock";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
-import InsertMermaidDiagram from "./InsertMermaidDiagram";
 import InsertTableOfContents from "./InsertTableOfContents";
 import { Button } from "../ui/button";
 import { ButtonGroup } from "../ui/button-group";
@@ -235,9 +233,7 @@ function RichTextRibbonCommands({
           <InsertThematicBreak />
           <InsertCodeBlock />
           <InsertLocalJavaScriptRunner />
-          <InsertMermaidDiagram />
-          <InsertDrawioDiagram />
-          <InsertIsoflowDiagram />
+          <InsertDiagram />
           <InsertKatexBlock />
           <InsertFootnote />
           <ConditionalContents

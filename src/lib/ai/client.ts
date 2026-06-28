@@ -40,6 +40,35 @@ export function truncateForContext(text: string, maxChars = DEFAULT_AI_CONTEXT_C
   return `${text.slice(0, head)}\n\n…[content truncated]…\n\n${text.slice(text.length - tail)}`;
 }
 
+/**
+ * Heuristic: does this `ai:chat` error mean the chosen model/endpoint rejected the image because it
+ * has no vision support? OpenAI-compatible servers without an image content part reject our
+ * `image_url` block (e.g. "unknown variant `image_url`", "model does not support image input"). The
+ * Image-to-Markdown feature uses this to show a clear "pick a vision-capable model" message instead
+ * of surfacing the raw server error.
+ */
+export function isImageUnsupportedError(error: string): boolean {
+  const e = error.toLowerCase();
+  // These tokens only appear when an image part we sent was rejected at the schema level.
+  if (e.includes("image_url") || e.includes("input_image")) {
+    return true;
+  }
+  if (!e.includes("image")) {
+    return false;
+  }
+  return (
+    e.includes("not support") ||
+    e.includes("doesn't support") ||
+    e.includes("does not support") ||
+    e.includes("unsupported") ||
+    e.includes("unknown variant") ||
+    e.includes("cannot process") ||
+    e.includes("no vision") ||
+    e.includes("not a vision") ||
+    e.includes("not multimodal")
+  );
+}
+
 export type RunAiChatParams = {
   ai: AiSettings;
   profileName: string;

@@ -100,6 +100,15 @@ contextBridge.exposeInMainWorld("nexus", {
   resolveImagePreview(documentPath, imageSource) {
     return ipcRenderer.invoke("image:resolve-preview", { documentPath, imageSource });
   },
+  readDiagramSvg(documentPath, src) {
+    return ipcRenderer.invoke("diagram:read-svg", { documentPath, src });
+  },
+  writeDiagramSvg(documentPath, svgText, kind) {
+    return ipcRenderer.invoke("diagram:write-svg", { documentPath, svgText, kind });
+  },
+  cleanupDiagramAssets(documentPath, keepNames) {
+    return ipcRenderer.invoke("diagram:cleanup-assets", { documentPath, keepNames });
+  },
   editDiagram(payload) {
     return ipcRenderer.invoke("drawio:edit", payload);
   },

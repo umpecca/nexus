@@ -37,6 +37,7 @@ export type TitlebarProps = {
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
   onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
+  onAiImageToMarkdown: () => void;
 };
 
 type AppMenuBarProps = {
@@ -51,6 +52,7 @@ type AppMenuBarProps = {
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
   onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
+  onAiImageToMarkdown: () => void;
 };
 
 function AppMenuBar({
@@ -64,7 +66,8 @@ function AppMenuBar({
   responsiveContentWrappingEnabled,
   paperViewEnabled,
   dispatchMenuAction,
-  onAiSelectionAction
+  onAiSelectionAction,
+  onAiImageToMarkdown
 }: AppMenuBarProps) {
   const nexus = window.nexus;
 
@@ -201,6 +204,8 @@ function AppMenuBar({
               ))}
             </MenubarSubContent>
           </MenubarSub>
+          <MenubarSeparator />
+          <MenubarItem onSelect={() => onAiImageToMarkdown()}>Image to Markdown…</MenubarItem>
         </MenubarContent>
       </MenubarMenu>
 
@@ -354,7 +359,8 @@ export function Titlebar({
   responsiveContentWrappingEnabled,
   paperViewEnabled,
   dispatchMenuAction,
-  onAiSelectionAction
+  onAiSelectionAction,
+  onAiImageToMarkdown
 }: TitlebarProps) {
   const platform = window.nexus?.platform;
   const isMac = platform === "darwin";
@@ -369,6 +375,7 @@ export function Titlebar({
             canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}
             onAiSelectionAction={onAiSelectionAction}
+            onAiImageToMarkdown={onAiImageToMarkdown}
             outlineVisible={outlineVisible}
             pageOrientation={pageOrientation}
             paperViewEnabled={paperViewEnabled}

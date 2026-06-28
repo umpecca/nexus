@@ -91,7 +91,8 @@ function extractContentAttribute(svg: string): string | null {
   return match[1] ?? match[2] ?? null;
 }
 
-function decodeSvgDataUrl(url: string): string | null {
+/** Decode a `data:image/svg+xml` URL (base64 or percent-encoded) back to its raw SVG text. */
+export function decodeSvgDataUrl(url: string): string | null {
   const comma = url.indexOf(",");
   if (comma === -1) {
     return null;

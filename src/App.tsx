@@ -84,9 +84,14 @@ import AiSettingsDialog from "./components/settings/AiSettingsDialog";
 import AiEditPreviewDialog from "./components/ai/AiEditPreviewDialog";
 import AiChatPanel from "./components/ai/AiChatPanel";
 import AiNotice from "./components/ai/AiNotice";
-import { resolveActiveProvider, runAiChat } from "./lib/ai/client";
-import { buildSelectionPrompt, describeSelectionAction } from "./lib/ai/prompts";
+import { isImageUnsupportedError, resolveActiveProvider, runAiChat } from "./lib/ai/client";
+import {
+  buildImageToMarkdownPrompt,
+  buildSelectionPrompt,
+  describeSelectionAction
+} from "./lib/ai/prompts";
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
+import { externalizeDiagrams, inlineDiagrams } from "./lib/diagramFiles";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
 import StatusBar from "./components/statusbar/StatusBar";
@@ -309,6 +314,10 @@ type AiNoticeState = {
   message: string;
   needsProvider: boolean;
 };
+
+// Cap on the image sent to the vision model (decoded bytes), to avoid request timeouts / 413s on the
+// `ai:chat` path. Checked against the base64 length before sending.
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Reach the CodeMirror EditorView backing MDXEditor's source mode. MDXEditor does
@@ -556,7 +565,8 @@ function App() {
         paperViewEnabled: !current.paperViewEnabled
       })),
     copyDocumentAsHtml,
-    runSelectionAiAction
+    runSelectionAiAction,
+    runImageToMarkdown
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const titlebarFileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : null;
@@ -798,7 +808,8 @@ function App() {
         paperViewEnabled: !current.paperViewEnabled
       })),
     copyDocumentAsHtml,
-    runSelectionAiAction
+    runSelectionAiAction,
+    runImageToMarkdown
   };
 
   useEffect(() => {
@@ -1524,19 +1535,26 @@ function App() {
     setMarkdown(nextMarkdown);
   }
 
-  function loadDocument(
+  async function loadDocument(
     nextMarkdown: string,
     nextFilePath: string | undefined,
     options: { previousVersionMarkdown?: string; markClean?: boolean } = {}
   ) {
     const { markClean = true } = options;
+    // Diagrams may be stored as sidecar `.svg` files; inline them back to base64 so they stay editable
+    // (the editor only understands inline diagrams). A no-op for untitled buffers and plain documents.
+    const editorMarkdown = nextFilePath
+      ? await inlineDiagrams(nextMarkdown, (src) =>
+          window.nexus?.readDiagramSvg(nextFilePath, src) ?? Promise.resolve(null)
+        )
+      : nextMarkdown;
     editorScrollSnapshotRef.current = { ratio: 0, top: 0 };
-    beginProgrammaticMarkdownChange(nextMarkdown);
-    editorRef.current?.setMarkdown(nextMarkdown);
-    setLastSavedMarkdown(markClean ? nextMarkdown : "");
+    beginProgrammaticMarkdownChange(editorMarkdown);
+    editorRef.current?.setMarkdown(editorMarkdown);
+    setLastSavedMarkdown(markClean ? editorMarkdown : "");
     setPreviousVersionMarkdown(options.previousVersionMarkdown);
     setDiffMarkdown(options.previousVersionMarkdown ?? "");
-    setMarkdown(nextMarkdown);
+    setMarkdown(editorMarkdown);
     setFilePath(nextFilePath);
     setExternalFileChangePrompt(null);
   }
@@ -1712,6 +1730,124 @@ function App() {
     });
   }
 
+  // Capture where transcribed Markdown should land *before* the file picker steals editor focus.
+  // Unlike the selection snapshot (cleared when the caret collapses), this records a zero-width
+  // insertion point at the current caret. Source mode reads CodeMirror's state directly (reliable
+  // regardless of focus); rich-text clones the live caret when it is still inside the editor and
+  // otherwise leaves it to Lexical's preserved selection.
+  function captureInsertionPoint(): EditorSelectionSnapshot {
+    const mode = currentViewModeRef.current ?? "rich-text";
+    const surface = editorSurfaceRef.current;
+
+    if (mode === "source" && surface) {
+      const view = getSourceEditorView(surface);
+      const caret = view?.state.selection?.main.to;
+      if (typeof caret === "number") {
+        return { mode, text: "", range: null, source: { from: caret, to: caret }, activeElement: null };
+      }
+    }
+
+    let range: Range | null = null;
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && surface) {
+      const candidate = selection.getRangeAt(0);
+      if (surface.contains(candidate.commonAncestorContainer)) {
+        range = candidate.cloneRange();
+        range.collapse(false);
+      }
+    }
+    const editable = surface?.querySelector<HTMLElement>(".mdxeditor-root-contenteditable") ?? null;
+    return { mode, text: "", range, source: null, activeElement: editable };
+  }
+
+  // "Image to Markdown": pick an image, have a vision model transcribe it to Markdown, and insert the
+  // result at the caret. Mirrors runSelectionAiAction's provider/busy/notice handling, but generates
+  // and inserts (rather than transforming a selection) and reuses applyPendingAiEdit for the insert.
+  async function runImageToMarkdown() {
+    if (!resolveActiveProvider(settings.ai)) {
+      setAiNotice({
+        message: "No AI provider is enabled yet. Open AI ▸ AI Providers… to set one up.",
+        needsProvider: true
+      });
+      return;
+    }
+
+    const insertAt = captureInsertionPoint();
+
+    const picked = await window.nexus?.selectBase64Image();
+    if (!picked || picked.canceled) {
+      return;
+    }
+
+    if (!picked.mimeType.startsWith("image/")) {
+      setAiNotice({ message: "That file is not an image.", needsProvider: false });
+      return;
+    }
+
+    const commaIndex = picked.dataUrl.indexOf(",");
+    const base64 = commaIndex >= 0 ? picked.dataUrl.slice(commaIndex + 1) : "";
+    if (!base64) {
+      setAiNotice({ message: "Could not read the selected image.", needsProvider: false });
+      return;
+    }
+    if (base64.length * 0.75 > MAX_IMAGE_BYTES) {
+      setAiNotice({
+        message: "That image is too large to send (limit 8 MB). Try a smaller or compressed image.",
+        needsProvider: false
+      });
+      return;
+    }
+
+    setAiNotice(null);
+    setAiBusy(true);
+    try {
+      const prompt = buildImageToMarkdownPrompt();
+      const result = await runAiChat({
+        ai: settings.ai,
+        profileName,
+        system: prompt.system,
+        maxTokens: 4096,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt.user },
+              { type: "image", mediaType: picked.mimeType, data: base64 }
+            ]
+          }
+        ]
+      });
+
+      if (!result.ok) {
+        const noVision = isImageUnsupportedError(result.error);
+        setAiNotice({
+          message: noVision
+            ? "This model doesn't support image input. Pick a vision-capable model (e.g. gpt-4o, Claude, or a local vision model) in AI ▸ AI Providers…."
+            : result.error,
+          needsProvider: noVision
+        });
+        return;
+      }
+
+      const proposedText = result.text.trim();
+      if (!proposedText) {
+        setAiNotice({
+          message:
+            "The model returned no text for this image. Try a clearer image or a vision-capable model.",
+          needsProvider: false
+        });
+        return;
+      }
+
+      pendingAiApplyRef.current = { snapshot: insertAt, proposedText };
+      applyPendingAiEdit();
+    } catch {
+      setAiNotice({ message: "The AI request failed unexpectedly.", needsProvider: false });
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   function focusInitialEmptyEditor() {
     if (hasFocusedInitialEmptyEditorRef.current) {
       return;
@@ -1733,17 +1869,45 @@ function App() {
     });
   }
 
+  // When "store diagrams as files" is on and a destination path is known, externalize inline base64
+  // diagrams to sibling `.svg` files and return markdown that references them by relative path. The
+  // editor keeps holding base64, so this only changes the bytes written to disk; otherwise a no-op.
+  async function prepareMarkdownForDisk(base64Markdown: string, targetPath: string): Promise<string> {
+    if (!settings.diagramsAsFiles || !window.nexus) {
+      return base64Markdown;
+    }
+    const { markdown: externalized, usedNames } = await externalizeDiagrams(
+      base64Markdown,
+      async (svgText, kind) => {
+        const written = await window.nexus?.writeDiagramSvg(targetPath, svgText, kind);
+        if (!written || "error" in written) {
+          return null;
+        }
+        return written;
+      }
+    );
+    // Remove this document's now-unreferenced diagram files (e.g. after an edit changed the hash).
+    await window.nexus.cleanupDiagramAssets(targetPath, [...usedNames]);
+    return externalized;
+  }
+
   async function saveDocument(): Promise<boolean> {
     const currentMarkdown = getCurrentMarkdown();
 
     if (filePath) {
-      await window.nexus?.saveMarkdownFile(filePath, currentMarkdown);
+      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, filePath);
+      await window.nexus?.saveMarkdownFile(filePath, diskMarkdown);
       recordSuccessfulSave(currentMarkdown, filePath, true);
       return true;
     }
 
     const result = await window.nexus?.saveMarkdownFileAs(undefined, currentMarkdown);
     if (result && !result.canceled) {
+      // Path is only known now; re-save with sidecar files written into the chosen folder if enabled.
+      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, result.filePath);
+      if (diskMarkdown !== currentMarkdown) {
+        await window.nexus?.saveMarkdownFile(result.filePath, diskMarkdown);
+      }
       recordSuccessfulSave(currentMarkdown, result.filePath, false);
       return true;
     }
@@ -1756,6 +1920,11 @@ function App() {
     const hadSavedVersion = Boolean(filePath);
     const result = await window.nexus?.saveMarkdownFileAs(filePath, currentMarkdown);
     if (result && !result.canceled) {
+      // Externalize into the (possibly new) destination folder if enabled.
+      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, result.filePath);
+      if (diskMarkdown !== currentMarkdown) {
+        await window.nexus?.saveMarkdownFile(result.filePath, diskMarkdown);
+      }
       recordSuccessfulSave(currentMarkdown, result.filePath, hadSavedVersion);
       return true;
     }
@@ -1843,7 +2012,7 @@ function App() {
       return;
     }
 
-    loadDocument(result.markdown, result.filePath);
+    await loadDocument(result.markdown, result.filePath);
   }
 
   async function openRecentFile(filePath: string) {
@@ -1857,7 +2026,7 @@ function App() {
       return;
     }
 
-    loadDocument(result.markdown, result.filePath);
+    await loadDocument(result.markdown, result.filePath);
   }
 
   async function loadDemoDocument() {
@@ -1866,7 +2035,7 @@ function App() {
       return;
     }
 
-    loadDocument(DEMO_DOCUMENT_MARKDOWN, undefined, { markClean: false });
+    await loadDocument(DEMO_DOCUMENT_MARKDOWN, undefined, { markClean: false });
   }
 
   async function createNewDocument() {
@@ -1897,7 +2066,7 @@ function App() {
     try {
       const result = await window.nexus?.readWatchedMarkdownFile(externalFileChangePrompt.filePath);
       if (result && !result.canceled) {
-        loadDocument(result.markdown, result.filePath, {
+        await loadDocument(result.markdown, result.filePath, {
           previousVersionMarkdown: previousMarkdown
         });
       }
@@ -1948,7 +2117,7 @@ function App() {
         return;
       }
 
-      loadDocument(result.markdown, result.filePath);
+      await loadDocument(result.markdown, result.filePath);
     } catch {
       setExternalFileChangePrompt({
         filePath,
@@ -2209,6 +2378,9 @@ function App() {
           void h.runSelectionAiAction(payload.action, payload.options);
         }
         break;
+      case "imageToMarkdown":
+        void h.runImageToMarkdown();
+        break;
       case "about":
         h.openAbout();
         break;
@@ -2241,7 +2413,7 @@ function App() {
         return;
       }
 
-      menuHandlersRef.current.loadDocument(result.markdown, result.filePath);
+      await menuHandlersRef.current.loadDocument(result.markdown, result.filePath);
     }
 
     const removeMenuActionListener = window.nexus.onMenuAction(dispatchMenuAction);
@@ -2315,6 +2487,7 @@ function App() {
         canToggleOutline={canToggleOutline}
         dispatchMenuAction={dispatchMenuAction}
         onAiSelectionAction={runSelectionAiAction}
+        onAiImageToMarkdown={runImageToMarkdown}
         fileName={titlebarFileName}
         filePath={filePath ?? null}
         isDirty={isDirty}
@@ -2557,6 +2730,10 @@ function App() {
         }}
         onThemePreferenceChange={(themePreference) =>
           setSettings((current) => ({ ...current, themePreference }))
+        }
+        diagramsAsFiles={settings.diagramsAsFiles}
+        onDiagramsAsFilesChange={(diagramsAsFiles) =>
+          setSettings((current) => ({ ...current, diagramsAsFiles }))
         }
         onOpenChange={setSettingsOpen}
         open={settingsOpen}

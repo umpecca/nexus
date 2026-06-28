@@ -66,6 +66,7 @@ describe("settings helpers", () => {
       aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
+      diagramsAsFiles: false,
       pageSize: DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
       pageMargins: {
@@ -128,6 +129,7 @@ describe("settings helpers", () => {
       aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
+      diagramsAsFiles: false,
       pageSize: "Letter",
       pageOrientation: "portrait",
       pageMargins: {
@@ -344,6 +346,20 @@ describe("settings helpers", () => {
       [getSettingsStorageKey("default")]: JSON.stringify({ spellCheckEnabled: false })
     });
     expect(loadSettings("default").spellCheckEnabled).toBe(false);
+  });
+
+  it("defaults diagrams-as-files to off, but honors an explicit true", () => {
+    expect(createDefaultSettings().diagramsAsFiles).toBe(false);
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ fontFamily: DEFAULT_EDITOR_FONT_FAMILY })
+    });
+    expect(loadSettings("default").diagramsAsFiles).toBe(false);
+
+    installLocalStorage({
+      [getSettingsStorageKey("default")]: JSON.stringify({ diagramsAsFiles: true })
+    });
+    expect(loadSettings("default").diagramsAsFiles).toBe(true);
   });
 
   it("loads a saved enabled outline sidebar setting", () => {
@@ -779,6 +795,7 @@ describe("settings helpers", () => {
       aiChatWidthPixels: 360,
       showInvisibleCharacters: false,
       spellCheckEnabled: true,
+      diagramsAsFiles: false,
       pageSize: "A4",
       pageOrientation: "landscape",
       pageMargins: {
@@ -827,6 +844,7 @@ describe("settings helpers", () => {
         aiChatWidthPixels: 360,
         showInvisibleCharacters: false,
         spellCheckEnabled: true,
+        diagramsAsFiles: false,
         pageSize: "A4",
         pageOrientation: "landscape",
         pageMargins: {

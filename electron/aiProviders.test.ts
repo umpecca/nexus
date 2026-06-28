@@ -6,6 +6,9 @@ import {
   parseChatResult,
   describeMissingConfig,
   normalizeMessages,
+  toAnthropicContent,
+  toOpenAiContent,
+  isUnsupportedTemperatureError,
   ANTHROPIC_VERSION,
   DEFAULT_AZURE_API_VERSION,
   DEFAULT_MAX_TOKENS
@@ -32,7 +35,7 @@ describe("buildChatHttpRequest — OpenAI", () => {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "Hello" }],
       temperature: 0.4,
-      max_tokens: 256
+      max_completion_tokens: 256
     });
   });
 
@@ -159,7 +162,7 @@ describe("buildChatHttpRequest — Azure OpenAI", () => {
     expect(request.headers.Authorization).toBeUndefined();
     expect(request.body).toEqual({
       messages: [{ role: "user", content: "Hello" }],
-      max_tokens: 128
+      max_completion_tokens: 128
     });
   });
 
@@ -172,6 +175,49 @@ describe("buildChatHttpRequest — Azure OpenAI", () => {
     });
 
     expect(request.url).toContain(`api-version=${DEFAULT_AZURE_API_VERSION}`);
+  });
+});
+
+describe("buildChatHttpRequest — max tokens field name", () => {
+  it("uses max_completion_tokens for OpenAI (newer models reject max_tokens)", () => {
+    const request = buildChatHttpRequest({
+      providerId: "openai",
+      config: { model: "gpt-5.5" },
+      apiKey: "sk-test",
+      messages: userMessages,
+      maxTokens: 321
+    });
+
+    expect(request.body.max_completion_tokens).toBe(321);
+    expect(request.body.max_tokens).toBeUndefined();
+  });
+
+  it("uses max_completion_tokens for Azure OpenAI", () => {
+    const request = buildChatHttpRequest({
+      providerId: "azure-openai",
+      config: { azureResourceUrl: "https://r.openai.azure.com", azureDeployment: "d1" },
+      apiKey: "az-test",
+      messages: userMessages,
+      maxTokens: 222
+    });
+
+    expect(request.body.max_completion_tokens).toBe(222);
+    expect(request.body.max_tokens).toBeUndefined();
+  });
+
+  it("keeps max_tokens for DeepSeek and local runtimes", () => {
+    for (const providerId of ["deepseek", "ollama", "lm-studio"]) {
+      const request = buildChatHttpRequest({
+        providerId,
+        config: { model: "m" },
+        apiKey: "",
+        messages: userMessages,
+        maxTokens: 111
+      });
+
+      expect(request.body.max_tokens).toBe(111);
+      expect(request.body.max_completion_tokens).toBeUndefined();
+    }
   });
 });
 
@@ -343,5 +389,148 @@ describe("normalizeMessages", () => {
       { role: "user", content: "ok" },
       { role: "user", content: "coerced" }
     ]);
+  });
+
+  it("preserves valid text/image blocks and drops malformed ones (multimodal turn)", () => {
+    expect(
+      normalizeMessages([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "hi" },
+            { type: "image", mediaType: "image/jpeg", data: "ZZ" },
+            { type: "image", mediaType: "", data: "ZZ" },
+            { type: "text", text: "" },
+            { type: "bogus" },
+            null
+          ]
+        }
+      ])
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image", mediaType: "image/jpeg", data: "ZZ" }
+        ]
+      }
+    ]);
+  });
+
+  it("drops a message whose array content has no usable blocks", () => {
+    expect(normalizeMessages([{ role: "user", content: [{ type: "bogus" }] }])).toEqual([]);
+  });
+});
+
+describe("multimodal content translators", () => {
+  it("toOpenAiContent maps image blocks to image_url data: URLs and passes text through", () => {
+    expect(
+      toOpenAiContent([
+        { type: "text", text: "hi" },
+        { type: "image", mediaType: "image/png", data: "AAAA" }
+      ])
+    ).toEqual([
+      { type: "text", text: "hi" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }
+    ]);
+  });
+
+  it("toAnthropicContent maps image blocks to base64 source blocks and passes text through", () => {
+    expect(
+      toAnthropicContent([
+        { type: "text", text: "hi" },
+        { type: "image", mediaType: "image/png", data: "AAAA" }
+      ])
+    ).toEqual([
+      { type: "text", text: "hi" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }
+    ]);
+  });
+
+  it("leaves plain string content unchanged (regression: text-only turns)", () => {
+    expect(toOpenAiContent("plain")).toBe("plain");
+    expect(toAnthropicContent("plain")).toBe("plain");
+  });
+});
+
+describe("buildChatHttpRequest — multimodal (image) content", () => {
+  const imageMessages = [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Transcribe this." },
+        { type: "image", mediaType: "image/png", data: "AAAA" }
+      ]
+    }
+  ];
+
+  it("emits OpenAI image_url parts with a data: URL", () => {
+    const request = buildChatHttpRequest({
+      providerId: "openai",
+      config: { model: "gpt-4o" },
+      apiKey: "sk-test",
+      messages: imageMessages
+    });
+
+    expect(request.body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Transcribe this." },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }
+        ]
+      }
+    ]);
+  });
+
+  it("emits Anthropic base64 image source blocks", () => {
+    const request = buildChatHttpRequest({
+      providerId: "anthropic",
+      config: { model: "claude-sonnet-4-6" },
+      apiKey: "ant-test",
+      messages: imageMessages
+    });
+
+    expect(request.body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Transcribe this." },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }
+        ]
+      }
+    ]);
+  });
+});
+
+describe("isUnsupportedTemperatureError", () => {
+  it("flags OpenAI's 'only the default temperature' rejection", () => {
+    expect(
+      isUnsupportedTemperatureError({
+        ok: false,
+        error:
+          "Unsupported value: 'temperature' does not support 0.7 with this model. Only the default (1) value is supported."
+      })
+    ).toBe(true);
+  });
+
+  it("flags an 'Unsupported parameter: temperature' phrasing", () => {
+    expect(
+      isUnsupportedTemperatureError({ ok: false, error: "Unsupported parameter: 'temperature'." })
+    ).toBe(true);
+  });
+
+  it("ignores unrelated errors, the max_tokens error, and successful results", () => {
+    expect(isUnsupportedTemperatureError({ ok: false, error: "Incorrect API key provided" })).toBe(
+      false
+    );
+    expect(
+      isUnsupportedTemperatureError({
+        ok: false,
+        error: "Unsupported parameter: 'max_tokens' is not supported with this model."
+      })
+    ).toBe(false);
+    expect(isUnsupportedTemperatureError({ ok: true, text: "hi", model: "m" })).toBe(false);
+    expect(isUnsupportedTemperatureError(null)).toBe(false);
   });
 });

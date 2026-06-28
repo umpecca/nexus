@@ -36,6 +36,37 @@ function providerRequiresApiKey(providerId) {
   return !KEYLESS_PROVIDER_IDS.has(providerId);
 }
 
+// OpenAI renamed the Chat Completions `max_tokens` field to `max_completion_tokens`; its newer models
+// (o-series, gpt-5+) reject the old name with an HTTP 400. Azure OpenAI tracks the same API. Third-
+// party OpenAI-compatible servers (DeepSeek) and local runtimes (Ollama, LM Studio) still implement
+// the original `max_tokens`, so only the first-party providers switch field names.
+const MAX_COMPLETION_TOKENS_PROVIDER_IDS = new Set(["openai", "azure-openai"]);
+
+function maxTokensField(providerId) {
+  return MAX_COMPLETION_TOKENS_PROVIDER_IDS.has(providerId) ? "max_completion_tokens" : "max_tokens";
+}
+
+// Some OpenAI models (o-series, gpt-5+) only accept the default temperature and return an HTTP 400 for
+// any explicit value ("Unsupported value: 'temperature' does not support 0.7 with this model. Only the
+// default (1) value is supported."). Detect that specific failure (from a parsed `{ ok:false, error }`
+// result) so the chat handlers can transparently retry once without temperature instead of failing.
+function isUnsupportedTemperatureError(result) {
+  if (!result || result.ok !== false) {
+    return false;
+  }
+  const message = typeof result.error === "string" ? result.error.toLowerCase() : "";
+  if (!message.includes("temperature")) {
+    return false;
+  }
+  return (
+    message.includes("unsupported value") ||
+    message.includes("unsupported parameter") ||
+    message.includes("does not support") ||
+    message.includes("only the default") ||
+    message.includes("only default")
+  );
+}
+
 function trimTrailingSlashes(value) {
   return typeof value === "string" ? value.replace(/\/+$/, "") : "";
 }
@@ -44,8 +75,37 @@ function coerceRole(role) {
   return role === "system" || role === "assistant" || role === "user" ? role : "user";
 }
 
+// Keep only well-formed content: a non-empty string, or an array of valid text/image blocks (for a
+// multimodal turn). Returns null when nothing usable remains so the caller can drop the message.
+function normalizeContent(content) {
+  if (typeof content === "string") {
+    return content ? content : null;
+  }
+  if (Array.isArray(content)) {
+    const blocks = [];
+    for (const block of content) {
+      if (!block || typeof block !== "object") {
+        continue;
+      }
+      if (block.type === "text" && typeof block.text === "string" && block.text) {
+        blocks.push({ type: "text", text: block.text });
+      } else if (
+        block.type === "image" &&
+        typeof block.mediaType === "string" &&
+        block.mediaType &&
+        typeof block.data === "string" &&
+        block.data
+      ) {
+        blocks.push({ type: "image", mediaType: block.mediaType, data: block.data });
+      }
+    }
+    return blocks.length > 0 ? blocks : null;
+  }
+  return null;
+}
+
 // Drop malformed entries and coerce roles, so the request builders only ever see well-formed
-// `{ role, content }` messages with string content.
+// `{ role, content }` messages whose content is either a string or an array of text/image blocks.
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) {
     return [];
@@ -56,13 +116,39 @@ function normalizeMessages(messages) {
     if (!message || typeof message !== "object") {
       continue;
     }
-    const content = typeof message.content === "string" ? message.content : "";
-    if (!content) {
+    const content = normalizeContent(message.content);
+    if (content === null) {
       continue;
     }
     result.push({ role: coerceRole(message.role), content });
   }
   return result;
+}
+
+// Translate neutral content (a string, or text/image blocks) into Anthropic Messages content.
+// Anthropic wants an image as a base64 source with a separate `media_type`, not a data: URL.
+function toAnthropicContent(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map((block) =>
+    block.type === "image"
+      ? { type: "image", source: { type: "base64", media_type: block.mediaType, data: block.data } }
+      : { type: "text", text: block.text }
+  );
+}
+
+// Translate neutral content into OpenAI-compatible Chat Completions content. OpenAI expects an image
+// as an `image_url` part whose url is a data: URL.
+function toOpenAiContent(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map((block) =>
+    block.type === "image"
+      ? { type: "image_url", image_url: { url: `data:${block.mediaType};base64,${block.data}` } }
+      : { type: "text", text: block.text }
+  );
 }
 
 // Anthropic puts the system prompt in a top-level `system` field, not in `messages`. Pull every
@@ -114,7 +200,10 @@ function buildChatHttpRequest({ providerId, config, apiKey, messages, system, te
     const body = {
       model: typeof cfg.model === "string" ? cfg.model : "",
       max_tokens: resolvedMaxTokens ?? DEFAULT_MAX_TOKENS,
-      messages: conversation.map((message) => ({ role: message.role, content: message.content }))
+      messages: conversation.map((message) => ({
+        role: message.role,
+        content: toAnthropicContent(message.content)
+      }))
     };
     if (hoistedSystem) {
       body.system = hoistedSystem;
@@ -134,7 +223,10 @@ function buildChatHttpRequest({ providerId, config, apiKey, messages, system, te
     };
   }
 
-  const openAiMessages = allMessages.map((message) => ({ role: message.role, content: message.content }));
+  const openAiMessages = allMessages.map((message) => ({
+    role: message.role,
+    content: toOpenAiContent(message.content)
+  }));
 
   if (providerId === "azure-openai") {
     const resourceUrl = trimTrailingSlashes(cfg.azureResourceUrl);
@@ -152,7 +244,7 @@ function buildChatHttpRequest({ providerId, config, apiKey, messages, system, te
       body.temperature = resolvedTemperature;
     }
     if (resolvedMaxTokens !== undefined) {
-      body.max_tokens = resolvedMaxTokens;
+      body[maxTokensField(providerId)] = resolvedMaxTokens;
     }
     return {
       url: `${resourceUrl}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`,
@@ -175,7 +267,7 @@ function buildChatHttpRequest({ providerId, config, apiKey, messages, system, te
     body.temperature = resolvedTemperature;
   }
   if (resolvedMaxTokens !== undefined) {
-    body.max_tokens = resolvedMaxTokens;
+    body[maxTokensField(providerId)] = resolvedMaxTokens;
   }
   // Local runtimes need no key; only send Authorization when one is configured (a secured proxy).
   const headers = { "Content-Type": "application/json" };
@@ -552,7 +644,7 @@ function buildAgentChatHttpRequest({
       body.temperature = resolvedTemperature;
     }
     if (resolvedMaxTokens !== undefined) {
-      body.max_tokens = resolvedMaxTokens;
+      body[maxTokensField(providerId)] = resolvedMaxTokens;
     }
     if (toolList) {
       body.tools = normalizeToolsForOpenAi(toolList);
@@ -576,7 +668,7 @@ function buildAgentChatHttpRequest({
     body.temperature = resolvedTemperature;
   }
   if (resolvedMaxTokens !== undefined) {
-    body.max_tokens = resolvedMaxTokens;
+    body[maxTokensField(providerId)] = resolvedMaxTokens;
   }
   if (toolList) {
     body.tools = normalizeToolsForOpenAi(toolList);
@@ -909,10 +1001,13 @@ module.exports = {
   DEFAULT_AZURE_API_VERSION,
   DEFAULT_MAX_TOKENS,
   normalizeMessages,
+  toAnthropicContent,
+  toOpenAiContent,
   providerRequiresApiKey,
   buildChatHttpRequest,
   parseChatResult,
   describeMissingConfig,
+  isUnsupportedTemperatureError,
   buildAgentChatHttpRequest,
   parseAgentChatResult,
   createSseDecoder,

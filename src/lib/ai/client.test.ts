@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_AI_CONTEXT_CHAR_LIMIT,
+  isImageUnsupportedError,
   resolveActiveProvider,
   truncateForContext
 } from "./client";
@@ -57,5 +58,28 @@ describe("truncateForContext", () => {
 
   it("uses a sane default limit", () => {
     expect(DEFAULT_AI_CONTEXT_CHAR_LIMIT).toBeGreaterThan(1000);
+  });
+});
+
+describe("isImageUnsupportedError", () => {
+  it("flags the OpenAI-compatible image_url schema rejection", () => {
+    expect(
+      isImageUnsupportedError(
+        "Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`, expected `text` at line 1 column 95695"
+      )
+    ).toBe(true);
+  });
+
+  it("flags explicit 'no image support' phrasings", () => {
+    expect(isImageUnsupportedError("This model does not support image input.")).toBe(true);
+    expect(isImageUnsupportedError("The model is not multimodal and cannot process images")).toBe(true);
+    expect(isImageUnsupportedError("Unsupported content: image")).toBe(true);
+  });
+
+  it("does not flag unrelated errors", () => {
+    expect(isImageUnsupportedError("Incorrect API key provided")).toBe(false);
+    expect(isImageUnsupportedError("Rate limit exceeded")).toBe(false);
+    expect(isImageUnsupportedError("Request timed out")).toBe(false);
+    expect(isImageUnsupportedError("A model name is required.")).toBe(false);
   });
 });

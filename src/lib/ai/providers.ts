@@ -24,9 +24,17 @@ export const AI_PROVIDER_IDS: readonly AiProviderId[] = [
 
 export type AiMessageRole = "system" | "user" | "assistant";
 
+/** A text part of a (possibly multimodal) message. */
+export type AiTextContentBlock = { type: "text"; text: string };
+/** An image part of a multimodal message. `data` is raw base64 (no data: URL prefix). */
+export type AiImageContentBlock = { type: "image"; mediaType: string; data: string };
+/** One part of a multimodal message. The adapter translates these per provider wire format. */
+export type AiContentBlock = AiTextContentBlock | AiImageContentBlock;
+
 export interface AiMessage {
   role: AiMessageRole;
-  content: string;
+  /** Either plain text, or an ordered list of content blocks for multimodal (text + image) turns. */
+  content: string | AiContentBlock[];
 }
 
 export interface AiChatUsage {

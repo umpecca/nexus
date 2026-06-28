@@ -165,6 +165,7 @@ export type UserSettings = {
   aiChatWidthPixels: number;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
+  diagramsAsFiles: boolean;
   pageSize: EditorPageSize;
   pageOrientation: EditorPageOrientation;
   pageMargins: EditorPageMargins;
@@ -248,6 +249,11 @@ function sanitizeShowInvisibleCharacters(value: unknown) {
 function sanitizeSpellCheckEnabled(value: unknown) {
   // Spell check is on by default; only an explicit stored `false` disables it.
   return typeof value === "boolean" ? value : true;
+}
+
+function sanitizeDiagramsAsFiles(value: unknown) {
+  // Diagrams stay inline (base64) by default; only an explicit stored `true` externalizes them.
+  return typeof value === "boolean" ? value : false;
 }
 
 function sanitizeOutlineVisible(value: unknown) {
@@ -564,6 +570,7 @@ export function createDefaultSettings(): UserSettings {
     aiChatWidthPixels: DEFAULT_AI_CHAT_WIDTH_PIXELS,
     showInvisibleCharacters: false,
     spellCheckEnabled: true,
+    diagramsAsFiles: false,
     pageSize: DEFAULT_EDITOR_PAGE_SIZE,
     pageOrientation: DEFAULT_EDITOR_PAGE_ORIENTATION,
     pageMargins: createDefaultPageMargins(),
@@ -605,6 +612,7 @@ export function loadSettings(profileName: string): UserSettings {
       aiChatWidthPixels: sanitizeAiChatWidth(parsed.aiChatWidthPixels),
       showInvisibleCharacters: sanitizeShowInvisibleCharacters(parsed.showInvisibleCharacters),
       spellCheckEnabled: sanitizeSpellCheckEnabled(parsed.spellCheckEnabled),
+      diagramsAsFiles: sanitizeDiagramsAsFiles(parsed.diagramsAsFiles),
       pageSize: isEditorPageSize(parsed.pageSize) ? parsed.pageSize : DEFAULT_EDITOR_PAGE_SIZE,
       pageOrientation: isEditorPageOrientation(parsed.pageOrientation)
         ? parsed.pageOrientation
