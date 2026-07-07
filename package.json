@@ -39,7 +39,6 @@
       "icon": "nexus.icns",
       "category": "public.app-category.productivity",
       "target": [
-        "dmg",
         "zip"
       ]
     },
@@ -47,23 +46,12 @@
       "icon": "nexus.ico",
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
     }
   },
   "dependencies": {
