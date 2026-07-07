@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const menuActionChannel = "menu:action";
 const openRecentChannel = "menu:open-recent";
@@ -63,6 +63,11 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   openRecentFile(filePath) {
     return ipcRenderer.invoke("recent:open", filePath);
+  },
+  // Resolve the absolute path of a File dropped onto the window. Electron removed File.path, so the
+  // main-world code cannot read it directly; webUtils.getPathForFile is the supported replacement.
+  getPathForFile(file) {
+    return webUtils.getPathForFile(file);
   },
   getInitialOpenFile() {
     return ipcRenderer.invoke("file:get-initial-open-file");

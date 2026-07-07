@@ -26,6 +26,7 @@ import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import ChangeCalloutType from "./ChangeCalloutType";
 import CleanUpFormatting from "./CleanUpFormatting";
 import InsertAdmonition from "./InsertAdmonition";
+import InsertAlignment from "./InsertAlignment";
 import InsertDiagram from "./InsertDiagram";
 import InsertFootnote from "./InsertFootnote";
 import InsertGithubAlert from "./InsertGithubAlert";
@@ -217,6 +218,12 @@ function RichTextRibbonCommands({
             ]}
           />
         </ToolbarStack>
+      </ToolbarButtonGroup>
+
+      <ToolbarButtonGroup aria-label="Text alignment" ribbonLabel="Align">
+        <ToolbarRow>
+          <InsertAlignment />
+        </ToolbarRow>
       </ToolbarButtonGroup>
 
       <ToolbarButtonGroup aria-label="Links and media" ribbonLabel="Links" wide>

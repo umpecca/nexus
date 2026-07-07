@@ -5,8 +5,9 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    // Build output, the standalone template scaffold (its own project), and deps are not ours to lint.
-    ignores: ["dist", "release", "template", "node_modules"]
+    // Build output, the standalone template scaffold (its own project), vendored draw.io bundles, and
+    // deps are not ours to lint.
+    ignores: ["dist", "release", "template", "node_modules", "public/drawio"]
   },
   {
     // The renderer (React) source. tsc already covers type errors via `npm run build`; ESLint adds

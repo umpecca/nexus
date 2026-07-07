@@ -298,6 +298,7 @@ declare global {
       getProfileName(): Promise<string>;
       openMarkdownFile(): Promise<OpenMarkdownResult>;
       openRecentFile(filePath: string): Promise<OpenMarkdownResult>;
+      getPathForFile(file: File): string;
       getInitialOpenFile(): Promise<OpenMarkdownResult>;
       readWatchedMarkdownFile(filePath: string): Promise<OpenMarkdownResult>;
       watchMarkdownFile(filePath: string): Promise<{ filePath: string }>;

@@ -26,6 +26,7 @@ import {
 import type { ViewMode } from "@mdxeditor/editor";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
+import { isOpenableDocumentFilename } from "./lib/fileDrop";
 import {
   createDefaultSettings,
   getEditorPageSizeOption,
@@ -72,6 +73,8 @@ import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock
 import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert";
 import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
+import { pasteLinkPlugin } from "./components/editor/pasteLinkPlugin";
+import { alignmentPlugin } from "./components/editor/alignmentPlugin";
 import { footnotesPlugin } from "./components/editor/footnotesPlugin";
 import { drawioPlugin } from "./components/editor/drawioPlugin";
 import { isoflowPlugin } from "./components/editor/isoflowPlugin";
@@ -494,6 +497,11 @@ function App() {
   const hasFocusedInitialEmptyEditorRef = useRef(false);
   const programmaticMarkdownChangeRef = useRef<ProgrammaticMarkdownChange | null>(null);
   const programmaticMarkdownChangeTimeoutRef = useRef<number | undefined>();
+  // Bumped whenever a fresh document baseline is established (load, clear, save). A load defers
+  // capturing MDXEditor's normalized serialization as the baseline; comparing the live token against
+  // the one captured when that work was scheduled lets it bail out when a newer load/clear/save has
+  // since superseded it.
+  const documentLoadTokenRef = useRef(0);
   const currentViewModeRef = useRef<ViewMode>("rich-text");
   // The last non-empty editor selection, refreshed continuously so AI actions survive the focus
   // change of opening the AI menu. `pendingAiApplyRef` carries the snapshot + proposed text from the
@@ -524,6 +532,7 @@ function App() {
     handleCloseRequest,
     focusInitialEmptyEditor,
     loadDocument,
+    handleExternalFileChanged,
     openSettings: () => setSettingsOpen(true),
     openAiSettings: () => setAiSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
@@ -767,6 +776,7 @@ function App() {
     handleCloseRequest,
     focusInitialEmptyEditor,
     loadDocument,
+    handleExternalFileChanged,
     openSettings: () => setSettingsOpen(true),
     openAiSettings: () => setAiSettingsOpen(true),
     openAbout: () => setAboutOpen(true),
@@ -1338,6 +1348,56 @@ function App() {
     };
   }, [filePath]);
 
+  // Drag a Markdown file onto the window to open it (same as File → Open). Capture phase so a file
+  // dropped inside the editor is intercepted before Lexical's own drop handling swallows it; image and
+  // other non-document drops fall through to the editor. Internal text drags carry no "Files" type and
+  // are left untouched, so reordering text by drag still works.
+  useEffect(() => {
+    if (!window.nexus) {
+      return;
+    }
+
+    function allowFileDrag(event: DragEvent) {
+      if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) {
+        event.preventDefault();
+      }
+    }
+
+    function handleFileDrop(event: DragEvent) {
+      const transfer = event.dataTransfer;
+      if (!transfer || !Array.from(transfer.types).includes("Files")) {
+        return;
+      }
+
+      const documentFile = Array.from(transfer.files).find((file) =>
+        isOpenableDocumentFilename(file.name)
+      );
+
+      if (documentFile) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const droppedPath = window.nexus?.getPathForFile(documentFile);
+        if (droppedPath) {
+          void menuHandlersRef.current.openRecentFile(droppedPath);
+        }
+        return;
+      }
+
+      // A non-document file dropped onto the chrome (outside the editor) would otherwise navigate the
+      // window to that file; swallow it. Drops inside the editor stay with its own image handling.
+      if (!editorSurfaceRef.current?.contains(event.target as Node)) {
+        event.preventDefault();
+      }
+    }
+
+    window.addEventListener("dragover", allowFileDrag, true);
+    window.addEventListener("drop", handleFileDrop, true);
+    return () => {
+      window.removeEventListener("dragover", allowFileDrag, true);
+      window.removeEventListener("drop", handleFileDrop, true);
+    };
+  }, []);
+
   useEffect(() => {
     if (!window.nexus) {
       return;
@@ -1368,13 +1428,13 @@ function App() {
           return;
         }
 
-        setExternalFileChangePrompt({
-          filePath: result.filePath,
-          kind: event.kind,
-          markdown: result.markdown,
-          source: "external",
-          timestamp: event.timestamp
-        });
+        // Decision (auto-reload vs. conflict dialog) needs the current dirty state, so route it through
+        // the fresh-closure handlers ref rather than this once-mounted effect's stale scope.
+        menuHandlersRef.current.handleExternalFileChanged(
+          result.filePath,
+          result.markdown,
+          event.timestamp
+        );
       } catch {
         setExternalFileChangePrompt({
           filePath: event.filePath,
@@ -1402,6 +1462,36 @@ function App() {
 
     requestDiffView(externalFileChangePrompt.markdown);
     setExternalFileChangePrompt(null);
+  }
+
+  // Pull an external change into the editor and show a normalized before/after diff. Both sides pass
+  // through MDXEditor's serializer (the pre-reload editor content is already normalized; the incoming
+  // disk content is normalized by loadDocument), so a coding-harness rewrite that only differs in raw
+  // Markdown style — `-` vs `*` bullets, `_x_` vs `*x*`, blank-line padding — collapses to nothing and
+  // only the real edits show. The editor lands on the new content so editing continues on top of it.
+  async function reloadExternalChangeIntoDiff(diskMarkdown: string, changedFilePath: string) {
+    const previousMarkdown = getCurrentMarkdown();
+    setExternalFileChangePrompt(null);
+    await loadDocument(diskMarkdown, changedFilePath, { previousVersionMarkdown: previousMarkdown });
+    requestDiffView(previousMarkdown);
+  }
+
+  // A watched file changed on disk. With no unsaved edits (the common "let the harness edit while I
+  // watch" case) there is no conflict, so skip the dialog entirely: auto-reload and drop straight into
+  // the clean diff. Unsaved edits mean a genuine conflict — fall back to the dialog so nothing is lost.
+  function handleExternalFileChanged(changedFilePath: string, diskMarkdown: string, timestamp: number) {
+    const currentIsDirty = hasUnsavedMarkdownChanges(getCurrentMarkdown(), lastSavedMarkdown);
+    if (!currentIsDirty) {
+      void reloadExternalChangeIntoDiff(diskMarkdown, changedFilePath);
+      return;
+    }
+    setExternalFileChangePrompt({
+      filePath: changedFilePath,
+      kind: "changed",
+      markdown: diskMarkdown,
+      source: "external",
+      timestamp
+    });
   }
 
   function compareWithPreviousVersion() {
@@ -1535,6 +1625,30 @@ function App() {
     setMarkdown(nextMarkdown);
   }
 
+  // After a programmatic load, MDXEditor re-serializes the imported Markdown into its own dialect
+  // (`-` bullets become `*`, thematic breaks become `***`, blocks gain blank-line padding, a leading
+  // `#` without a space is escaped, tables are re-aligned, trailing whitespace is trimmed). That
+  // normalized text — not the raw bytes we passed in — is what getMarkdown() returns and what a later
+  // save writes to disk, yet it only becomes readable on the next microtask (setMarkdown's re-import
+  // exports the Lexical tree back to markdown asynchronously). Adopt it as the clean baseline so the
+  // dirty check and the "compare with previous version" diff compare like-for-like (both in
+  // MDXEditor's dialect) instead of raw-disk bytes vs. re-serialized output, which otherwise surfaced
+  // the entire normalization as phantom changes.
+  function adoptNormalizedBaselineAfterLoad(markClean: boolean) {
+    const token = (documentLoadTokenRef.current += 1);
+    queueMicrotask(() => {
+      if (documentLoadTokenRef.current !== token) {
+        return;
+      }
+      const normalized = editorRef.current?.getMarkdown();
+      if (typeof normalized !== "string") {
+        return;
+      }
+      setMarkdown(normalized);
+      setLastSavedMarkdown(markClean ? normalized : "");
+    });
+  }
+
   async function loadDocument(
     nextMarkdown: string,
     nextFilePath: string | undefined,
@@ -1557,9 +1671,12 @@ function App() {
     setMarkdown(editorMarkdown);
     setFilePath(nextFilePath);
     setExternalFileChangePrompt(null);
+    adoptNormalizedBaselineAfterLoad(markClean);
   }
 
   function clearDocument() {
+    // Supersede any load baseline capture still pending on a microtask.
+    documentLoadTokenRef.current += 1;
     beginProgrammaticMarkdownChange("");
     editorRef.current?.setMarkdown("");
     editorScrollSnapshotRef.current = { ratio: 0, top: 0 };
@@ -1572,6 +1689,8 @@ function App() {
   }
 
   function recordSuccessfulSave(currentMarkdown: string, nextFilePath: string, hadSavedVersion: boolean) {
+    // The saved text is already MDXEditor's serialized output; supersede any pending load capture.
+    documentLoadTokenRef.current += 1;
     if (hadSavedVersion) {
       setPreviousVersionMarkdown(lastSavedMarkdown);
       setDiffMarkdown(lastSavedMarkdown);
@@ -2540,6 +2659,7 @@ function App() {
                   thematicBreakPlugin(),
                   linkPlugin(),
                   linkDialogPlugin(),
+                  pasteLinkPlugin(),
                   imagePlugin({ imagePreviewHandler, imageUploadHandler: readImageFileAsDataUrl }),
                   drawioPlugin(),
                   isoflowPlugin(),
@@ -2549,6 +2669,7 @@ function App() {
                     directiveDescriptors: [githubAlertDirectiveDescriptor, admonitionDirectiveDescriptor]
                   }),
                   githubAlertsPlugin(),
+                  alignmentPlugin(),
                   footnotesPlugin(),
                   codeBlockPlugin({
                     defaultCodeBlockLanguage: "txt",

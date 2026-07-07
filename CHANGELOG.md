@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-06
+
+### Added
+
+- AI chat panel with configurable providers for drafting and revising alongside the document.
+- Embedded draw.io editor: insert and edit diagrams inline, stored as editable images.
+- Embedded Isoflow editor for isometric network/architecture diagrams.
+- Footnotes: insert footnote references and definitions, with a naming dialog.
+- Option to store diagrams as sidecar asset files next to the document instead of inline base64.
+- Resize handle for rasterized diagram images.
+- Block text alignment (left / center / right) toolbar control, round-tripped as `<div align="…">`.
+- Open a Markdown file by dragging it onto the window.
+- Pasting a URL over selected text wraps the selection in a link.
+- When a watched file changes on disk with no unsaved edits, auto-reload it and open a clean
+  before/after diff instead of prompting.
+
+### Changed
+
+- Consolidate the separate draw.io / Isoflow / Mermaid insert controls into a single diagram menu.
+- Titlebar refinements.
+
+### Fixed
+
+- Diff and dirty-state comparisons no longer report the rich-text editor's Markdown re-serialization
+  (bullet style, block spacing, escaping) as edits: the baseline is normalized on load, so the diff and
+  the unsaved-changes indicator reflect only real changes.
+
 ## [0.1.0] - 2026-05-08
 
 ### Added

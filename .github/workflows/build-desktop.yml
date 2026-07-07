@@ -77,6 +77,9 @@ jobs:
       - name: Check Electron preload
         run: node --check electron/preload.cjs
 
+      - name: Vendor drawio web app
+        run: npm run fetch:drawio
+
       - name: Build renderer
         run: npm run build
 
