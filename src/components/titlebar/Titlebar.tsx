@@ -37,7 +37,7 @@ export type TitlebarProps = {
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
   onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
-  onAiImageToMarkdown: () => void;
+  onAiDocumentImport: () => void;
 };
 
 type AppMenuBarProps = {
@@ -52,7 +52,7 @@ type AppMenuBarProps = {
   paperViewEnabled: boolean;
   dispatchMenuAction: (action: NexusMenuAction) => void;
   onAiSelectionAction: (action: SelectionActionId, options?: SelectionActionOptions) => void;
-  onAiImageToMarkdown: () => void;
+  onAiDocumentImport: () => void;
 };
 
 function AppMenuBar({
@@ -67,7 +67,7 @@ function AppMenuBar({
   paperViewEnabled,
   dispatchMenuAction,
   onAiSelectionAction,
-  onAiImageToMarkdown
+  onAiDocumentImport
 }: AppMenuBarProps) {
   const nexus = window.nexus;
 
@@ -205,7 +205,7 @@ function AppMenuBar({
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSeparator />
-          <MenubarItem onSelect={() => onAiImageToMarkdown()}>Image to Markdown…</MenubarItem>
+          <MenubarItem onSelect={() => onAiDocumentImport()}>Import PDF or Images…</MenubarItem>
         </MenubarContent>
       </MenubarMenu>
 
@@ -360,7 +360,7 @@ export function Titlebar({
   paperViewEnabled,
   dispatchMenuAction,
   onAiSelectionAction,
-  onAiImageToMarkdown
+  onAiDocumentImport
 }: TitlebarProps) {
   const platform = window.nexus?.platform;
   const isMac = platform === "darwin";
@@ -375,7 +375,7 @@ export function Titlebar({
             canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}
             onAiSelectionAction={onAiSelectionAction}
-            onAiImageToMarkdown={onAiImageToMarkdown}
+            onAiDocumentImport={onAiDocumentImport}
             outlineVisible={outlineVisible}
             pageOrientation={pageOrientation}
             paperViewEnabled={paperViewEnabled}

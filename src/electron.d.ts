@@ -53,7 +53,7 @@ export type NexusMenuAction =
   | "publishQuickConnect"
   | "toggleAiChat"
   | "aiSelection"
-  | "imageToMarkdown";
+  | "documentImport";
 
 /**
  * Payload accompanying the "aiSelection" menu action; every other menu action carries no payload.
@@ -127,6 +127,19 @@ type SelectBase64ImageResult =
   | { canceled: true }
   | { canceled: false; filePath: string; mimeType: string; dataUrl: string };
 
+type DocumentImportImage = { mimeType: string; dataUrl: string; alt?: string };
+type DocumentImportItem = {
+  id: string;
+  label: string;
+  text: string;
+  visionImage?: DocumentImportImage;
+  embeddedImages: DocumentImportImage[];
+};
+type SelectDocumentImportResult =
+  | { canceled: true }
+  | { canceled: false; error: string }
+  | { canceled: false; items: DocumentImportItem[]; warnings: string[] };
+
 // Result of editing a diagram in the drawio editor window. On save, `dataUrl` is an editable-SVG
 // `data:image/svg+xml` URL (the diagram source XML is embedded in the SVG) and `xml` is that source.
 type EditDiagramResult =
@@ -139,6 +152,14 @@ type EditDiagramResult =
 type EditIsoflowResult =
   | { canceled: true }
   | { canceled: false; dataUrl: string; model: unknown };
+
+type EditOpenApiResult =
+  | { canceled: true }
+  | { canceled: false; yaml: string };
+
+type EditSqlSchemaResult =
+  | { canceled: true }
+  | { canceled: false; schema: string };
 
 type ConfigureMcpServerInput = {
   enabled: boolean;
@@ -322,6 +343,7 @@ declare global {
       ): Promise<SaveMarkdownResult>;
       selectLocalImage(documentPath?: string): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
+      selectDocumentImportSources(): Promise<SelectDocumentImportResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
       readDiagramSvg(documentPath: string | undefined, src: string): Promise<string | null>;
       writeDiagramSvg(
@@ -335,6 +357,8 @@ declare global {
       ): Promise<{ removed: number }>;
       editDiagram(payload: { xml: string }): Promise<EditDiagramResult>;
       editIsoflow(payload: { model: unknown | null }): Promise<EditIsoflowResult>;
+      editOpenApi(payload: { yaml: string; theme: "light" | "dark" }): Promise<EditOpenApiResult>;
+      editSqlSchema(payload: { schema: string; theme: "light" | "dark" }): Promise<EditSqlSchemaResult>;
       confirmSaveChanges(): Promise<ConfirmSaveChangesResult>;
       setMenuState(state: NexusMenuState): void;
       configureMcpServer(config: ConfigureMcpServerInput): Promise<ConfigureMcpServerResult>;
@@ -381,6 +405,18 @@ declare global {
       onWindowMaximizeChange(callback: (isMaximized: boolean) => void): () => void;
       newWindow(): Promise<void>;
       quitApp(): Promise<void>;
+    };
+    nexusOpenApiHost?: {
+      ready(): void;
+      onInit(callback: (payload: { yaml: string; theme: "light" | "dark" }) => void): void;
+      save(result: { yaml: string }): void;
+      cancel(): void;
+    };
+    nexusSqlSchemaHost?: {
+      ready(): void;
+      onInit(callback: (payload: { schema: string; theme: "light" | "dark" }) => void): void;
+      save(result: { schema: string }): void;
+      cancel(): void;
     };
   }
 }

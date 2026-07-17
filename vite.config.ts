@@ -18,7 +18,9 @@ export default defineConfig({
       // entry/chunk so isoflow's heavy bundle (MUI/paper/gsap) never weighs on the main editor.
       input: {
         main: resolve(__dirname, "index.html"),
-        isoflowHost: resolve(__dirname, "isoflow-host.html")
+        isoflowHost: resolve(__dirname, "isoflow-host.html"),
+        openapiHost: resolve(__dirname, "openapi-host.html"),
+        sqlschemaHost: resolve(__dirname, "sqlschema-host.html")
       }
     }
   }

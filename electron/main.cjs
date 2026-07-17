@@ -15,9 +15,14 @@ const headingSlugger = require("./headingSlugger.cjs");
 const mcpDocumentTools = require("./mcpDocumentTools.cjs");
 const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
+const documentImport = require("./documentImport.cjs");
 const aiProviders = require("./aiProviders.cjs");
 const { createDrawioSession } = require("./drawioEmbed.cjs");
 const { ISOFLOW_WINDOW, normalizeSaveResult } = require("./isoflowEmbed.cjs");
+const { OPENAPI_WINDOW, normalizeOpenApiSaveResult } = require("./openapiEmbed.cjs");
+const { SQL_SCHEMA_WINDOW, normalizeSqlSchemaSaveResult } = require("./sqlSchemaEmbed.cjs");
+const { isOpenApiExportFence, renderOpenApiExport } = require("./openapiExport.cjs");
+const { isSqlSchemaExportFence, renderSqlSchemaExport } = require("./sqlSchemaExport.cjs");
 const {
   AI_SELECTION_ACTIONS,
   AI_TONE_OPTIONS,
@@ -1346,6 +1351,130 @@ ${pdfPrintStyle}
       white-space: pre-wrap;
     }
 
+    .nexus-openapi-export {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      color: #172033;
+      margin: 1.5em 0;
+      overflow: hidden;
+    }
+
+    .nexus-openapi-export-title {
+      background: #f8fafc;
+      border-bottom: 1px solid #cbd5e1;
+      padding: 1.1em 1.25em;
+    }
+
+    .nexus-openapi-export h3,
+    .nexus-openapi-export h4,
+    .nexus-openapi-export h5 {
+      margin: 0 0 0.45em;
+    }
+
+    .nexus-openapi-export-title p:last-child,
+    .nexus-openapi-export-servers ul,
+    .nexus-openapi-export-group > p:last-of-type {
+      margin-bottom: 0;
+    }
+
+    .nexus-openapi-export-servers,
+    .nexus-openapi-export-group {
+      padding: 1em 1.25em 0;
+    }
+
+    .nexus-openapi-export-operation {
+      border: 1px solid #cbd5e1;
+      border-left: 5px solid #64748b;
+      border-radius: 5px;
+      margin: 0.9em 0 1.1em;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+    }
+
+    .nexus-openapi-export-operation header {
+      align-items: baseline;
+      background: #f8fafc;
+      border-bottom: 1px solid #dbe3ed;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55em;
+      padding: 0.65em 0.8em;
+    }
+
+    .nexus-openapi-export-method {
+      background: #64748b;
+      border-radius: 3px;
+      color: #fff;
+      font-size: 0.78em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.18em 0.45em;
+    }
+
+    .nexus-openapi-export-get { border-left-color: #2563eb; }
+    .nexus-openapi-export-get .nexus-openapi-export-method { background: #2563eb; }
+    .nexus-openapi-export-post { border-left-color: #059669; }
+    .nexus-openapi-export-post .nexus-openapi-export-method { background: #059669; }
+    .nexus-openapi-export-put { border-left-color: #7c3aed; }
+    .nexus-openapi-export-put .nexus-openapi-export-method { background: #7c3aed; }
+    .nexus-openapi-export-delete { border-left-color: #dc2626; }
+    .nexus-openapi-export-delete .nexus-openapi-export-method { background: #dc2626; }
+    .nexus-openapi-export-patch { border-left-color: #d97706; }
+    .nexus-openapi-export-patch .nexus-openapi-export-method { background: #d97706; }
+
+    .nexus-openapi-export-path {
+      background: transparent;
+      font-size: 1.02em;
+      font-weight: 700;
+      padding: 0;
+    }
+
+    .nexus-openapi-export-operation-body {
+      padding: 0.8em;
+    }
+
+    .nexus-openapi-export-operation-body section {
+      margin-top: 1em;
+    }
+
+    .nexus-openapi-export-operation-body table {
+      font-size: 0.92em;
+    }
+
+    .nexus-openapi-export-schema {
+      display: block;
+      font-size: 0.9em;
+      margin-top: 0.35em;
+    }
+
+    .nexus-openapi-export-properties {
+      margin: 0.35em 0 0.1em 1.2em;
+      padding: 0;
+    }
+
+    .nexus-openapi-export-enum,
+    .nexus-openapi-export-security {
+      font-size: 0.9em;
+      margin-top: 0.35em;
+    }
+
+    .nexus-openapi-export-media,
+    .nexus-openapi-export-response {
+      background: #f8fafc;
+      border: 1px solid #dbe3ed;
+      border-radius: 4px;
+      margin: 0.55em 0;
+      padding: 0.6em 0.7em;
+    }
+
+    .nexus-openapi-export-media pre,
+    .nexus-openapi-export-response pre {
+      font-size: 0.8em;
+      margin: 0.55em 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     table {
       border-collapse: collapse;
       width: 100%;
@@ -1366,6 +1495,10 @@ ${pdfPrintStyle}
       main {
         width: 100%;
         padding: 0;
+      }
+
+      .nexus-openapi-export {
+        border-color: #94a3b8;
       }
     }
   </style>
@@ -1825,6 +1958,118 @@ function openIsoflowEditor(parentWindow, initialModel) {
   });
 }
 
+function loadOpenApiEditor(editorWindow) {
+  if (isDev) {
+    return editorWindow.loadURL(new URL("openapi-host.html", process.env.NEXUS_DEV_SERVER_URL).toString());
+  }
+  return editorWindow.loadFile(path.join(__dirname, "..", "dist", "openapi-host.html"));
+}
+
+function loadSqlSchemaEditor(editorWindow) {
+  if (isDev) return editorWindow.loadURL(new URL("sqlschema-host.html", process.env.NEXUS_DEV_SERVER_URL).toString());
+  return editorWindow.loadFile(path.join(__dirname, "..", "dist", "sqlschema-host.html"));
+}
+
+function openSqlSchemaEditor(parentWindow, initialSchema, theme) {
+  return new Promise((resolve) => {
+    const hasParent = Boolean(parentWindow && !parentWindow.isDestroyed());
+    const editorWindow = new BrowserWindow({
+      parent: hasParent ? parentWindow : undefined, modal: hasParent,
+      width: SQL_SCHEMA_WINDOW.width, height: SQL_SCHEMA_WINDOW.height,
+      minWidth: SQL_SCHEMA_WINDOW.minWidth, minHeight: SQL_SCHEMA_WINDOW.minHeight,
+      title: "Edit data model", backgroundColor: theme === "dark" ? "#0f172a" : "#f4f7fb", autoHideMenuBar: true, icon: getAppIconPath(),
+      webPreferences: { preload: path.join(__dirname, "sqlSchemaPreload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: false }
+    });
+    let settled = false;
+    const fromEditor = (event) => event.sender === editorWindow.webContents;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener("sqlschema:ready", onReady);
+      ipcMain.removeListener("sqlschema:save", onSave);
+      ipcMain.removeListener("sqlschema:cancel", onCancel);
+      if (!editorWindow.isDestroyed()) editorWindow.destroy();
+      resolve(result);
+    };
+    function onReady(event) { if (fromEditor(event) && !editorWindow.isDestroyed()) editorWindow.webContents.send("sqlschema:init", { schema: initialSchema, theme }); }
+    function onSave(event, raw) { if (!fromEditor(event)) return; const result = normalizeSqlSchemaSaveResult(raw); if (result) finish(result); }
+    function onCancel(event) { if (fromEditor(event)) finish({ canceled: true }); }
+    ipcMain.on("sqlschema:ready", onReady);
+    ipcMain.on("sqlschema:save", onSave);
+    ipcMain.on("sqlschema:cancel", onCancel);
+    editorWindow.on("closed", () => finish({ canceled: true }));
+    loadSqlSchemaEditor(editorWindow).catch((error) => { if (!error || (error.code !== "ERR_ABORTED" && error.errno !== -3)) console.error("Failed to load data model editor:", error); });
+  });
+}
+
+// Opens Nexus's adapted, offline OpenAPI editor. The YAML remains owned by the Markdown code block;
+// the host gets one initial snapshot and returns one replacement only when the user explicitly saves.
+function openOpenApiEditor(parentWindow, initialYaml, theme) {
+  return new Promise((resolve) => {
+    const hasParent = Boolean(parentWindow && !parentWindow.isDestroyed());
+    const editorWindow = new BrowserWindow({
+      parent: hasParent ? parentWindow : undefined,
+      modal: hasParent,
+      width: OPENAPI_WINDOW.width,
+      height: OPENAPI_WINDOW.height,
+      minWidth: OPENAPI_WINDOW.minWidth,
+      minHeight: OPENAPI_WINDOW.minHeight,
+      title: "Edit OpenAPI specification",
+      backgroundColor: theme === "dark" ? "#111827" : "#f5f7fb",
+      autoHideMenuBar: true,
+      icon: getAppIconPath(),
+      webPreferences: {
+        preload: path.join(__dirname, "openapiPreload.cjs"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    });
+
+    let settled = false;
+    const isFromThisWindow = (event) => event.sender === editorWindow.webContents;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener("openapi:ready", onReady);
+      ipcMain.removeListener("openapi:save", onSave);
+      ipcMain.removeListener("openapi:cancel", onCancel);
+      if (!editorWindow.isDestroyed()) editorWindow.destroy();
+      resolve(result);
+    };
+    function onReady(event) {
+      if (!isFromThisWindow(event) || editorWindow.isDestroyed()) return;
+      editorWindow.webContents.send("openapi:init", { yaml: initialYaml, theme });
+    }
+    function onSave(event, raw) {
+      if (!isFromThisWindow(event)) return;
+      const result = normalizeOpenApiSaveResult(raw);
+      if (result) finish(result);
+    }
+    function onCancel(event) {
+      if (isFromThisWindow(event)) finish({ canceled: true });
+    }
+
+    ipcMain.on("openapi:ready", onReady);
+    ipcMain.on("openapi:save", onSave);
+    ipcMain.on("openapi:cancel", onCancel);
+    editorWindow.on("closed", () => finish({ canceled: true }));
+    editorWindow.webContents.on("console-message", (...args) => {
+      const details = args[0];
+      const message = details && typeof details === "object" && "message" in details ? details.message : args[2];
+      debugLog("[OpenAPI editor]", message);
+    });
+    editorWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _url, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3 || settled || editorWindow.isDestroyed()) return;
+      console.error(`OpenAPI editor failed to load (${errorCode}): ${errorDescription}`);
+    });
+    loadOpenApiEditor(editorWindow).catch((error) => {
+      if (error && (error.code === "ERR_ABORTED" || error.errno === -3)) return;
+      console.error("Failed to load the OpenAPI editor:", error);
+    });
+  });
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -2244,6 +2489,14 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
     const language = getCodeTokenLanguage(token);
     if (isMathFence(language)) {
       return renderExportMathBlockHtml(token.text);
+    }
+    if (isOpenApiExportFence(token?.lang)) {
+      const openApiReference = renderOpenApiExport(token.text);
+      if (openApiReference) return openApiReference;
+    }
+    if (isSqlSchemaExportFence(token?.lang)) {
+      const schemaReference = renderSqlSchemaExport(token.text);
+      if (schemaReference) return schemaReference;
     }
     if (!isMermaidFence(language)) {
       return options.codeBlockNewlinesAsBreaks
@@ -3518,9 +3771,9 @@ function buildAiSelectionMenuItems() {
     { type: "separator" },
     {
       // Generate-and-insert action (not a selection transform), so it bypasses the aiSelection
-      // catalog and sends a plain menu action the renderer maps to runImageToMarkdown.
-      label: "Image to Markdown…",
-      click: () => sendMenuAction("imageToMarkdown")
+      // catalog and sends a plain menu action the renderer maps to the document importer.
+      label: "Import PDF or Images…",
+      click: () => sendMenuAction("documentImport")
     }
   ];
 }
@@ -3827,6 +4080,10 @@ const pdfFilters = [
 const imageFilters = [
   { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"] },
   { name: "All Files", extensions: ["*"] }
+];
+
+const documentImportFilters = [
+  { name: "PDF or Images", extensions: ["pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"] }
 ];
 
 const imageMimeTypes = new Map([
@@ -4784,6 +5041,31 @@ ipcMain.handle("image:select-base64", async () => {
   };
 });
 
+ipcMain.handle("document-import:select", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const options = {
+    title: "Import PDF or Images",
+    properties: ["openFile", "multiSelections"],
+    filters: documentImportFilters
+  };
+  const result = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  try {
+    const prepared = await documentImport.prepareDocumentImport(result.filePaths.map(path.resolve));
+    return { canceled: false, ...prepared };
+  } catch (error) {
+    return {
+      canceled: false,
+      error: error instanceof Error ? error.message : "Could not import the selected document."
+    };
+  }
+});
+
 ipcMain.handle("image:resolve-preview", (_event, payload) => {
   const { documentPath, imageSource } = payload ?? {};
   return resolveImagePreviewSource(documentPath, imageSource);
@@ -4869,6 +5151,20 @@ ipcMain.handle("isoflow:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const initialModel = payload && typeof payload === "object" ? payload.model ?? null : null;
   return openIsoflowEditor(parentWindow, initialModel);
+});
+
+ipcMain.handle("openapi:edit", (event, payload) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender);
+  const initialYaml = typeof payload?.yaml === "string" ? payload.yaml : "";
+  const theme = payload?.theme === "dark" ? "dark" : "light";
+  return openOpenApiEditor(parentWindow, initialYaml, theme);
+});
+
+ipcMain.handle("sqlschema:edit", (event, payload) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender);
+  const schema = typeof payload?.schema === "string" ? payload.schema : "";
+  const theme = payload?.theme === "dark" ? "dark" : "light";
+  return openSqlSchemaEditor(parentWindow, schema, theme);
 });
 
 ipcMain.handle("edit:command", (event, command) => {

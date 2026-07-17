@@ -33,6 +33,7 @@ import InsertGithubAlert from "./InsertGithubAlert";
 import InsertImageImport from "./InsertImageImport";
 import InsertKatexBlock from "./InsertKatexBlock";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
+import InsertOpenApi from "./InsertOpenApi";
 import InsertTableOfContents from "./InsertTableOfContents";
 import { Button } from "../ui/button";
 import { ButtonGroup } from "../ui/button-group";
@@ -240,6 +241,7 @@ function RichTextRibbonCommands({
           <InsertThematicBreak />
           <InsertCodeBlock />
           <InsertLocalJavaScriptRunner />
+          <InsertOpenApi />
           <InsertDiagram />
           <InsertKatexBlock />
           <InsertFootnote />

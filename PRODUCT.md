@@ -2,29 +2,31 @@
 
 ## 1. Product Summary
 
-**Nexus** is a visual-first Markdown editing application for people who write technical documentation, business presentations, and paperwork-heavy content who want an approachable editor without juggling separate editor and preview tools.
+**Nexus** is a visual-first Markdown editing application for people who write technical documentation, business presentations, and paperwork-heavy content. It combines approachable rich-text and source editing with optional, user-configured AI assistance for drafting, revising, importing, and safely applying document changes.
 
 ## 2. Business Requirements
 
 ### 2.1 Problem Statement
 
-Markdown is effective for structured writing, but many users still need a calm editing surface that lets them focus on the content before file-management workflows are introduced.
+Markdown is effective for structured writing, but many users still need a calm editing surface that lets them focus on the content without juggling separate editor, preview, diagram, and AI tools.
 
 - Writers, documentation maintainers, analysts, and operations workers experience this problem.
 - It occurs while creating or editing Markdown files that may be revised manually and by agents.
-- Existing solutions often expose too many document actions before the editing experience is stable.
+- Existing solutions often expose too many document actions, or require users to copy document content between an editor and an external AI chat.
 
 ### 2.2 Business Objectives
 
 - Validate a focused desktop writing workflow for Markdown.
 - Reduce time from launch to editing an existing Markdown file.
-- Provide a simple local foundation for later agent-assisted workflows.
+- Provide optional AI-assisted writing and document-aware chat without making a remote service mandatory for editing.
+- Keep model-provider choice under the user's control, including support for local runtimes.
 - Keep v1 small enough for a solo developer or agent-driven workflow to complete.
 
 ### 2.3 Success Metrics
 
 - A user can open the app and begin editing a Markdown document in under 10 seconds.
 - A user can edit Markdown in rich-text or source mode without leaving the editor surface.
+- A user with a configured AI provider can revise selected text, chat about the current document, and review proposed edits without copying the document into another application.
 - The project can be built and run from documented package scripts.
 
 ### 2.4 Scope
@@ -60,6 +62,25 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A native desktop editor right-click menu for Cut, Copy, Paste, and spelling corrections.
 - Native desktop spell checking in the editor with inline misspelling underlines and correction suggestions in the editor right-click menu.
 - A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
+- An offline visual OpenAPI editor, adapted from the MIT-licensed `waterrmalann/openapi-editor`, that
+  inserts and reopens portable ```` ```yaml openapi ```` blocks from the rich-text toolbar. The
+  editor covers routes, parameters, responses, schemas, API metadata, servers, tags, and security
+  schemes, visual OpenAPI 3 request bodies (media types, component or inline schemas, required
+  fields, validated JSON examples, and guided JSON/form/file-upload media-type selection), preserves
+  unknown fields and vendor extensions, and commits only on explicit Save. In
+  rich-text mode, each block expands into an offline Swagger-style API reference with tagged,
+  method-colored operations, parameters, request bodies, responses, servers, and schema details;
+  HTML and PDF exports use the same static reference rather than exposing the raw YAML.
+- An offline visual data-model designer ("Isoflow for data models") that stores portable,
+  executable-looking ```` ```sql sqlschema ```` PostgreSQL blocks. It supports positioned tables,
+  columns, descriptions, colors, primary/unique/nullable/default fields, single-column foreign keys,
+  inline SVG previews, and static document exports without database connections or network assets.
+- Optional, per-OS-profile AI provider configuration for OpenAI, Azure OpenAI, DeepSeek, Anthropic, Ollama, and LM Studio, with user-selectable models and connection testing.
+- AI provider API keys encrypted at rest using the operating system's secure storage and omitted from plaintext application settings.
+- AI selection actions for improving, shortening, expanding, correcting, summarizing, changing the tone of, and translating selected text, with an original-versus-proposed review before replacement.
+- A resizable, document-scoped AI chat panel that streams responses, can include the current editor selection, and can use the existing Nexus document tools to inspect or propose changes to the current document.
+- AI chat write operations routed through the same document-change confirmation boundary as MCP writes.
+- An AI document-import workflow that converts one PDF or multiple ordered images into Markdown at the current caret, using local PDF extraction where possible and the configured vision-capable model where image understanding is required.
 - Local Markdown file open and save workflows through the Electron app menu.
 - HTML and PDF document export workflows through the Electron File menu.
 - A Publish as Web workflow that uploads the self-contained HTML rendering of the current document to a user-specified SFTP server, with credentials entered per publish and never stored.
@@ -82,8 +103,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 #### Out of Scope
 
 - Top-level document action buttons.
-- Real AI provider integration baked into the editor UI.
-- Inline AI controls.
+- A bundled AI model, hosted Nexus AI service, or included provider subscription; users supply access to a supported hosted provider or run a supported local endpoint.
+- Automatic background AI processing of document content without an explicit user action.
+- Persistent or cloud-synchronized AI chat history.
 - MCP write tools that reach beyond the active document buffer (multi-window batched edits, file open/save through MCP, image or attachment write tools). In-buffer content edits — full replacement, ordered find/replace, section replacement, and scalar frontmatter changes — are in scope; filesystem-touching writes are not.
 - Outbound MCP client behavior (Nexus calling other MCP servers).
 - Direct remote network binding of the MCP server (the server still binds `127.0.0.1` only; remote reachability is available only through the optional, user-enabled ngrok tunnel, which forwards to the loopback port without binding a non-loopback address).
@@ -105,7 +127,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Privacy is a default assumption: document content stays local unless the user takes an explicit action that sends it elsewhere. The publishing features are such actions: Publish as Web transmits content to an SFTP server only when the user configures and confirms a publish, and it never stores the credentials used to do so; Publish as HTML over QuickConnect transmits content to a user-configured HTTP endpoint and stores its bearer token encrypted at rest using the operating system's secure storage (Electron safeStorage), keeping the token out of the plaintext local settings while saving the non-secret URL and path locally. The optional MCP ngrok tunnel makes the enabled MCP server reachable from the public internet only while the user turns it on; it runs the user's installed ngrok CLI and relies on the authtoken configured in the ngrok CLI, so Nexus does not store an ngrok authtoken. The MCP server still binds loopback, and bearer-token authentication plus the write-confirmation dialog continue to apply — except that the user may opt into auto-approving writes, which is off by default and, when enabled, lets MCP write calls change the document without the per-call dialog; the settings dialog warns about this, and warns more strongly when it is combined with the ngrok tunnel. The MCP bearer token is itself a secret and is encrypted at rest with the operating system's secure storage (Electron safeStorage), like the QuickConnect token, rather than kept in plaintext local settings.
 - Unused vendored framework dependencies should not remain in the app tree.
 - The optional MCP ngrok tunnel depends on the externally-installed ngrok CLI rather than a bundled ngrok library, consistent with the preference for minimal bundled dependencies; users who do not enable the tunnel need not install ngrok.
-- Inline AI and changed-lines review are intentionally deferred until the core editor workflow is stable.
+- In-app AI is optional and sends only the user-requested prompt, selection, document content retrieved through tools, or import sources to the configured provider. Local editing, file operations, diagrams, and exports remain usable without an AI provider.
+- Hosted-provider API keys are encrypted at rest using the operating system's secure storage. When secure storage is unavailable, Nexus shall not persist those keys in plaintext.
+- Ollama and LM Studio allow AI requests to remain on a user-controlled local endpoint; Nexus does not assume that every configured model supports vision input or tool calling.
 - The project is early-stage, so the scaffold should favor clarity over architectural depth.
 
 ## 3. User Requirements
@@ -115,6 +139,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Technical writer: drafts structured documentation and wants visual formatting with Markdown portability.
 - Business operator: prepares policies, notes, and reports and wants less friction than a code editor.
 - Documentation maintainer: updates Markdown files and wants clear desktop-style file state while working.
+- AI-assisted writer: wants help revising or understanding a document while retaining control over the provider, transmitted context, and proposed changes.
 
 ### 3.2 User Goals
 
@@ -122,6 +147,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep content readable while editing.
 - Avoid extra document-management controls while drafting.
 - Navigate quickly between sections of a long document.
+- Revise selected text and ask questions about the current document without leaving the editor.
+- Review AI-proposed changes before they alter the document.
+- Convert PDFs and document images into editable Markdown at the intended insertion point.
 - Publish a finished document to a personal web server, over SFTP or a simple HTTP endpoint, without leaving the editor.
 
 ### 3.3 User Stories
@@ -217,6 +245,42 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Given the server rejects the request or cannot be reached  
 - When I publish  
 - Then the system shows the HTTP status or error instead of appearing to succeed
+
+**Story 7**
+> As a writer revising a document,
+> I want AI assistance to work on my selection or current document,
+> so that I can draft and revise without copying content into another application.
+
+#### Acceptance Criteria
+- Given I have configured an AI provider and selected text in the editor
+- When I choose an AI selection action
+- Then the system shows the original and proposed replacement before changing the document
+
+- Given the AI chat panel is open
+- When I ask a question about the current document
+- Then the assistant can read the document through document-scoped tools and stream its response in the panel
+
+- Given the assistant proposes a document edit through a write tool
+- When the write reaches the editor
+- Then the existing write-confirmation boundary applies before the change is committed
+
+**Story 8**
+> As a writer receiving source material as a PDF or scanned images,
+> I want to convert it into Markdown at my current insertion point,
+> so that I can continue editing the content in Nexus.
+
+#### Acceptance Criteria
+- Given I have configured a suitable AI provider and placed the caret in the document
+- When I import one PDF or multiple ordered images
+- Then the system inserts one Markdown transcription at the captured caret in source order
+
+- Given a PDF contains selectable text
+- When the document is imported
+- Then the system extracts that text locally and uses vision only for pages or content that require image understanding
+
+- Given import is canceled or fails
+- When the workflow ends
+- Then the current document remains unchanged
 
 ### 3.4 Functional Requirements
 
@@ -387,6 +451,24 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall apply the project-owned `.icns` asset to macOS packaged application bundles so Finder and Dock do not show the default Electron icon.
 - The system shall allow the desktop build workflow to be started manually from GitHub Actions.
 - The system shall upload packaged desktop artifacts for download from the workflow run.
+- The system shall allow the user to enable and configure supported hosted and local AI providers independently and choose one enabled provider as the default.
+- The system shall allow provider-specific endpoint, model, temperature, and output-token settings, including Azure deployment settings where required.
+- The system shall provide a connection test for an AI provider before the user relies on it for document work.
+- The system shall encrypt hosted-provider API keys at rest using the operating system's secure storage, scoped by OS profile and provider, and shall not include API keys in renderer-to-main-process AI request payloads.
+- The system shall keep AI features optional and shall leave ordinary editing, file, diagram, export, and publishing workflows usable when no AI provider is configured.
+- The system shall provide AI actions for improving, shortening, expanding, correcting, summarizing, changing the tone of, and translating the current non-empty editor selection.
+- The system shall show the original selection and proposed Markdown replacement in a review dialog and shall change the document only when the user accepts the proposal.
+- The system shall preserve the captured rich-text or source selection while an AI selection request runs so an accepted proposal replaces the intended text.
+- The system shall provide a resizable AI chat panel scoped to the document in its editor window.
+- The system shall stream AI chat responses and allow the user to stop an in-progress response.
+- The system shall allow the current editor selection to be attached explicitly as context to the next AI chat message.
+- The system shall expose the existing Nexus document read and write tool catalog to capable AI chat providers and shall pin every in-app chat tool call to that panel's document.
+- The system shall show AI chat tool-call status and results in the conversation.
+- The system shall route AI chat write tools through the same confirmation and serialization boundary used by MCP writes.
+- The system shall allow importing one PDF or multiple ordered images from the AI menu as Markdown inserted at the caret captured before the native file picker opened.
+- The system shall extract selectable PDF text and embedded raster images locally, and shall send scanned PDF pages and standalone source images to the configured provider only when vision processing is required.
+- The system shall preserve the selected source order during PDF/image import and shall leave the document unchanged when selection, extraction, provider processing, or insertion is canceled or fails.
+- The system shall report when the active model does not support required image input instead of silently producing an incomplete import.
 - The system shall ship with the embedded MCP server disabled by default.
 - The system shall allow the user to enable or disable the embedded MCP server from the settings dialog.
 - The system shall let the user choose the MCP server's TCP port from the settings dialog within an allowed local port range, defaulting to 39125.
@@ -454,9 +536,22 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Visual editing mode: primary editing mode using MDXEditor.
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
 - Clean up formatting: a source-mode-only toolbar command that prettifies the raw Markdown in place. It normalizes unordered list markers to `-` and collapses marker spacing (ordered numbers are preserved), guarantees one blank line above and below ATX headings, re-pads GFM tables to align columns and reflect each column's alignment, normalizes thematic breaks to `---`, collapses runs of blank lines to one, and trims trailing whitespace (keeping a two-space hard break). Fenced code blocks and a leading YAML frontmatter block pass through untouched, the pass is idempotent, and it never reinterprets non-heading text (for example `##Section` with no space) as a heading. It edits the CodeMirror source buffer directly so the cleaned text is exactly what the command produced rather than MDXEditor's serializer conventions.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, embedded OpenAPI specifications, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
+- PDF/image document import: the AI menu accepts one PDF or multiple ordered image files, extracts selectable PDF text and embedded raster pictures locally, sends only scanned pages and standalone images as vision inputs, and inserts one Markdown transcription at the caret captured before the picker opened. Standalone source images are transcription-only; full screenshots/scans are not duplicated into the document. Cancellation and any extraction/provider error are non-destructive.
+- AI selection actions: the AI menu operates on the last non-empty editor selection in rich-text or source mode, sends the selected Markdown to the configured provider with the chosen rewrite instruction, and displays the original and proposed text side by side. The editor changes only when the user accepts the proposal; dismissal and provider errors are non-destructive.
+- AI chat: a resizable side panel streams a conversation with the configured provider, optionally attaches the editor selection to the next user turn, and gives tool-capable models the Nexus document tools for the panel's current document. Read tools provide document context on demand; write tools retain the existing per-call review boundary. Chat conversation state is local to the open editor window and is not persisted across application sessions.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only and the editor background kept white like the other editing modes.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
+- OpenAPI blocks: match only YAML fences carrying the `openapi` metadata token, show an expandable
+  Swagger-style API reference in rich-text mode, and keep the normalized YAML source portable in
+  source mode. HTML and PDF exports render an expanded, non-interactive version of that reference;
+  ordinary YAML and malformed OpenAPI fences remain code blocks. The reference is read-only and
+  offline: it groups operations by
+  tag and presents method/path summaries, parameters, request bodies, responses, servers, security,
+  and resolved local schema details without issuing API requests. Invalid specifications cannot be
+  committed by the visual editor. The visual route editor creates OpenAPI 3 `requestBody` objects
+  rather than obsolete Swagger 2 `in: body` parameters. Its payload-format selector explains JSON,
+  URL-encoded fields, multipart forms with binary file fields, plain text, XML, and custom types.
 - Local JavaScript runner blocks: support portable fenced code blocks using `js nexus-run` or `javascript nexus-run`, run them locally in a sandboxed browser worker, show console output/errors in the editor, and block network or nested worker APIs.
 - Toolbar placement: keep the MDXEditor rich-text toolbar sticky at the top of the editor frame with a subtle gray bottom border matching the toolbar group borders, and float the right-side view controls over source and diff modes so those modes can use the full editor height.
 - View switching: preserve the user's approximate scroll position when switching between rich text and source editor views.
@@ -505,11 +600,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 20. Use Edit/Refresh to reload the current opened file from disk.
 21. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
 22. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
-23. Optionally enable the MCP server from Settings/Preferences, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it.
-24. Optionally turn on the ngrok tunnel in the MCP server settings, enter an ngrok authtoken, and copy the displayed public MCP endpoint URL into a remote AI client to reach the same authenticated, write-confirmed server.
-25. Use the editor toolbar outline toggle to show a sidebar of the document's headings, click a heading to jump to that section in rich-text or source mode, and follow the highlighted entry that tracks the section currently at the top of the editor as you scroll.
-26. Use File/Publish as Web to render the current document as a self-contained web page, enter SFTP connection details, accept the server's host-key fingerprint, and upload the page; copy the resulting URL when a public base URL is configured.
-27. Use File/Publish as HTML over QuickConnect to send the same self-contained web page to a configured HTTP endpoint with a saved URL, path, and bearer token; copy the resulting URL when the server returns one.
+23. Optionally configure a hosted or local model from AI/AI Providers, test the connection, and choose the default provider.
+24. Select text and choose an AI rewrite action, then compare the original and proposed Markdown before accepting or discarding the replacement.
+25. Open the AI chat panel to ask about the current document, optionally attach the current selection, and review any write proposed through a document tool.
+26. Use AI/Import PDF or Images to transcribe one PDF or multiple ordered images into Markdown at the current caret.
+27. Optionally enable the MCP server from Settings/Preferences, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it.
+28. Optionally turn on the ngrok tunnel in the MCP server settings and copy the displayed public MCP endpoint URL into a remote AI client to reach the same authenticated, write-confirmed server.
+29. Use the editor toolbar outline toggle to show a sidebar of the document's headings, click a heading to jump to that section in rich-text or source mode, and follow the highlighted entry that tracks the section currently at the top of the editor as you scroll.
+30. Use File/Publish as Web to render the current document as a self-contained web page, enter SFTP connection details, accept the server's host-key fingerprint, and upload the page; copy the resulting URL when a public base URL is configured.
+31. Use File/Publish as HTML over QuickConnect to send the same self-contained web page to a configured HTTP endpoint with a saved URL, path, and bearer token; copy the resulting URL when the server returns one.
 
 ## 5. UI / Design Notes (Optional)
 
@@ -527,6 +626,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep common text editing actions available from the native editor right-click menu without adding another top-level toolbar.
 - Keep spelling corrections in the same editor right-click menu as common text editing actions.
 - Keep editor appearance settings in a compact shadcn-styled dialog opened from the native Settings menu.
+- Keep AI provider setup in a dedicated dialog opened from the native AI menu, with explicit provider enablement, default-provider selection, model settings, secret-key handling, and connection status.
+- Keep AI selection actions in the native AI menu and require a compact original-versus-proposed review dialog before replacement.
+- Keep the AI chat in a resizable side panel beside the document, showing streamed responses and expandable tool activity without obscuring the editor.
 - Keep base font size, paragraph spacing, paper size, paper orientation, and margin settings in the same compact settings dialog as editor appearance.
 - Keep application information in a compact shadcn-styled dialog opened from the native Help menu.
 - Keep the native application title aligned with the current document path.
@@ -621,10 +723,19 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A large document with embedded images should still publish over QuickConnect within the request timeout, or fail clearly if it does not.
 - When the operating system's secure storage is unavailable, the QuickConnect bearer token should be entered per publish and not persisted, rather than being written to disk in plaintext.
 - A QuickConnect bearer token saved in plaintext by an earlier version should be migrated into the encrypted store on first launch and removed from the plaintext local settings.
+- AI actions should report that no provider is configured and offer a direct path to provider setup without changing the document.
+- A hosted AI provider request with a missing or invalid API key, unreachable endpoint, unsupported model option, timeout, or provider error should report the failure without changing the document.
+- When operating-system secure storage is unavailable, hosted-provider API keys should not be written to disk in plaintext.
+- AI selection actions should be unavailable or report a clear instruction when the editor has no non-empty selection.
+- Rejecting or closing an AI selection preview should leave the original selection unchanged.
+- An AI selection result should replace the selection captured when the action began, even if opening the AI menu or preview moved focus away from the editor.
+- Stopping a streaming AI chat response should retain already displayed partial text, stop further tool steps, and leave the document unchanged unless a previously confirmed write already completed.
+- AI chat providers that do not support tool calling should remain usable for ordinary conversation but shall not be treated as having inspected or changed the document through tools.
+- PDF/image import should report when the configured model lacks image-input support and should not insert a partial transcription.
+- PDF/image import cancellation, extraction failure, provider failure, or a lost insertion target should leave the document unchanged.
 
 ## 7. Future Iterations / Open Questions
 
-- Connect the inline AI command surface to one or more model providers.
 - Add accept/reject controls for individual changed blocks.
 - Add top-level document action buttons only if the app later needs visible duplicates of the native File menu.
 - Add Git-backed diffs when a document belongs to a repository.

@@ -90,24 +90,26 @@ export function buildSelectionPrompt(
   };
 }
 
-// System prompt for the "Image to Markdown" action. Like the selection base prompt, it pins the model
+// System prompt for the PDF/image import action. Like the selection base prompt, it pins the model
 // to reply with ONLY Markdown so the result drops straight into the document — but here the model is
-// transcribing an attached image rather than transforming selected text.
-export const AI_IMAGE_TO_MARKDOWN_SYSTEM =
-  "You are a document-transcription assistant embedded in a Markdown editor. You are given a single " +
-  "image. Transcribe ALL of its textual and structural content into clean GitHub-Flavored Markdown, " +
+// transcribing ordered local sources rather than transforming selected text.
+export const AI_DOCUMENT_IMPORT_SYSTEM =
+  "You are a document-transcription assistant embedded in a Markdown editor. You are given one or " +
+  "more ordered sources as locally extracted PDF text and/or attached images. Transcribe ALL textual " +
+  "and structural content into clean GitHub-Flavored Markdown, " +
   "reproducing reading order and structure faithfully: tables as Markdown tables, headings as ATX " +
   "headings, lists as Markdown lists, code/monospace as fenced code blocks, and math as LaTeX " +
   "($…$ inline, $$…$$ display). Transcribe text verbatim — do not summarize, translate, correct, or " +
   "add commentary. For purely pictorial regions with no text, insert a concise italic bracketed " +
   "description, e.g. *[photo: a red bicycle]*. Reply with ONLY the Markdown — no preamble, no " +
-  "explanation, and no code fences wrapping the whole response.";
+  "explanation, and no code fences wrapping the whole response. Begin each source with the exact " +
+  "HTML comment marker supplied for it and preserve source order.";
 
 /** Build the system+user prompt for transcribing an attached image to Markdown. */
-export function buildImageToMarkdownPrompt(): AiPrompt {
+export function buildDocumentImportPrompt(): AiPrompt {
   return {
-    system: AI_IMAGE_TO_MARKDOWN_SYSTEM,
-    user: "Transcribe the attached image to Markdown following the system instructions."
+    system: AI_DOCUMENT_IMPORT_SYSTEM,
+    user: "Transcribe the following ordered sources to Markdown following the system instructions."
   };
 }
 

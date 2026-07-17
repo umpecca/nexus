@@ -70,6 +70,8 @@ import type {
 import { katexCodeBlockDescriptor } from "./components/editor/KatexCodeBlock";
 import { localJavaScriptRunnerCodeBlockDescriptor } from "./components/editor/LocalJavaScriptCodeBlock";
 import { mermaidCodeBlockDescriptor } from "./components/editor/MermaidCodeBlock";
+import { openApiCodeBlockDescriptor } from "./components/editor/OpenApiCodeBlock";
+import { sqlSchemaCodeBlockDescriptor } from "./components/editor/SqlSchemaCodeBlock";
 import { githubAlertDirectiveDescriptor } from "./components/editor/GithubAlert";
 import { admonitionDirectiveDescriptor } from "./components/editor/Admonition";
 import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
@@ -89,11 +91,15 @@ import AiChatPanel from "./components/ai/AiChatPanel";
 import AiNotice from "./components/ai/AiNotice";
 import { isImageUnsupportedError, resolveActiveProvider, runAiChat } from "./lib/ai/client";
 import {
-  buildImageToMarkdownPrompt,
+  buildDocumentImportPrompt,
   buildSelectionPrompt,
   describeSelectionAction
 } from "./lib/ai/prompts";
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
+import {
+  buildDocumentImportContent,
+  mergeDocumentImportImages
+} from "./lib/documentImport";
 import { externalizeDiagrams, inlineDiagrams } from "./lib/diagramFiles";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
@@ -317,10 +323,6 @@ type AiNoticeState = {
   message: string;
   needsProvider: boolean;
 };
-
-// Cap on the image sent to the vision model (decoded bytes), to avoid request timeouts / 413s on the
-// `ai:chat` path. Checked against the base64 length before sending.
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Reach the CodeMirror EditorView backing MDXEditor's source mode. MDXEditor does
@@ -575,7 +577,7 @@ function App() {
       })),
     copyDocumentAsHtml,
     runSelectionAiAction,
-    runImageToMarkdown
+    runDocumentImport
   });
   const appShellClassName = window.nexus?.platform === "win32" ? "app-shell app-shell-windows" : "app-shell";
   const titlebarFileName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : null;
@@ -819,7 +821,7 @@ function App() {
       })),
     copyDocumentAsHtml,
     runSelectionAiAction,
-    runImageToMarkdown
+    runDocumentImport
   };
 
   useEffect(() => {
@@ -1879,10 +1881,9 @@ function App() {
     return { mode, text: "", range, source: null, activeElement: editable };
   }
 
-  // "Image to Markdown": pick an image, have a vision model transcribe it to Markdown, and insert the
-  // result at the caret. Mirrors runSelectionAiAction's provider/busy/notice handling, but generates
-  // and inserts (rather than transforming a selection) and reuses applyPendingAiEdit for the insert.
-  async function runImageToMarkdown() {
+  // Import one PDF or ordered images, transcribe/format them in one request, attach locally extracted
+  // PDF pictures, and insert the combined Markdown at the caret captured before the picker opens.
+  async function runDocumentImport() {
     if (!resolveActiveProvider(settings.ai)) {
       setAiNotice({
         message: "No AI provider is enabled yet. Open AI ▸ AI Providers… to set one up.",
@@ -1893,46 +1894,37 @@ function App() {
 
     const insertAt = captureInsertionPoint();
 
-    const picked = await window.nexus?.selectBase64Image();
-    if (!picked || picked.canceled) {
-      return;
-    }
-
-    if (!picked.mimeType.startsWith("image/")) {
-      setAiNotice({ message: "That file is not an image.", needsProvider: false });
-      return;
-    }
-
-    const commaIndex = picked.dataUrl.indexOf(",");
-    const base64 = commaIndex >= 0 ? picked.dataUrl.slice(commaIndex + 1) : "";
-    if (!base64) {
-      setAiNotice({ message: "Could not read the selected image.", needsProvider: false });
-      return;
-    }
-    if (base64.length * 0.75 > MAX_IMAGE_BYTES) {
-      setAiNotice({
-        message: "That image is too large to send (limit 8 MB). Try a smaller or compressed image.",
-        needsProvider: false
-      });
-      return;
-    }
-
     setAiNotice(null);
     setAiBusy(true);
+    let picked;
     try {
-      const prompt = buildImageToMarkdownPrompt();
+      picked = await window.nexus?.selectDocumentImportSources();
+    } catch {
+      setAiNotice({ message: "Could not prepare the selected files.", needsProvider: false });
+      setAiBusy(false);
+      return;
+    }
+    if (!picked || picked.canceled) {
+      setAiBusy(false);
+      return;
+    }
+
+    if ("error" in picked) {
+      setAiNotice({ message: picked.error, needsProvider: false });
+      setAiBusy(false);
+      return;
+    }
+    try {
+      const prompt = buildDocumentImportPrompt();
       const result = await runAiChat({
         ai: settings.ai,
         profileName,
         system: prompt.system,
-        maxTokens: 4096,
+        maxTokens: 12000,
         messages: [
           {
             role: "user",
-            content: [
-              { type: "text", text: prompt.user },
-              { type: "image", mediaType: picked.mimeType, data: base64 }
-            ]
+            content: buildDocumentImportContent(prompt.user, picked.items)
           }
         ]
       });
@@ -1948,11 +1940,11 @@ function App() {
         return;
       }
 
-      const proposedText = result.text.trim();
+      const proposedText = mergeDocumentImportImages(result.text, picked.items).trim();
       if (!proposedText) {
         setAiNotice({
           message:
-            "The model returned no text for this image. Try a clearer image or a vision-capable model.",
+            "The model returned no text for the selected sources. Try clearer files or a more capable model.",
           needsProvider: false
         });
         return;
@@ -1960,6 +1952,9 @@ function App() {
 
       pendingAiApplyRef.current = { snapshot: insertAt, proposedText };
       applyPendingAiEdit();
+      if (picked.warnings.length > 0) {
+        setAiNotice({ message: picked.warnings.join(" "), needsProvider: false });
+      }
     } catch {
       setAiNotice({ message: "The AI request failed unexpectedly.", needsProvider: false });
     } finally {
@@ -2497,8 +2492,8 @@ function App() {
           void h.runSelectionAiAction(payload.action, payload.options);
         }
         break;
-      case "imageToMarkdown":
-        void h.runImageToMarkdown();
+      case "documentImport":
+        void h.runDocumentImport();
         break;
       case "about":
         h.openAbout();
@@ -2606,7 +2601,7 @@ function App() {
         canToggleOutline={canToggleOutline}
         dispatchMenuAction={dispatchMenuAction}
         onAiSelectionAction={runSelectionAiAction}
-        onAiImageToMarkdown={runImageToMarkdown}
+        onAiDocumentImport={runDocumentImport}
         fileName={titlebarFileName}
         filePath={filePath ?? null}
         isDirty={isDirty}
@@ -2676,7 +2671,9 @@ function App() {
                     codeBlockEditorDescriptors: [
                       mermaidCodeBlockDescriptor,
                       katexCodeBlockDescriptor,
-                      localJavaScriptRunnerCodeBlockDescriptor
+                      localJavaScriptRunnerCodeBlockDescriptor,
+                      openApiCodeBlockDescriptor,
+                      sqlSchemaCodeBlockDescriptor
                     ]
                   }),
                   codeMirrorPlugin({
@@ -2689,7 +2686,9 @@ function App() {
                       tsx: "TypeScript React",
                       css: "CSS",
                       html: "HTML",
+                      sql: "SQL (PostgreSQL)",
                       json: "JSON",
+                      yaml: "YAML",
                       mermaid: "Mermaid",
                       math: "Math (LaTeX)",
                       bash: "Bash",

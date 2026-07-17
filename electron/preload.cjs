@@ -102,6 +102,9 @@ contextBridge.exposeInMainWorld("nexus", {
   selectBase64Image() {
     return ipcRenderer.invoke("image:select-base64");
   },
+  selectDocumentImportSources() {
+    return ipcRenderer.invoke("document-import:select");
+  },
   resolveImagePreview(documentPath, imageSource) {
     return ipcRenderer.invoke("image:resolve-preview", { documentPath, imageSource });
   },
@@ -119,6 +122,12 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   editIsoflow(payload) {
     return ipcRenderer.invoke("isoflow:edit", payload);
+  },
+  editOpenApi(payload) {
+    return ipcRenderer.invoke("openapi:edit", payload);
+  },
+  editSqlSchema(payload) {
+    return ipcRenderer.invoke("sqlschema:edit", payload);
   },
   confirmSaveChanges() {
     return ipcRenderer.invoke("dialog:confirmSaveChanges");

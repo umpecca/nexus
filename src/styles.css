@@ -4099,3 +4099,188 @@ button.nexus-footnote-def__name:hover {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Embedded OpenAPI YAML blocks render a local, read-only API reference in rich-text mode. */
+.nexus-sqlschema-shell { border: 1px solid var(--line); border-radius: 9px; margin: 1rem 0; overflow: hidden; background: var(--surface); }
+.nexus-sqlschema-error { border-left: 4px solid #dc2626; }
+.nexus-sqlschema-card { align-items: center; display: grid; gap: .75rem; grid-template-columns: auto minmax(0,1fr) auto; padding: .8rem; }
+.nexus-sqlschema-icon { align-items: center; background: #e0f2fe; border-radius: 7px; color: #0369a1; display:flex; height:38px; justify-content:center; width:38px; }.nexus-sqlschema-icon svg { height:20px; width:20px; }
+.nexus-sqlschema-details { display:grid; gap:.1rem; min-width:0; }.nexus-sqlschema-details div { color:#0369a1; font-size:.68rem; font-weight:800; letter-spacing:.06em; }.nexus-sqlschema-details strong,.nexus-sqlschema-details span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.nexus-sqlschema-details span { color:var(--muted); font-size:.8rem; }
+.nexus-sqlschema-actions { display:flex; flex-wrap:wrap; gap:.45rem; justify-content:flex-end; }.nexus-sqlschema-diagram { background:#f8fafc; border-top:1px solid var(--line); overflow:auto; padding:.75rem; }.nexus-sqlschema-diagram img { display:block; height:auto; max-height:36rem; min-width:30rem; width:100%; }
+@media (max-width: 640px) { .nexus-sqlschema-card { grid-template-columns:auto minmax(0,1fr); }.nexus-sqlschema-actions { grid-column:1 / -1; justify-content:flex-start; } }
+.nexus-openapi-shell {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  overflow: hidden;
+}
+
+.nexus-openapi-block {
+  align-items: center;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.85rem 1rem;
+}
+
+.nexus-openapi-block-error { border-left-color: #dc2626; }
+.nexus-openapi-icon { align-items: center; background: #dbeafe; border-radius: 7px; color: #1d4ed8; display: flex; height: 38px; justify-content: center; width: 38px; }
+.nexus-openapi-icon svg { height: 20px; width: 20px; }
+.nexus-openapi-details { display: flex; flex-direction: column; min-width: 0; }
+.nexus-openapi-details strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nexus-openapi-details span { color: var(--muted, #667085); font-size: 0.8rem; }
+.nexus-openapi-eyebrow { color: #2563eb; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.nexus-openapi-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.45rem; justify-content: flex-end; }
+.nexus-openapi-actions button { white-space: nowrap; }
+.nexus-openapi-actions svg { height: 15px; width: 15px; }
+
+.nexus-openapi-reference {
+  background: var(--surface-muted);
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.nexus-openapi-reference p { line-height: 1.5; margin: 0; }
+.nexus-openapi-description { font-size: 0.92rem; }
+.nexus-openapi-empty { color: var(--muted); font-style: italic; }
+
+.nexus-openapi-servers {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.nexus-openapi-servers h4,
+.nexus-openapi-operation-section h4 {
+  align-items: center;
+  display: flex;
+  font-size: 0.78rem;
+  gap: 0.4rem;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.nexus-openapi-servers h4 svg { height: 14px; width: 14px; }
+.nexus-openapi-servers > div { align-items: baseline; display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.nexus-openapi-servers code { color: var(--accent); font-size: 0.78rem; word-break: break-all; }
+.nexus-openapi-servers span { color: var(--muted); font-size: 0.78rem; }
+
+.nexus-openapi-tag { display: grid; gap: 0.55rem; }
+.nexus-openapi-tag > header { align-items: baseline; display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.nexus-openapi-tag > header h3 { font-size: 1rem; margin: 0; }
+.nexus-openapi-tag > header p { color: var(--muted); font-size: 0.8rem; }
+.nexus-openapi-operations { display: grid; gap: 0.5rem; }
+
+.nexus-openapi-operation {
+  --openapi-method: #64748b;
+  background: color-mix(in srgb, var(--openapi-method) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--openapi-method) 68%, var(--line));
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.nexus-openapi-operation-get { --openapi-method: #2563eb; }
+.nexus-openapi-operation-post { --openapi-method: #16a36a; }
+.nexus-openapi-operation-put { --openapi-method: #d97706; }
+.nexus-openapi-operation-delete { --openapi-method: #dc2626; }
+.nexus-openapi-operation-patch { --openapi-method: #7c3aed; }
+.nexus-openapi-operation-head { --openapi-method: #0891b2; }
+.nexus-openapi-operation-options { --openapi-method: #475569; }
+.nexus-openapi-operation-trace { --openapi-method: #be185d; }
+
+.nexus-openapi-operation > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: 4.8rem minmax(8rem, auto) minmax(7rem, 1fr) auto;
+  list-style: none;
+  min-height: 44px;
+  padding: 0.45rem 0.6rem;
+}
+
+.nexus-openapi-operation > summary::-webkit-details-marker { display: none; }
+.nexus-openapi-operation > summary::after { color: var(--openapi-method); content: "+"; font-size: 1.05rem; font-weight: 700; }
+.nexus-openapi-operation[open] > summary::after { content: "−"; }
+.nexus-openapi-operation > summary > code { color: var(--ink); font-size: 0.86rem; font-weight: 700; overflow-wrap: anywhere; }
+.nexus-openapi-operation > summary > span:not(.nexus-openapi-method) { color: var(--muted); font-size: 0.8rem; }
+.nexus-openapi-operation > summary > em,
+.nexus-openapi-operation-section h4 em,
+.nexus-openapi-parameter em,
+.nexus-openapi-property em {
+  color: #dc2626;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+  margin-left: 0.35rem;
+}
+
+.nexus-openapi-method {
+  background: var(--openapi-method);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.28rem 0.4rem;
+  text-align: center;
+}
+
+.nexus-openapi-operation-body {
+  background: var(--surface);
+  border-top: 1px solid color-mix(in srgb, var(--openapi-method) 52%, var(--line));
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.85rem;
+}
+
+.nexus-openapi-operation-body > p { font-size: 0.86rem; }
+.nexus-openapi-operation-id { color: var(--muted); font-size: 0.75rem; }
+.nexus-openapi-operation-id code { color: var(--ink); }
+.nexus-openapi-security { align-items: center; color: var(--muted); display: flex; font-size: 0.78rem; gap: 0.35rem; }
+.nexus-openapi-security svg { height: 13px; width: 13px; }
+.nexus-openapi-operation-section { display: grid; gap: 0.55rem; }
+.nexus-openapi-operation-section > p { color: var(--muted); font-size: 0.8rem; }
+
+.nexus-openapi-parameters { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.nexus-openapi-parameter { display: grid; gap: 0.3rem; grid-template-columns: minmax(7rem, 0.8fr) minmax(4rem, 0.35fr) minmax(10rem, 1.6fr); padding: 0.6rem; }
+.nexus-openapi-parameter + .nexus-openapi-parameter { border-top: 1px solid var(--line); }
+.nexus-openapi-parameter > div:first-child { font-size: 0.8rem; }
+.nexus-openapi-parameter-location { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+.nexus-openapi-parameter > p,
+.nexus-openapi-parameter > pre { grid-column: 3; }
+
+.nexus-openapi-schema { display: grid; gap: 0.2rem; min-width: 0; }
+.nexus-openapi-schema > code { color: var(--accent); font-size: 0.76rem; }
+.nexus-openapi-schema > span { color: var(--muted); font-size: 0.74rem; }
+.nexus-openapi-properties { border-left: 2px solid var(--line); display: grid; gap: 0.45rem; margin-top: 0.25rem; padding-left: 0.55rem; }
+.nexus-openapi-property { display: grid; gap: 0.15rem; }
+.nexus-openapi-property > div:first-child { font-size: 0.76rem; }
+
+.nexus-openapi-media { background: var(--surface-muted); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 0.5rem; padding: 0.65rem; }
+.nexus-openapi-media-type { color: var(--muted); font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.72rem; }
+.nexus-openapi-reference pre { background: #242424; border-radius: 5px; color: #f4f4f4; font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.72rem; line-height: 1.45; margin: 0; max-height: 15rem; overflow: auto; padding: 0.6rem; white-space: pre-wrap; }
+
+.nexus-openapi-response { border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 0.5rem; padding: 0.6rem; }
+.nexus-openapi-response > div:first-child { align-items: baseline; display: flex; gap: 0.5rem; }
+.nexus-openapi-response > div:first-child code { background: var(--surface-muted); border-radius: 4px; color: var(--accent); font-weight: 800; padding: 0.15rem 0.35rem; }
+.nexus-openapi-response > div:first-child span { font-size: 0.8rem; }
+
+@media (max-width: 760px) {
+  .nexus-openapi-block { grid-template-columns: auto minmax(0, 1fr); }
+  .nexus-openapi-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .nexus-openapi-operation > summary { grid-template-columns: 4.5rem minmax(0, 1fr) auto; }
+  .nexus-openapi-operation > summary > span:not(.nexus-openapi-method) { grid-column: 2; }
+  .nexus-openapi-parameter { grid-template-columns: minmax(0, 1fr) auto; }
+  .nexus-openapi-parameter > .nexus-openapi-schema,
+  .nexus-openapi-parameter > p,
+  .nexus-openapi-parameter > pre { grid-column: 1 / -1; }
+}

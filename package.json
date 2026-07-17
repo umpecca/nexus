@@ -26,6 +26,7 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
+      "THIRD_PARTY_NOTICES.md",
       "nexus.png",
       "nexus.ico",
       "nexus.icns"
@@ -55,6 +56,7 @@
     }
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/lato": "^5.2.7",
@@ -67,6 +69,7 @@
     "@isoflow/isopacks": "^0.0.10",
     "@mdxeditor/editor": "^3.31.0",
     "@mdxeditor/gurx": "^1.2.4",
+    "@napi-rs/canvas": "^0.1.100",
     "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-menubar": "^1.1.16",
@@ -75,6 +78,7 @@
     "@turbodocx/html-to-docx": "^1.21.0",
     "@uiw/codemirror-theme-nord": "^4.25.10",
     "@uiw/codemirror-themes": "^4.25.10",
+    "@xyflow/react": "^12.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dom-to-image-more": "^3.10.0",
@@ -89,7 +93,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ssh2-sftp-client": "^12.1.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "unpdf": "^1.6.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

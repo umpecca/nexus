@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Offline "Isoflow for data models" schema designer: portable, executable-looking `sql sqlschema`
+  PostgreSQL document blocks, React Flow table/relationship editing, canonical SQL copy/download, static rich-text SVG
+  diagrams, and matching HTML/PDF/web-publish rendering.
+- Embedded offline OpenAPI editor for portable `yaml openapi` document blocks, with visual route,
+  response, schema, server, tag, and security-scheme editing, YAML preview/import, undo/redo, compact
+  rich-text summaries, and loss-preserving round trips for unknown fields and vendor extensions.
+- Expandable Swagger-style OpenAPI references in rich-text documents, including method-colored
+  operations grouped by tag, servers, security requirements, parameters, request bodies, responses,
+  examples, and locally resolved schema details. The preview remains read-only and offline.
+- Visual OpenAPI 3 request-body editing in the route editor: add/remove and rename media types,
+  component-schema selection, inline object fields with required-state controls, descriptions, and
+  validated JSON examples.
+- Guided request-body payload-format selector for JSON, standard form fields, multipart file uploads,
+  plain text, XML, and retained custom media types, with contextual form/file-field guidance.
+- HTML, PDF, and web-publish exports now render valid embedded OpenAPI blocks as expanded,
+  print-safe static API references instead of raw YAML, while malformed and ordinary YAML fences
+  remain code blocks.
+- AI/Import PDF or Images can import one PDF or multiple ordered images as Markdown at the current
+  WYSIWYG/source caret. Selectable PDF text is extracted locally, scanned pages and standalone images
+  use the configured vision model, and embedded PDF raster pictures are retained as Markdown images.
+
 ## [2.2.0] - 2026-07-06
 
 ### Added
@@ -28,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Draw.io and Isoflow diagrams inserted from WYSIWYG mode now return to the caret that was active
+  before the native diagram window opened instead of sometimes being appended to the document end.
 - Diff and dirty-state comparisons no longer report the rich-text editor's Markdown re-serialization
   (bullet style, block spacing, escaping) as edits: the baseline is normalized on load, so the diff and
   the unsaved-changes indicator reflect only real changes.

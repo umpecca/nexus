@@ -1,4 +1,5 @@
 import {
+  $createCodeBlockNode,
   ButtonOrDropdownButton,
   NESTED_EDITOR_UPDATED_COMMAND,
   activeEditor$,
@@ -6,12 +7,47 @@ import {
   rootEditor$
 } from "@mdxeditor/editor";
 import { usePublisher, useRealm } from "@mdxeditor/gurx";
-import { $getRoot, $getSelection, $insertNodes, $isRangeSelection } from "lexical";
+import {
+  $getNodeByKey,
+  $getRoot,
+  $getSelection,
+  $insertNodes,
+  $isRangeSelection,
+  $setSelection
+} from "lexical";
+import type { LexicalEditor, RangeSelection } from "lexical";
 import { Workflow } from "lucide-react";
 import { $createDrawioImageNode } from "./DrawioImageNode";
 import { $createIsoflowImageNode } from "./IsoflowImageNode";
+import { createEmptySqlSchema, SQL_SCHEMA_BLOCK_LANGUAGE, SQL_SCHEMA_BLOCK_META, serializeSqlSchema } from "../../lib/sqlSchema";
 
 const MERMAID_TEMPLATE = "flowchart TD\n  A[Start] --> B[Finish]";
+
+/** Capture the caret before a native diagram window takes focus away from the editor. */
+export function captureDiagramSelection(editor: LexicalEditor): RangeSelection | null {
+  return editor.getEditorState().read(() => {
+    const selection = $getSelection();
+    return $isRangeSelection(selection) ? selection.clone() : null;
+  });
+}
+
+/** Restore a still-valid captured caret, otherwise retain the existing end-of-editor fallback. */
+export function restoreDiagramSelection(savedSelection: RangeSelection | null): void {
+  if (savedSelection) {
+    const anchorStillExists = $getNodeByKey(savedSelection.anchor.key) !== null;
+    const focusStillExists = $getNodeByKey(savedSelection.focus.key) !== null;
+    if (anchorStillExists && focusStillExists) {
+      $setSelection(savedSelection.clone());
+    } else {
+      $getRoot().selectEnd();
+      return;
+    }
+  }
+
+  if (!$isRangeSelection($getSelection())) {
+    $getRoot().selectEnd();
+  }
+}
 
 /**
  * Combined "Insert diagram" toolbar control: one split button (mirroring the GitHub-alert and
@@ -29,6 +65,7 @@ function InsertDiagram() {
   const insertCodeBlock = usePublisher(insertCodeBlock$);
   const canDrawio = typeof window !== "undefined" && Boolean(window.nexus?.editDiagram);
   const canIsoflow = typeof window !== "undefined" && Boolean(window.nexus?.editIsoflow);
+  const canSqlSchema = typeof window !== "undefined" && Boolean(window.nexus?.editSqlSchema);
 
   function insertMermaid() {
     insertCodeBlock({ code: MERMAID_TEMPLATE, language: "mermaid", meta: "" });
@@ -46,6 +83,7 @@ function InsertDiagram() {
     if (!rootEditor || !targetEditor) {
       return;
     }
+    const savedSelection = captureDiagramSelection(targetEditor);
 
     let dataUrl: string;
     if (kind === "drawio") {
@@ -70,9 +108,7 @@ function InsertDiagram() {
 
     targetEditor.update(
       () => {
-        if (!$isRangeSelection($getSelection())) {
-          $getRoot().selectEnd();
-        }
+        restoreDiagramSelection(savedSelection);
         const node =
           kind === "drawio"
             ? $createDrawioImageNode({ src: dataUrl, alt: "diagram" })
@@ -89,6 +125,19 @@ function InsertDiagram() {
     }
   }
 
+  async function insertSqlSchema() {
+    const bridge = window.nexus;
+    if (!bridge?.editSqlSchema) return;
+    const rootEditor = realm.getValue(rootEditor$);
+    const targetEditor = realm.getValue(activeEditor$) ?? rootEditor;
+    if (!rootEditor || !targetEditor) return;
+    const savedSelection = captureDiagramSelection(targetEditor);
+    const result = await bridge.editSqlSchema({ schema: serializeSqlSchema(createEmptySqlSchema()), theme: document.documentElement.dataset.theme === "dark" ? "dark" : "light" });
+    if (result.canceled) return;
+    targetEditor.update(() => { restoreDiagramSelection(savedSelection); $insertNodes([$createCodeBlockNode({ code: result.schema, language: SQL_SCHEMA_BLOCK_LANGUAGE, meta: SQL_SCHEMA_BLOCK_META })]); }, { discrete: true });
+    if (targetEditor !== rootEditor) targetEditor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+  }
+
   // drawio/isoflow need the native editor bridge, so they appear only inside Electron. Mermaid is
   // always available, so the dropdown always has at least one item.
   const items: { value: string; label: string }[] = [{ value: "mermaid", label: "Mermaid" }];
@@ -98,6 +147,7 @@ function InsertDiagram() {
   if (canIsoflow) {
     items.push({ value: "isoflow", label: "isoflow" });
   }
+  if (canSqlSchema) items.push({ value: "sqlschema", label: "Data model" });
 
   function handleChoose(value: string) {
     // ButtonOrDropdownButton passes "" when the dropdown collapses to a single item (Mermaid only).
@@ -108,6 +158,8 @@ function InsertDiagram() {
       void insertNativeDiagram("drawio");
     } else if (choice === "isoflow") {
       void insertNativeDiagram("isoflow");
+    } else if (choice === "sqlschema") {
+      void insertSqlSchema();
     }
   }
 

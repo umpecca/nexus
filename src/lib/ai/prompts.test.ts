@@ -3,6 +3,7 @@ import {
   AI_SELECTION_ACTIONS,
   AI_SELECTION_BASE_SYSTEM,
   buildChatSystemPrompt,
+  buildDocumentImportPrompt,
   buildSelectionPrompt,
   describeSelectionAction
 } from "./prompts";
@@ -29,6 +30,15 @@ describe("buildSelectionPrompt", () => {
   it("falls back to neutral/English when options are omitted", () => {
     expect(buildSelectionPrompt("tone", "x").user).toContain("neutral tone");
     expect(buildSelectionPrompt("translate", "x").user).toContain("English");
+  });
+});
+
+describe("buildDocumentImportPrompt", () => {
+  it("requires ordered source markers and Markdown-only transcription", () => {
+    const prompt = buildDocumentImportPrompt();
+    expect(prompt.system).toContain("exact HTML comment marker");
+    expect(prompt.system).toContain("preserve source order");
+    expect(prompt.user).toContain("ordered sources");
   });
 });
 
