@@ -34,7 +34,6 @@ import InsertImageImport from "./InsertImageImport";
 import InsertKatexBlock from "./InsertKatexBlock";
 import InsertLocalJavaScriptRunner from "./InsertLocalJavaScriptRunner";
 import InsertOpenApi from "./InsertOpenApi";
-import InsertTableOfContents from "./InsertTableOfContents";
 import { Button } from "../ui/button";
 import { ButtonGroup } from "../ui/button-group";
 import { Separator } from "../ui/separator";
@@ -173,13 +172,7 @@ function EditorModeControls() {
   );
 }
 
-function RichTextRibbonCommands({
-  documentPath,
-  onInsertTableOfContents
-}: {
-  documentPath?: string;
-  onInsertTableOfContents: () => void;
-}) {
+function RichTextRibbonCommands({ documentPath }: { documentPath?: string }) {
   return (
     <>
       <ToolbarButtonGroup aria-label="Text formatting" ribbonLabel="Font" wide>
@@ -237,7 +230,6 @@ function RichTextRibbonCommands({
       <ToolbarButtonGroup aria-label="Insert blocks" ribbonLabel="Insert" wide>
         <ToolbarRow>
           <InsertTable />
-          <InsertTableOfContents onInsert={onInsertTableOfContents} />
           <InsertThematicBreak />
           <InsertCodeBlock />
           <InsertLocalJavaScriptRunner />
@@ -295,12 +287,10 @@ function ViewRibbonCommands({
 
 function ShadcnMdxToolbar({
   documentPath,
-  onCleanUpFormatting,
-  onInsertTableOfContents
+  onCleanUpFormatting
 }: {
   documentPath?: string;
   onCleanUpFormatting: () => void;
-  onInsertTableOfContents: () => void;
 }) {
   const [currentMode] = useCellValues(viewMode$);
   const isRichText = currentMode === "rich-text";
@@ -316,10 +306,7 @@ function ShadcnMdxToolbar({
     <div className={toolbarClassName}>
       <div className="nexus-shadcn-toolbar-scroll">
         {isRichText ? (
-          <RichTextRibbonCommands
-            documentPath={documentPath}
-            onInsertTableOfContents={onInsertTableOfContents}
-          />
+          <RichTextRibbonCommands documentPath={documentPath} />
         ) : null}
         <ViewRibbonCommands currentMode={currentMode} onCleanUpFormatting={onCleanUpFormatting} />
       </div>

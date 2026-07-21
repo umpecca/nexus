@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld("nexus", {
   exportMarkdownAsPdf(currentPath, markdown, options) {
     return ipcRenderer.invoke("file:export-pdf", { currentPath, markdown, options });
   },
+  createPdfPreview(currentPath, markdown, options) {
+    return ipcRenderer.invoke("file:preview-pdf", { currentPath, markdown, options });
+  },
+  savePdfPreview(currentPath, data) {
+    return ipcRenderer.invoke("file:save-pdf-preview", { currentPath, data });
+  },
   selectLocalImage(documentPath) {
     return ipcRenderer.invoke("image:select-local", { documentPath });
   },
@@ -204,6 +210,18 @@ contextBridge.exposeInMainWorld("nexus", {
   },
   releaseAiConversation(conversationId) {
     return ipcRenderer.invoke("ai:release-conversation", { conversationId });
+  },
+  loadAiChatHistory(profileName, documentPath) {
+    return ipcRenderer.invoke("ai:load-chat-history", { profileName, documentPath });
+  },
+  saveAiChatHistory(profileName, documentPath, history) {
+    return ipcRenderer.invoke("ai:save-chat-history", { profileName, documentPath, history });
+  },
+  deleteAiChatHistory(profileName, documentPath) {
+    return ipcRenderer.invoke("ai:delete-chat-history", { profileName, documentPath });
+  },
+  deleteAllAiChatHistory(profileName) {
+    return ipcRenderer.invoke("ai:delete-all-chat-history", { profileName });
   },
   listMcpTools() {
     return ipcRenderer.invoke("mcp:list-tools");

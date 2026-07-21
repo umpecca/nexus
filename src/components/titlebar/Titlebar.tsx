@@ -104,6 +104,7 @@ function AppMenuBar({
           <MenubarSeparator />
           <MenubarItem onSelect={() => dispatchMenuAction("exportHtml")}>Export as HTML</MenubarItem>
           <MenubarItem onSelect={() => dispatchMenuAction("exportWord")}>Export to Word</MenubarItem>
+          <MenubarItem onSelect={() => dispatchMenuAction("printPreview")}>Print Preview</MenubarItem>
           <MenubarItem onSelect={() => dispatchMenuAction("exportPdf")}>Export as PDF</MenubarItem>
           <MenubarItem onSelect={() => dispatchMenuAction("publishWeb")}>
             Publish as HTML over SFTP…
@@ -149,6 +150,9 @@ function AppMenuBar({
             onSelect={() => dispatchMenuAction("editFrontmatter")}
           >
             Edit Frontmatter…
+          </MenubarItem>
+          <MenubarItem onSelect={() => dispatchMenuAction("insertTableOfContents")}>
+            Insert Table of Contents
           </MenubarItem>
           <MenubarSeparator />
           <MenubarItem onSelect={() => void nexus?.runEditCommand("cut")}>

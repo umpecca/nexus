@@ -31,6 +31,7 @@ type AiSettingsDialogProps = {
   profileName: string;
   ai: AiSettings;
   onAiChange: (next: AiSettings) => void;
+  onDeleteAllChatHistory: () => Promise<{ ok: boolean; error?: string }>;
 };
 
 type TestResult = { ok: boolean; message: string };
@@ -53,7 +54,14 @@ function emptyByProvider<T>(value: T): Record<AiProviderId, T> {
   );
 }
 
-function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: AiSettingsDialogProps) {
+function AiSettingsDialog({
+  open,
+  onOpenChange,
+  profileName,
+  ai,
+  onAiChange,
+  onDeleteAllChatHistory
+}: AiSettingsDialogProps) {
   const aiRef = useRef(ai);
   aiRef.current = ai;
   const [keys, setKeys] = useState<Record<AiProviderId, string>>(() => emptyByProvider(""));
@@ -67,6 +75,8 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
   const [encryptionAvailable, setEncryptionAvailable] = useState(true);
   const [openCodeDiscovery, setOpenCodeDiscovery] = useState<OpenCodeDiscoveryResult | null>(null);
   const [discoveringOpenCode, setDiscoveringOpenCode] = useState(false);
+  const [deletingChatHistory, setDeletingChatHistory] = useState(false);
+  const [chatHistoryNotice, setChatHistoryNotice] = useState<string | null>(null);
 
   // Load each provider's stored (encrypted) key when the dialog opens, and clear any stale test
   // readouts so a result never describes a configuration the user has since changed.
@@ -148,6 +158,20 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
     setKeys((current) => ({ ...current, [providerId]: "" }));
     setTestResults((current) => ({ ...current, [providerId]: undefined }));
     void persistKey(providerId, "");
+  }
+
+  async function handleDeleteAllChatHistory() {
+    if (!window.confirm("Delete all saved AI chat history for this profile? This cannot be undone.")) {
+      return;
+    }
+    setDeletingChatHistory(true);
+    setChatHistoryNotice(null);
+    try {
+      const result = await onDeleteAllChatHistory();
+      setChatHistoryNotice(result.ok ? "Saved AI chat history deleted." : result.error ?? "Could not delete chat history.");
+    } finally {
+      setDeletingChatHistory(false);
+    }
   }
 
   async function loadOpenCodeOptions() {
@@ -624,6 +648,29 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
           </label>
 
           {AI_PROVIDER_LIST.map((meta) => renderProvider(meta))}
+
+          <fieldset className="nexus-ai-provider">
+            <legend className="nexus-ai-provider-title">Saved chat history</legend>
+            <p className="nexus-settings-warning">
+              Chats for saved documents are stored locally in Nexus user data. They can include document
+              selections, AI responses, and tool results.
+            </p>
+            <div className="nexus-ai-test-row">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deletingChatHistory}
+                onClick={() => void handleDeleteAllChatHistory()}
+              >
+                {deletingChatHistory ? "Deleting history…" : "Delete all saved chat history"}
+              </Button>
+              {chatHistoryNotice ? (
+                <span className="nexus-settings-warning" role="status">
+                  {chatHistoryNotice}
+                </span>
+              ) : null}
+            </div>
+          </fieldset>
 
           <p className="nexus-settings-profile">Profile: {profileName}</p>
         </div>

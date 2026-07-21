@@ -988,6 +988,51 @@ body.nexus-resizing-col * {
   padding: 0.55rem 0.65rem;
 }
 
+.nexus-print-preview-dialog {
+  height: min(92vh, 70rem);
+  max-height: calc(100vh - 2rem);
+  width: min(92vw, 82rem);
+}
+
+.nexus-print-preview-body {
+  background: var(--canvas-bg);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  min-height: 18rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.nexus-print-preview-frame {
+  background: var(--canvas-bg);
+  border: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.nexus-print-preview-status {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--muted);
+  display: flex;
+  gap: 0.65rem;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+}
+
+.nexus-print-preview-error {
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: calc(var(--radius) - 2px);
+  bottom: 0.75rem;
+  color: var(--danger);
+  left: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  position: absolute;
+  right: 0.75rem;
+}
+
 .nexus-dialog-close {
   background: transparent;
   border-color: transparent;
@@ -2275,47 +2320,6 @@ body.nexus-resizing-col * {
 
 .nexus-settings-footer {
   justify-content: space-between;
-}
-
-.nexus-print-preview-dialog {
-  height: min(88vh, 56rem);
-  max-height: calc(100vh - 2rem);
-  width: min(70rem, calc(100vw - 2rem));
-}
-
-.nexus-print-preview-body {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) - 2px);
-  display: grid;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.nexus-print-preview-frame {
-  background: #fff;
-  border: 0;
-  height: 100%;
-  width: 100%;
-}
-
-.nexus-print-preview-status {
-  align-self: center;
-  color: var(--muted);
-  font-size: 0.92rem;
-  justify-self: center;
-  line-height: 1.4;
-  max-width: 32rem;
-  padding: 1rem;
-  text-align: center;
-}
-
-.nexus-print-preview-error {
-  color: var(--danger);
-}
-
-.nexus-print-preview-footer {
-  align-items: center;
 }
 
 .nexus-image-import-form {

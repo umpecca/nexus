@@ -1,10 +1,14 @@
-import { TooltipWrap, activeEditor$, insertCodeBlock$, rootEditor$ } from "@mdxeditor/editor";
+import { ButtonOrDropdownButton, activeEditor$, insertCodeBlock$, rootEditor$ } from "@mdxeditor/editor";
 import { usePublisher } from "@mdxeditor/gurx";
 import { useCellValues } from "@mdxeditor/gurx";
 import { $getSelection, $insertNodes } from "lexical";
 import { Sigma } from "lucide-react";
-import { Button } from "../ui/button";
 import { $createInlineMathNode } from "./InlineMathNode";
+
+const MATH_ITEMS = [
+  { value: "inline", label: "Inline math" },
+  { value: "block", label: "Block math" }
+];
 
 function InsertKatexBlock() {
   const insertCodeBlock = usePublisher(insertCodeBlock$);
@@ -18,34 +22,19 @@ function InsertKatexBlock() {
     });
   }
 
+  function handleChoose(value: string) {
+    if (value === "inline") {
+      insertInlineMath();
+      return;
+    }
+
+    insertCodeBlock({ code: "E = mc^2", language: "math", meta: "" });
+  }
+
   return (
-    <>
-      <TooltipWrap title="Insert display math">
-        <Button
-          aria-label="Insert display math"
-          onClick={() =>
-            insertCodeBlock({ code: "E = mc^2", language: "math", meta: "" })
-          }
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <Sigma aria-hidden="true" />
-        </Button>
-      </TooltipWrap>
-      <TooltipWrap title="Insert inline math">
-        <Button
-          aria-label="Insert inline math"
-          className="nexus-inline-math-insert"
-          onClick={insertInlineMath}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <span aria-hidden="true">∑</span>
-        </Button>
-      </TooltipWrap>
-    </>
+    <ButtonOrDropdownButton title="Insert math" onChoose={handleChoose} items={MATH_ITEMS}>
+      <Sigma aria-hidden="true" />
+    </ButtonOrDropdownButton>
   );
 }
 

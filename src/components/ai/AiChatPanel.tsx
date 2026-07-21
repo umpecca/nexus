@@ -26,6 +26,8 @@ type AiChatPanelProps = {
   profileName: string;
   windowId: string;
   fileName: string | null;
+  documentPath: string | null;
+  historyResetVersion: number;
   width: number;
   /** Reads the editor's current (or last-before-blur) selection so the chat can attach it. */
   getEditorSelection: () => EditorSelection | null;
@@ -73,6 +75,8 @@ function AiChatPanel({
   profileName,
   windowId,
   fileName,
+  documentPath,
+  historyResetVersion,
   width,
   getEditorSelection,
   onResize,
@@ -82,6 +86,8 @@ function AiChatPanel({
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
   // The editor selection to attach to the next message (captured when the composer is focused), or
   // null when nothing is attached. `dismissedSelectionRef` remembers a selection the user explicitly
   // removed so re-focusing the composer doesn't keep re-attaching the same text.
@@ -100,6 +106,7 @@ function AiChatPanel({
   const idCounterRef = useRef(0);
   const conversationIdRef = useRef(createConversationId());
   const providerSignatureRef = useRef("");
+  const historyKey = documentPath ? `${profileName}\u0000${documentPath}` : null;
 
   const providerId = useMemo(() => resolveActiveProvider(ai), [ai]);
   const providerConfig = providerId ? ai.providers[providerId] : null;
@@ -139,6 +146,64 @@ function AiChatPanel({
     }
     providerSignatureRef.current = providerSignature;
   }, [providerSignature]);
+
+  // Saved chats are per profile and saved document. Untitled documents deliberately remain
+  // session-only so drafts never create an anonymous history file in user-data.
+  useEffect(() => {
+    let active = true;
+    abortRef.current?.abort();
+    void window.nexus?.releaseAiConversation(conversationIdRef.current);
+    conversationRef.current = [];
+    currentAssistantIdRef.current = null;
+    toolsRef.current = null;
+    setItems([]);
+    setLoadedHistoryKey(null);
+
+    if (!documentPath || !historyKey) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void window.nexus?.loadAiChatHistory(profileName, documentPath).then((result) => {
+      if (!active) {
+        return;
+      }
+      if (result?.ok && result.history) {
+        conversationRef.current = result.history.conversation;
+        setItems(result.history.items as ChatItem[]);
+      }
+      setLoadedHistoryKey(historyKey);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [documentPath, historyKey, historyResetVersion, profileName]);
+
+  // Persist after the transcript settles briefly, rather than synchronously on every streaming
+  // token. An empty conversation means Clear Conversation was chosen, so remove its file instead
+  // of leaving an empty history behind.
+  useEffect(() => {
+    if (!documentPath || !historyKey || loadedHistoryKey !== historyKey) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const history = {
+        version: 1 as const,
+        items,
+        conversation: conversationRef.current
+      };
+      if (history.items.length === 0 && history.conversation.length === 0) {
+        void window.nexus?.deleteAiChatHistory(profileName, documentPath);
+      } else {
+        void window.nexus?.saveAiChatHistory(profileName, documentPath, history);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [documentPath, historyKey, historyRevision, items, loadedHistoryKey, profileName]);
 
   // Keep the transcript pinned to the newest content as it streams in.
   useEffect(() => {
@@ -379,6 +444,7 @@ function AiChatPanel({
         onEvent: handleAgentEvent,
         signal: controller.signal
       });
+      setHistoryRevision((current) => current + 1);
     } catch (error) {
       handleAgentEvent({ type: "error", error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -428,10 +494,12 @@ function AiChatPanel({
   const handleClear = useCallback(() => {
     abortRef.current?.abort();
     void window.nexus?.releaseAiConversation(conversationIdRef.current);
+    void window.nexus?.deleteAiChatHistory(profileName, documentPath);
     conversationRef.current = [];
     currentAssistantIdRef.current = null;
     setItems([]);
-  }, []);
+    setHistoryRevision((current) => current + 1);
+  }, [documentPath, profileName]);
 
   const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {

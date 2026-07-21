@@ -17,6 +17,7 @@ const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
 const documentImport = require("./documentImport.cjs");
 const aiProviders = require("./aiProviders.cjs");
+const aiChatHistory = require("./aiChatHistory.cjs");
 const opencodeProvider = require("./opencodeProvider.cjs");
 const { createDrawioSession } = require("./drawioEmbed.cjs");
 const { ISOFLOW_WINDOW, normalizeSaveResult } = require("./isoflowEmbed.cjs");
@@ -1504,6 +1505,28 @@ ${pdfPrintStyle}
         padding: 0;
       }
 
+      h1, h2, h3, h4, h5, h6 {
+        break-after: avoid-page;
+        page-break-after: avoid;
+      }
+
+      p, li {
+        orphans: 3;
+        widows: 3;
+      }
+
+      blockquote,
+      figure,
+      pre,
+      table,
+      .nexus-export-admonition,
+      .nexus-export-mermaid,
+      .nexus-export-math,
+      .nexus-openapi-export-operation {
+        break-inside: avoid-page;
+        page-break-inside: avoid;
+      }
+
       .nexus-openapi-export {
         border-color: #94a3b8;
       }
@@ -2114,10 +2137,10 @@ async function withTimeout(promise, timeoutMs, description) {
   }
 }
 
-// Drives the in-app export progress modal while a long export runs. Instead of opening a native
-// progress window, we tell the renderer to show its own styled dialog (ExportProgressDialog), so the
-// waiting UI matches the rest of the app. Callers always show the save dialog BEFORE invoking this, so
-// the modal never overlaps file picking.
+// Drives the in-app export progress modal while a long export or preview render runs. Instead of
+// opening a native progress window, we tell the renderer to show its own styled dialog
+// (ExportProgressDialog), so the waiting UI matches the rest of the app. Export callers show their
+// save dialog before invoking this, so the modal never overlaps file picking.
 async function withExportProgress(parentWindow, title, message, task) {
   const hasWindow = parentWindow && !parentWindow.isDestroyed();
   if (hasWindow) {
@@ -2137,6 +2160,41 @@ async function withExportProgress(parentWindow, title, message, task) {
 
 async function loadExportHtml(exportWindow, html) {
   await exportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+}
+
+// Generates the canonical paginated PDF snapshot used by both Export as PDF and Print Preview. Keep
+// the renderer, Mermaid readiness, fonts, and Chromium print settings together so the preview cannot
+// drift from the file that Export as PDF writes.
+async function renderMarkdownPdfBuffer(payload) {
+  const { currentPath, markdown, options } = payload ?? {};
+  const pageSize = getPdfPageSize(options?.pageSize);
+  const pageMargins = getPdfPageMargins(options?.pageMargins);
+  const landscape = getPdfPageOrientation(options?.pageOrientation) === "landscape";
+  let exportWindow;
+
+  try {
+    const html = await renderMarkdownExportHtml(markdown, currentPath, {
+      excludeFrontmatter: true,
+      fontFamily: options?.fontFamily,
+      fontSizePixels: options?.fontSizePixels,
+      paragraphSpacingPixels: options?.paragraphSpacingPixels
+    });
+
+    exportWindow = createExportWindow();
+    await loadExportHtml(exportWindow, html);
+    await renderExportMermaidDiagrams(exportWindow.webContents);
+    await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
+    return await exportWindow.webContents.printToPDF({
+      landscape,
+      margins: pageMargins,
+      pageSize,
+      printBackground: true
+    });
+  } finally {
+    if (exportWindow && !exportWindow.isDestroyed()) {
+      exportWindow.destroy();
+    }
+  }
 }
 
 async function loadExportHtmlFromTemporaryFile(exportWindow, html) {
@@ -3494,6 +3552,7 @@ function createWindow(options = {}) {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      plugins: true,
       sandbox: true,
       spellcheck: true
     }
@@ -3898,6 +3957,10 @@ function buildMenu() {
           }
         },
         {
+          label: "Print Preview",
+          click: () => sendMenuAction("printPreview")
+        },
+        {
           label: "Export as PDF",
           click: () => sendMenuAction("exportPdf")
         },
@@ -3957,6 +4020,10 @@ function buildMenu() {
         {
           label: "Edit Frontmatter…",
           click: () => sendMenuAction("editFrontmatter")
+        },
+        {
+          label: "Insert Table of Contents",
+          click: () => sendMenuAction("insertTableOfContents")
         },
         {
           type: "separator"
@@ -4351,10 +4418,7 @@ ipcMain.handle("file:export-word", async (event, payload) => {
 ipcMain.handle("file:export-pdf", async (event, payload) => {
   debugLog("Export PDF IPC handler started");
   const window = BrowserWindow.fromWebContents(event.sender);
-  const { currentPath, markdown, options } = payload ?? {};
-  const pageSize = getPdfPageSize(options?.pageSize);
-  const pageMargins = getPdfPageMargins(options?.pageMargins);
-  const landscape = getPdfPageOrientation(options?.pageOrientation) === "landscape";
+  const { currentPath } = payload ?? {};
 
   try {
     const result = await showSaveDialogForWindow(window, {
@@ -4377,38 +4441,56 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
       "Exporting PDF",
       "Rendering diagrams and writing the PDF file. Please wait.",
       async () => {
-        let exportWindow;
-        try {
-          const html = await renderMarkdownExportHtml(markdown, currentPath, {
-            excludeFrontmatter: true,
-            fontFamily: options?.fontFamily,
-            fontSizePixels: options?.fontSizePixels,
-            paragraphSpacingPixels: options?.paragraphSpacingPixels
-          });
-
-          exportWindow = createExportWindow();
-          await loadExportHtml(exportWindow, html);
-          await renderExportMermaidDiagrams(exportWindow.webContents);
-          await exportWindow.webContents.executeJavaScript("document.fonts?.ready", true);
-          const pdf = await exportWindow.webContents.printToPDF({
-            landscape,
-            margins: pageMargins,
-            pageSize,
-            printBackground: true
-          });
-
-          await fs.writeFile(result.filePath, pdf);
-          return { canceled: false, filePath: result.filePath };
-        } finally {
-          if (exportWindow && !exportWindow.isDestroyed()) {
-            exportWindow.destroy();
-          }
-        }
+        const pdf = await renderMarkdownPdfBuffer(payload);
+        await fs.writeFile(result.filePath, pdf);
+        return { canceled: false, filePath: result.filePath };
       }
     );
   } catch (error) {
     await showExportError(event, "PDF", error);
     return { canceled: true };
+  }
+});
+
+ipcMain.handle("file:preview-pdf", async (_event, payload) => {
+  debugLog("Print Preview IPC handler started");
+
+  try {
+    const pdf = await renderMarkdownPdfBuffer(payload);
+    return { ok: true, data: Uint8Array.from(pdf) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[print-preview] FAILED:", message);
+    return { ok: false, error: message };
+  }
+});
+
+ipcMain.handle("file:save-pdf-preview", async (event, payload) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const { currentPath, data } = payload ?? {};
+
+  if (!(data instanceof Uint8Array)) {
+    return { ok: false, error: "The print preview snapshot is unavailable." };
+  }
+
+  try {
+    const result = await showSaveDialogForWindow(window, {
+      title: "Save Preview as PDF",
+      defaultPath: getDefaultExportPath(currentPath, "pdf"),
+      filters: pdfFilters
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { ok: true, canceled: true };
+    }
+
+    await fs.mkdir(path.dirname(result.filePath), { recursive: true });
+    await fs.writeFile(result.filePath, Buffer.from(data));
+    return { ok: true, canceled: false, filePath: result.filePath };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[print-preview-save] FAILED:", message);
+    return { ok: false, error: message };
   }
 });
 
@@ -4963,6 +5045,74 @@ ipcMain.handle("ai:release-conversation", async (event, payload) => {
   const conversationId = payload?.conversationId;
   if (typeof conversationId !== "string" || !conversationId) return;
   await releaseOpenCodeConversation(event.sender.id, conversationId);
+});
+
+ipcMain.handle("ai:load-chat-history", async (_event, payload) => {
+  const filePath = aiChatHistory.getAiChatHistoryFilePath(
+    app.getPath("userData"),
+    payload?.profileName,
+    payload?.documentPath
+  );
+  if (!filePath) {
+    return { ok: true, history: null };
+  }
+
+  try {
+    const history = aiChatHistory.sanitizeAiChatHistory(JSON.parse(await fs.readFile(filePath, "utf8")));
+    return { ok: true, history };
+  } catch {
+    return { ok: true, history: null };
+  }
+});
+
+ipcMain.handle("ai:save-chat-history", async (_event, payload) => {
+  const filePath = aiChatHistory.getAiChatHistoryFilePath(
+    app.getPath("userData"),
+    payload?.profileName,
+    payload?.documentPath
+  );
+  const history = aiChatHistory.sanitizeAiChatHistory(payload?.history);
+  if (!filePath || !history) {
+    return { ok: false, error: "A saved document and valid chat history are required." };
+  }
+
+  try {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.tmp`;
+    await fs.writeFile(temporaryPath, JSON.stringify(history), "utf8");
+    await fs.rename(temporaryPath, filePath);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("ai:delete-chat-history", async (_event, payload) => {
+  const filePath = aiChatHistory.getAiChatHistoryFilePath(
+    app.getPath("userData"),
+    payload?.profileName,
+    payload?.documentPath
+  );
+  if (!filePath) {
+    return { ok: true };
+  }
+
+  try {
+    await fs.rm(filePath, { force: true });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle("ai:delete-all-chat-history", async (_event, payload) => {
+  const directory = aiChatHistory.getAiChatHistoryDirectory(app.getPath("userData"), payload?.profileName);
+  try {
+    await fs.rm(directory, { recursive: true, force: true });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 });
 
 // Run a chat completion through the provider abstraction. Network I/O lives here in the main process

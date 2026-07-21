@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- T_142: Saved AI chat transcript and agent history locally for saved documents in opaque,
+  per-profile user-data files. Clear Conversation deletes the active file, and AI Provider settings
+  provides a confirmed delete-all-history action.
+
+- T_139: Added an in-app Print Preview that shares Chromium's direct paginated PDF renderer with
+  Export as PDF and supports refresh and snapshot saving. Removed the experimental editor page
+  guides after validation showed they could not reliably predict export pagination. PDF output now
+  applies heading, widow/orphan, and common-block fragmentation hints to the emitted export classes.
+
 - Inline KaTeX using portable `` `math:...` `` code spans, including rich-text rendering, toolbar
   insertion, HTML/PDF/web export, and context-aware AI import alongside existing fenced math blocks.
 

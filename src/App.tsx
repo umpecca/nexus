@@ -48,6 +48,7 @@ import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
 import ExportProgressDialog from "./components/editor/ExportProgressDialog";
+import PrintPreviewDialog from "./components/editor/PrintPreviewDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
@@ -463,6 +464,7 @@ function App() {
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiChatHistoryResetVersion, setAiChatHistoryResetVersion] = useState(0);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNotice, setAiNotice] = useState<AiNoticeState | null>(null);
@@ -470,6 +472,10 @@ function App() {
   const [exportProgress, setExportProgress] = useState<{ title: string; message: string } | null>(
     null
   );
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [printPreviewLoading, setPrintPreviewLoading] = useState(false);
+  const [printPreviewError, setPrintPreviewError] = useState<string | null>(null);
+  const [printPreviewData, setPrintPreviewData] = useState<Uint8Array | null>(null);
   const [mcpNgrokStatus, setMcpNgrokStatus] = useState<McpNgrokStatus | null>(null);
   const [externalFileChangePrompt, setExternalFileChangePrompt] =
     useState<ExternalFileChangePrompt | null>(null);
@@ -490,6 +496,7 @@ function App() {
   // Counts in-flight exports so overlapping exports keep the progress modal up until the last one
   // finishes (the renderer can't block the native menu the way the old modal window did).
   const exportProgressDepthRef = useRef(0);
+  const printPreviewRequestRef = useRef(0);
   const editorScrollSnapshotRef = useRef<ScrollSnapshot>({ ratio: 0, top: 0 });
   const activeScrollElementRef = useRef<HTMLElement | null>(null);
   const isApplyingScrollRef = useRef(false);
@@ -526,11 +533,13 @@ function App() {
     exportDocumentAsHtml,
     exportDocumentAsWord,
     exportDocumentAsPdf,
+    openPrintPreview,
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
     openFindPanel,
     openReplacePanel,
     openFrontmatterEditor,
+    insertTableOfContents,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -770,11 +779,13 @@ function App() {
     exportDocumentAsHtml,
     exportDocumentAsWord,
     exportDocumentAsPdf,
+    openPrintPreview,
     refreshDocumentFromDisk,
     compareWithPreviousVersion,
     openFindPanel,
     openReplacePanel,
     openFrontmatterEditor,
+    insertTableOfContents,
     zoomEditorIn,
     zoomEditorOut,
     resetEditorZoom,
@@ -2088,6 +2099,83 @@ function App() {
     await window.nexus?.exportMarkdownAsPdf(filePath, currentMarkdown, getPdfExportOptions());
   }
 
+  async function deleteAllAiChatHistory() {
+    const result = await window.nexus?.deleteAllAiChatHistory(profileName);
+    if (result?.ok) {
+      setAiChatHistoryResetVersion((current) => current + 1);
+    }
+    return result ?? { ok: false as const, error: "AI chat history is only available in the desktop app." };
+  }
+
+  function openPrintPreview() {
+    setPrintPreviewOpen(true);
+    void refreshPrintPreview();
+  }
+
+  function closePrintPreview() {
+    printPreviewRequestRef.current += 1;
+    setPrintPreviewOpen(false);
+    setPrintPreviewLoading(false);
+    setPrintPreviewError(null);
+    setPrintPreviewData(null);
+  }
+
+  async function refreshPrintPreview() {
+    const nexus = window.nexus;
+    const requestId = printPreviewRequestRef.current + 1;
+    printPreviewRequestRef.current = requestId;
+    setPrintPreviewLoading(true);
+    setPrintPreviewError(null);
+
+    if (!nexus) {
+      setPrintPreviewLoading(false);
+      setPrintPreviewError("Print Preview is available in the Nexus desktop app.");
+      return;
+    }
+
+    try {
+      const result = await nexus.createPdfPreview(
+        filePath,
+        getCurrentMarkdown(),
+        getPdfExportOptions()
+      );
+      if (requestId !== printPreviewRequestRef.current) {
+        return;
+      }
+
+      if (result.ok) {
+        setPrintPreviewData(Uint8Array.from(result.data));
+      } else {
+        setPrintPreviewError(result.error || "Print Preview could not be generated.");
+      }
+    } catch (error) {
+      if (requestId === printPreviewRequestRef.current) {
+        setPrintPreviewError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (requestId === printPreviewRequestRef.current) {
+        setPrintPreviewLoading(false);
+      }
+    }
+  }
+
+  async function savePrintPreview() {
+    const nexus = window.nexus;
+    if (!nexus || !printPreviewData) {
+      return;
+    }
+
+    setPrintPreviewError(null);
+    try {
+      const result = await nexus.savePdfPreview(filePath, printPreviewData);
+      if (!result.ok) {
+        setPrintPreviewError(result.error || "The preview PDF could not be saved.");
+      }
+    } catch (error) {
+      setPrintPreviewError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function getPdfExportOptions() {
     return {
       fontFamily: settings.fontFamily,
@@ -2441,6 +2529,9 @@ function App() {
       case "exportPdf":
         void h.exportDocumentAsPdf();
         break;
+      case "printPreview":
+        h.openPrintPreview();
+        break;
       case "refresh":
         void h.refreshDocumentFromDisk();
         break;
@@ -2455,6 +2546,9 @@ function App() {
         break;
       case "editFrontmatter":
         h.openFrontmatterEditor();
+        break;
+      case "insertTableOfContents":
+        h.insertTableOfContents();
         break;
       case "zoomIn":
         h.zoomEditorIn();
@@ -2732,7 +2826,6 @@ function App() {
                         <ShadcnMdxToolbar
                           documentPath={filePath}
                           onCleanUpFormatting={cleanUpFormatting}
-                          onInsertTableOfContents={insertTableOfContents}
                         />
                       </>
                     ),
@@ -2756,6 +2849,8 @@ function App() {
             profileName={profileName}
             windowId={MCP_WINDOW_ID}
             fileName={titlebarFileName}
+            documentPath={filePath ?? null}
+            historyResetVersion={aiChatHistoryResetVersion}
             width={settings.aiChatWidthPixels}
             getEditorSelection={() => {
               const snapshot = editorSelectionSnapshotRef.current;
@@ -2880,6 +2975,7 @@ function App() {
         profileName={profileName}
         ai={settings.ai}
         onAiChange={(ai) => setSettings((current) => ({ ...current, ai }))}
+        onDeleteAllChatHistory={deleteAllAiChatHistory}
       />
       {pendingAiEdit ? (
         <AiEditPreviewDialog
@@ -2899,6 +2995,19 @@ function App() {
         open={exportProgress !== null}
         title={exportProgress?.title ?? ""}
         message={exportProgress?.message ?? ""}
+      />
+      <PrintPreviewDialog
+        open={printPreviewOpen}
+        loading={printPreviewLoading}
+        error={printPreviewError}
+        pdfData={printPreviewData}
+        onOpenChange={(open) => {
+          if (!open) {
+            closePrintPreview();
+          }
+        }}
+        onRefresh={() => void refreshPrintPreview()}
+        onSave={() => void savePrintPreview()}
       />
       <McpWriteConfirmDialog
         open={pendingMcpWrite !== null}

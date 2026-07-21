@@ -10,6 +10,7 @@ import type {
   OpenCodeDiscoveryResult
 } from "./lib/ai/providers";
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
+import type { AiAgentMessage } from "./lib/ai/providers";
 
 /** A tool advertised by the in-process MCP host (mirrors an MCP `tools/list` entry). */
 export type McpToolDefinition = {
@@ -33,6 +34,7 @@ export type NexusMenuAction =
   | "exportHtml"
   | "exportWord"
   | "exportPdf"
+  | "printPreview"
   | "refresh"
   | "comparePreviousVersion"
   | "find"
@@ -51,6 +53,7 @@ export type NexusMenuAction =
   | "about"
   | "copyHtml"
   | "editFrontmatter"
+  | "insertTableOfContents"
   | "publishWeb"
   | "publishQuickConnect"
   | "toggleAiChat"
@@ -135,6 +138,22 @@ type DocumentImportImage = {
   alt?: string;
   cropRegions?: boolean;
 };
+
+export type AiChatHistory = {
+  version: 1;
+  items: unknown[];
+  conversation: AiAgentMessage[];
+};
+
+export type AiChatHistoryResult = { ok: true; history: AiChatHistory | null } | { ok: false; error: string };
+export type AiChatHistoryDeleteResult = { ok: true } | { ok: false; error: string };
+type PdfPreviewResult =
+  | { ok: true; data: Uint8Array }
+  | { ok: false; error: string };
+type SavePdfPreviewResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; filePath: string }
+  | { ok: false; error: string };
 type DocumentImportItem = {
   id: string;
   label: string;
@@ -348,6 +367,15 @@ declare global {
         markdown: string,
         options?: ExportMarkdownPdfOptions
       ): Promise<SaveMarkdownResult>;
+      createPdfPreview(
+        currentPath: string | undefined,
+        markdown: string,
+        options?: ExportMarkdownPdfOptions
+      ): Promise<PdfPreviewResult>;
+      savePdfPreview(
+        currentPath: string | undefined,
+        data: Uint8Array
+      ): Promise<SavePdfPreviewResult>;
       selectLocalImage(documentPath?: string): Promise<SelectLocalImageResult>;
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       selectDocumentImportSources(): Promise<SelectDocumentImportResult>;
@@ -400,6 +428,14 @@ declare global {
         config: AiRequestConfig
       ): Promise<OpenCodeDiscoveryResult>;
       releaseAiConversation(conversationId: string): Promise<void>;
+      loadAiChatHistory(profileName: string, documentPath: string | null): Promise<AiChatHistoryResult>;
+      saveAiChatHistory(
+        profileName: string,
+        documentPath: string | null,
+        history: AiChatHistory
+      ): Promise<AiChatHistoryDeleteResult>;
+      deleteAiChatHistory(profileName: string, documentPath: string | null): Promise<AiChatHistoryDeleteResult>;
+      deleteAllAiChatHistory(profileName: string): Promise<AiChatHistoryDeleteResult>;
       listMcpTools(): Promise<McpToolDefinition[]>;
       callMcpTool(payload: { name: string; args?: unknown }): Promise<McpToolResult>;
       startAiChatStream(requestId: string, payload: AiAgentChatPayload): void;

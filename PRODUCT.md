@@ -79,7 +79,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Optional, per-OS-profile AI provider configuration for OpenAI, Azure OpenAI, DeepSeek, Anthropic, Ollama, LM Studio, and an existing `opencode serve` instance, with user-selectable models and connection testing.
 - AI provider API keys encrypted at rest using the operating system's secure storage and omitted from plaintext application settings.
 - AI selection actions for improving, shortening, expanding, correcting, summarizing, changing the tone of, and translating selected text, with an original-versus-proposed review before replacement.
-- A resizable, document-scoped AI chat panel that streams responses, can include the current editor selection, and can use the existing Nexus document tools to inspect or propose changes to the current document.
+- A resizable, document-scoped AI chat panel that streams responses, can include the current editor selection, can use the existing Nexus document tools to inspect or propose changes to the current document, and saves chat history locally for saved documents.
 - AI chat write operations routed through the same document-change confirmation boundary as MCP writes.
 - An AI document-import workflow that converts one PDF or multiple ordered images into Markdown at the current caret, using local PDF extraction where possible and the configured vision-capable model where image understanding is required.
 - Local Markdown file open and save workflows through the Electron app menu.
@@ -106,7 +106,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Top-level document action buttons.
 - A bundled AI model, hosted Nexus AI service, or included provider subscription; users supply access to a supported hosted provider or run a supported local endpoint.
 - Automatic background AI processing of document content without an explicit user action.
-- Persistent or cloud-synchronized AI chat history.
+- Cloud-synchronized AI chat history.
 - MCP write tools that reach beyond the active document buffer (multi-window batched edits, file open/save through MCP, image or attachment write tools). In-buffer content edits — full replacement, ordered find/replace, section replacement, and scalar frontmatter changes — are in scope; filesystem-touching writes are not.
 - Outbound MCP client behavior (Nexus calling other MCP servers).
 - Direct remote network binding of the MCP server (the server still binds `127.0.0.1` only; remote reachability is available only through the optional, user-enabled ngrok tunnel, which forwards to the loopback port without binding a non-loopback address).
@@ -343,6 +343,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall store the selected base font size locally using a key scoped to the current OS profile name.
 - The system shall store the selected paragraph spacing locally using a key scoped to the current OS profile name.
 - The system shall store the selected paper/plain editor view locally using a key scoped to the current OS profile name.
+- The system shall treat Paper View as a continuous editing surface and Print Preview as the
+  authoritative paginated representation.
 - The system shall allow the user to turn responsive content wrapping on or off while using the plain rich-text editor view.
 - The system shall store the selected plain-view responsive content wrapping preference locally using a key scoped to the current OS profile name.
 - The system shall provide a collapsible outline sidebar that lists the current document's headings.
@@ -378,12 +380,18 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow saving the current document through File/Save and File/Save As.
 - The system shall allow exporting the current Markdown document to a self-contained HTML file through File/Export as HTML.
 - The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
+- The system shall provide File/Print Preview using the current unsaved Markdown and the same
+  Chromium PDF renderer and page settings as PDF export.
+- The system shall allow refreshing, saving, and closing the generated PDF snapshot without changing
+  the Markdown document.
 - The system shall export HTML and PDF using the selected base font size.
 - The system shall export HTML and PDF using the selected paragraph spacing.
 - The system shall export PDFs using the selected paper size.
 - The system shall export PDFs using the selected paper orientation.
 - The system shall export PDFs using the selected paper margins.
 - The system shall generate PDFs from the rendered rich export HTML through a direct hidden-window print flow.
+- The system shall ask Chromium to keep headings with following content, preserve paragraph/list
+  widows and orphans, and avoid splitting common block content when it fits on one page.
 - The system shall report a PDF export failure instead of writing a plain text PDF when direct rich PDF generation is unavailable.
 - The system shall provide an Electron File/Publish as Web menu item placed near the export actions.
 - The system shall render the current document to the same self-contained HTML output used by HTML export when publishing as web.
@@ -462,6 +470,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall show the original selection and proposed Markdown replacement in a review dialog and shall change the document only when the user accepts the proposal.
 - The system shall preserve the captured rich-text or source selection while an AI selection request runs so an accepted proposal replaces the intended text.
 - The system shall provide a resizable AI chat panel scoped to the document in its editor window.
+- The system shall save AI chat history locally for saved documents using opaque, profile-scoped user-data files; untitled documents shall remain session-only.
+- The system shall allow the user to clear the active conversation and delete its saved history, and to delete all saved chat history for the current profile.
 - The system shall stream AI chat responses and allow the user to stop an in-progress response.
 - The system shall allow the current editor selection to be attached explicitly as context to the next AI chat message.
 - The system shall expose the existing Nexus document read and write tool catalog to capable direct AI chat providers and shall pin every in-app chat tool call to that panel's document. For OpenCode Serve, OpenCode owns and executes tool calls in its served directory; Nexus shall display their activity without invoking similarly named Nexus tools.
@@ -551,7 +561,7 @@ Markdown is effective for structured writing, but many users still need a calm e
   prefixed with `math:` render formulas within prose without interrupting sentence flow. AI document
   import chooses between the two forms based on the formula's source context.
 - AI selection actions: the AI menu operates on the last non-empty editor selection in rich-text or source mode, sends the selected Markdown to the configured provider with the chosen rewrite instruction, and displays the original and proposed text side by side. The editor changes only when the user accepts the proposal; dismissal and provider errors are non-destructive.
-- AI chat: a resizable side panel streams a conversation with the configured provider, optionally attaches the editor selection to the next user turn, and gives tool-capable models the Nexus document tools for the panel's current document. Read tools provide document context on demand; write tools retain the existing per-call review boundary. Chat conversation state is local to the open editor window and is not persisted across application sessions.
+- AI chat: a resizable side panel streams a conversation with the configured provider, optionally attaches the editor selection to the next user turn, and gives tool-capable models the Nexus document tools for the panel's current document. Read tools provide document context on demand; write tools retain the existing per-call review boundary. Saved documents retain their chat transcript and agent conversation in local, opaque user-data files; untitled documents remain session-only. Clear Conversation deletes the active file, while AI Provider settings can delete all saved chats for the OS profile.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only and the editor background kept white like the other editing modes.
 - Mermaid diagrams: render standard fenced `mermaid` code blocks as non-editable diagrams in rich text mode, while source and diff modes keep the raw Mermaid fence editable as Markdown text.
 - OpenAPI blocks: match only YAML fences carrying the `openapi` metadata token, show an expandable
