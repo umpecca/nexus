@@ -11,7 +11,8 @@ export type AiProviderId =
   | "deepseek"
   | "anthropic"
   | "ollama"
-  | "lm-studio";
+  | "lm-studio"
+  | "opencode";
 
 export const AI_PROVIDER_IDS: readonly AiProviderId[] = [
   "openai",
@@ -19,7 +20,8 @@ export const AI_PROVIDER_IDS: readonly AiProviderId[] = [
   "deepseek",
   "anthropic",
   "ollama",
-  "lm-studio"
+  "lm-studio",
+  "opencode"
 ];
 
 export type AiMessageRole = "system" | "user" | "assistant";
@@ -55,6 +57,9 @@ export interface AiRequestConfig {
   azureResourceUrl?: string;
   azureDeployment?: string;
   azureApiVersion?: string;
+  opencodeUsername?: string;
+  opencodeAgent?: string;
+  opencodeProviderId?: string;
 }
 
 /** Full payload for the `ai:chat` IPC call. The API key is never included — main reads it from the
@@ -101,6 +106,8 @@ export interface AiAgentChatPayload {
   tools?: AiToolDefinition[];
   temperature?: number;
   maxTokens?: number;
+  /** Stable renderer-owned ID used to retain an OpenCode session across chat turns. */
+  conversationId?: string;
 }
 
 /** Result of one completed agent turn (after the stream is fully assembled). */
@@ -119,8 +126,19 @@ export type AiAgentChatResult =
 export type AiChatStreamEvent =
   | { type: "text"; text: string }
   | { type: "tool_call_delta"; index: number; id?: string; name?: string; argsFragment?: string }
+  | {
+      type: "provider_tool";
+      id: string;
+      name: string;
+      title?: string;
+      status: "pending" | "running" | "done" | "error";
+      input?: string;
+      output?: string;
+    }
   | { type: "result"; result: AiAgentChatResult }
   | { type: "error"; status?: number; error: string };
+
+export type AiProviderToolActivity = Extract<AiChatStreamEvent, { type: "provider_tool" }>;
 
 /** Non-secret, persisted per-provider configuration (see settings.ts for defaults/sanitization). */
 export interface AiProviderConfig {
@@ -132,6 +150,9 @@ export interface AiProviderConfig {
   azureResourceUrl: string;
   azureDeployment: string;
   azureApiVersion: string;
+  opencodeUsername: string;
+  opencodeAgent: string;
+  opencodeProviderId: string;
 }
 
 export interface AiSettings {
@@ -154,6 +175,10 @@ export interface AiProviderMeta {
   usesAzureFields: boolean;
   /** False for local runtimes (Ollama, LM Studio) that accept requests with no API key. */
   requiresApiKey: boolean;
+  /** Label for the encrypted secret field (API key for most providers, server password for OpenCode). */
+  secretLabel: string;
+  /** OpenCode owns sampling settings in its agent/model config. */
+  usesSamplingFields: boolean;
   keyPlaceholder: string;
 }
 
@@ -176,6 +201,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: true,
     usesAzureFields: false,
     requiresApiKey: true,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "sk-…"
   },
   "azure-openai": {
@@ -188,6 +215,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: false,
     usesAzureFields: true,
     requiresApiKey: true,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "Azure API key"
   },
   deepseek: {
@@ -200,6 +229,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: true,
     usesAzureFields: false,
     requiresApiKey: true,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "sk-…"
   },
   anthropic: {
@@ -212,6 +243,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: true,
     usesAzureFields: false,
     requiresApiKey: true,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "sk-ant-…"
   },
   // Local runtimes that expose an OpenAI-compatible API on loopback. They need no API key, so the
@@ -227,6 +260,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: true,
     usesAzureFields: false,
     requiresApiKey: false,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "Not required for local servers"
   },
   "lm-studio": {
@@ -239,9 +274,47 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderMeta> = {
     usesBaseUrl: true,
     usesAzureFields: false,
     requiresApiKey: false,
+    secretLabel: "API key",
+    usesSamplingFields: true,
     keyPlaceholder: "Not required for local servers"
+  },
+  opencode: {
+    id: "opencode",
+    label: "OpenCode Serve",
+    kind: "openai-compatible",
+    defaultBaseUrl: "http://127.0.0.1:4096",
+    defaultModel: "",
+    suggestedModels: [],
+    usesBaseUrl: true,
+    usesAzureFields: false,
+    requiresApiKey: false,
+    secretLabel: "Server password",
+    usesSamplingFields: false,
+    keyPlaceholder: "Optional OPENCODE_SERVER_PASSWORD"
   }
 };
+
+export type OpenCodeDiscoveryModel = {
+  id: string;
+  name: string;
+  attachment?: boolean;
+};
+
+export type OpenCodeDiscoveryProvider = {
+  id: string;
+  name: string;
+  models: OpenCodeDiscoveryModel[];
+};
+
+export type OpenCodeDiscoveryResult =
+  | {
+      ok: true;
+      version: string;
+      agents: string[];
+      providers: OpenCodeDiscoveryProvider[];
+      defaultModels: Record<string, string>;
+    }
+  | { ok: false; status?: number; error: string };
 
 export const AI_PROVIDER_LIST: readonly AiProviderMeta[] = AI_PROVIDER_IDS.map(
   (id) => AI_PROVIDERS[id]
@@ -262,6 +335,9 @@ export function toAiRequestConfig(config: AiProviderConfig): AiRequestConfig {
     model: config.model,
     azureResourceUrl: config.azureResourceUrl,
     azureDeployment: config.azureDeployment,
-    azureApiVersion: config.azureApiVersion
+    azureApiVersion: config.azureApiVersion,
+    opencodeUsername: config.opencodeUsername,
+    opencodeAgent: config.opencodeAgent,
+    opencodeProviderId: config.opencodeProviderId
   };
 }

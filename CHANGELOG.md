@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Inline KaTeX using portable `` `math:...` `` code spans, including rich-text rendering, toolbar
+  insertion, HTML/PDF/web export, and context-aware AI import alongside existing fenced math blocks.
+
+- T_137: OpenCode Serve AI provider with agent/provider/model discovery, optional encrypted HTTP
+  Basic authentication, disposable one-shot sessions, persistent per-chat sessions, image parts,
+  provider-owned tool activity, permission decisions, cancellation, lifecycle cleanup, and dependent
+  provider/model dropdowns loaded from the running OpenCode server. AI image/PDF imports now retain
+  each source visual beside its model-generated description, including native SVG selections and
+  padded, model-located illustration cutouts from rendered scanned PDF pages. Ordinary raster images
+  also have a draggable four-edge crop editor; embedded diagram editors remain unchanged.
+
 - Offline "Isoflow for data models" schema designer: portable, executable-looking `sql sqlschema`
   PostgreSQL document blocks, React Flow table/relationship editing, canonical SQL copy/download, static rich-text SVG
   diagrams, and matching HTML/PDF/web-publish rendering.
@@ -52,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Titlebar refinements.
 
 ### Fixed
+
+- Converted AI-imported TeX into Nexus built-in fenced `math` blocks and neutralized unsupported
+  model-generated directive prefixes before rich-text parsing.
+- Fixed AI-imported mathematical notation and stray model-generated MDX delimiters preventing the
+  rich-text Markdown view from parsing the resulting document.
+- Fixed scanned and illustrated PDF imports selecting unpdf's intentionally unavailable serverless
+  canvas mock instead of the installed native PDF canvas implementation.
+- Fixed AI imports eagerly loading `@napi-rs/canvas` for ordinary images and ensured the native
+  canvas package is unpacked for PDF rasterization in distributed builds.
+- Fixed AI PDF/image import failing with a `paths[2]` type error when resolving selected files.
 
 - Draw.io and Isoflow diagrams inserted from WYSIWYG mode now return to the caret that was active
   before the native diagram window opened instead of sometimes being appended to the document end.

@@ -17,6 +17,7 @@ const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
 const documentImport = require("./documentImport.cjs");
 const aiProviders = require("./aiProviders.cjs");
+const opencodeProvider = require("./opencodeProvider.cjs");
 const { createDrawioSession } = require("./drawioEmbed.cjs");
 const { ISOFLOW_WINDOW, normalizeSaveResult } = require("./isoflowEmbed.cjs");
 const { OPENAPI_WINDOW, normalizeOpenApiSaveResult } = require("./openapiEmbed.cjs");
@@ -1324,6 +1325,12 @@ ${pdfPrintStyle}
       margin: 0;
     }
 
+    .nexus-export-inline-math {
+      display: inline-block;
+      margin: 0 0.08em;
+      vertical-align: -0.08em;
+    }
+
     .nexus-export-math img {
       display: inline-block;
       max-width: 100%;
@@ -1548,8 +1555,26 @@ function renderExportMathBlockHtml(source) {
   }
 }
 
+function renderExportInlineMathHtml(source) {
+  const katex = require("katex");
+  try {
+    const html = katex.renderToString(String(source ?? ""), {
+      displayMode: false,
+      throwOnError: true,
+      output: "htmlAndMathml",
+      strict: "ignore"
+    });
+    return `<span class="nexus-export-inline-math">${html}</span>`;
+  } catch {
+    return `<code>${escapeHtmlText(`math:${source ?? ""}`)}</code>`;
+  }
+}
+
 function hasExportMathPlaceholder(html) {
-  return typeof html === "string" && html.includes('class="nexus-export-math');
+  return typeof html === "string" && (
+    html.includes('class="nexus-export-math') ||
+    html.includes('class="nexus-export-inline-math')
+  );
 }
 
 async function getKatexCssRules(options = {}) {
@@ -2478,6 +2503,7 @@ async function renderMarkdownExportHtml(markdown, currentPath, options = {}) {
   const { Marked, Renderer } = await import("marked");
   const renderer = new Renderer();
   const defaultCodeRenderer = renderer.code.bind(renderer);
+  const defaultCodespanRenderer = renderer.codespan.bind(renderer);
 
   renderer.image = (token) => {
     const src = resolveImagePreviewSource(currentPath, token.href);
@@ -3509,6 +3535,7 @@ function createWindow(options = {}) {
 
   window.on("closed", () => {
     stopFileWatcher(webContentsId);
+    void releaseOpenCodeSessionsForSender(webContentsId);
     pendingInitialFiles.delete(webContentsId);
     closeStates.delete(window);
 
@@ -4569,7 +4596,18 @@ function getAiProviderKeyStorePath() {
 }
 
 // Mirrors AI_PROVIDER_IDS in src/lib/ai/providers.ts (main runs raw CJS, so it can't import the TS).
-const AI_PROVIDER_IDS = ["openai", "azure-openai", "deepseek", "anthropic", "ollama", "lm-studio"];
+const AI_PROVIDER_IDS = [
+  "openai",
+  "azure-openai",
+  "deepseek",
+  "anthropic",
+  "ollama",
+  "lm-studio",
+  "opencode"
+];
+// Holds newly entered secrets for this process even when safeStorage is unavailable. It makes the
+// settings dialog's documented "this session only" behavior real without ever writing plaintext.
+const aiProviderSessionKeys = new Map();
 
 function aiKeyEntryKey(profileName, providerId) {
   const profile = typeof profileName === "string" && profileName.trim() ? profileName.trim() : "default";
@@ -4595,12 +4633,14 @@ async function writeAiProviderKeyStore(store) {
 }
 
 async function readAiProviderKey(profileName, providerId) {
-  if (!safeStorage.isEncryptionAvailable()) {
-    return "";
-  }
-
   const entryKey = aiKeyEntryKey(profileName, providerId);
   if (!entryKey) {
+    return "";
+  }
+  if (aiProviderSessionKeys.has(entryKey)) {
+    return aiProviderSessionKeys.get(entryKey) || "";
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
     return "";
   }
 
@@ -4637,12 +4677,15 @@ ipcMain.handle("ai:set-key", async (_event, payload) => {
 
   // An empty key clears any stored entry, regardless of encryption support.
   if (!key) {
+    aiProviderSessionKeys.delete(entryKey);
     if (Object.prototype.hasOwnProperty.call(store, entryKey)) {
       delete store[entryKey];
       await writeAiProviderKeyStore(store);
     }
     return { stored: false, encryptionAvailable };
   }
+
+  aiProviderSessionKeys.set(entryKey, key);
 
   // Never fall back to plaintext on disk: the whole point is encryption at rest.
   if (!encryptionAvailable) {
@@ -4656,11 +4699,277 @@ ipcMain.handle("ai:set-key", async (_event, payload) => {
 
 const AI_CHAT_TIMEOUT_MS = 30000;
 
+const openCodeChatSessions = new Map();
+
+async function fetchOpenCodeDescriptor(descriptor, signal) {
+  const response = await fetch(descriptor.url, {
+    method: descriptor.method,
+    headers: descriptor.headers,
+    ...(descriptor.body === undefined ? {} : { body: JSON.stringify(descriptor.body) }),
+    signal
+  });
+  let json = null;
+  if (response.status !== 204) {
+    try {
+      json = await response.json();
+    } catch {
+      json = null;
+    }
+  }
+  if (!response.ok) {
+    const error = new Error(opencodeProvider.errorMessage(json, response.status));
+    error.status = response.status;
+    throw error;
+  }
+  return json;
+}
+
+async function discoverOpenCode(profileName, config, signal) {
+  const password = await readAiProviderKey(profileName, "opencode");
+  const get = (pathname) =>
+    fetchOpenCodeDescriptor(opencodeProvider.request(config, password, pathname), signal);
+  const health = await get("/global/health");
+  const [providers, configProviders, agents] = await Promise.all([
+    get("/provider"),
+    get("/config/providers"),
+    get("/agent")
+  ]);
+  return opencodeProvider.parseDiscovery({ health, providers, configProviders, agents });
+}
+
+ipcMain.handle("ai:discover-opencode", async (_event, payload) => {
+  const profileName = payload?.profileName;
+  const config = payload?.config && typeof payload.config === "object" ? payload.config : {};
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_CHAT_TIMEOUT_MS);
+  try {
+    return await discoverOpenCode(profileName, config, controller.signal);
+  } catch (error) {
+    return {
+      ok: false,
+      ...(Number.isFinite(error?.status) ? { status: error.status } : {}),
+      error:
+        error?.name === "AbortError"
+          ? `OpenCode discovery timed out after ${AI_CHAT_TIMEOUT_MS / 1000}s.`
+          : `OpenCode discovery failed: ${error?.message ?? error}`
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
+function openCodeSessionKey(senderId, conversationId) {
+  return `${senderId}:${conversationId}`;
+}
+
+function openCodeConfigSignature(config, password) {
+  return JSON.stringify({
+    baseUrl: opencodeProvider.baseUrl(config),
+    username: config?.opencodeUsername || "opencode",
+    agent: config?.opencodeAgent || "",
+    provider: config?.opencodeProviderId || "",
+    model: config?.model || "",
+    password
+  });
+}
+
+async function deleteOpenCodeSession(record) {
+  if (!record?.sessionId) return;
+  try {
+    await fetchOpenCodeDescriptor(
+      opencodeProvider.buildSessionActionRequest({
+        sessionId: record.sessionId,
+        config: record.config,
+        password: record.password,
+        action: "delete"
+      })
+    );
+  } catch {
+    // Session cleanup is best effort; the server may already be stopped or the session removed.
+  }
+}
+
+async function releaseOpenCodeConversation(senderId, conversationId) {
+  const key = openCodeSessionKey(senderId, conversationId);
+  const record = openCodeChatSessions.get(key);
+  openCodeChatSessions.delete(key);
+  await deleteOpenCodeSession(record);
+}
+
+async function releaseOpenCodeSessionsForSender(senderId) {
+  const records = [];
+  for (const [key, record] of openCodeChatSessions) {
+    if (record.senderId === senderId) {
+      openCodeChatSessions.delete(key);
+      records.push(record);
+    }
+  }
+  await Promise.all(records.map(deleteOpenCodeSession));
+}
+
+async function createOpenCodeSession({ senderId, conversationId, profileName, config, title, signal }) {
+  const password = await readAiProviderKey(profileName, "opencode");
+  const signature = openCodeConfigSignature(config, password);
+  const key = conversationId ? openCodeSessionKey(senderId, conversationId) : null;
+  const existing = key ? openCodeChatSessions.get(key) : null;
+  if (existing && existing.signature === signature) return { ...existing, disposable: false };
+  if (existing) {
+    openCodeChatSessions.delete(key);
+    await deleteOpenCodeSession(existing);
+  }
+  const json = await fetchOpenCodeDescriptor(
+    opencodeProvider.buildCreateSessionRequest({ config, password, title }),
+    signal
+  );
+  const session = opencodeProvider.parseSession(json);
+  if (!session) throw new Error("OpenCode returned an invalid session response.");
+  const record = { senderId, sessionId: session.id, config, password, signature };
+  if (key) openCodeChatSessions.set(key, record);
+  return { ...record, disposable: !key };
+}
+
+async function answerOpenCodePermission(sender, record, permission) {
+  const parent = sender && !sender.isDestroyed() ? BrowserWindow.fromWebContents(sender) : null;
+  const title = typeof permission?.title === "string" ? permission.title : "OpenCode tool permission";
+  const pattern = Array.isArray(permission?.pattern)
+    ? permission.pattern.join(", ")
+    : typeof permission?.pattern === "string"
+      ? permission.pattern
+      : "";
+  const options = {
+    type: "warning",
+    title: "OpenCode permission",
+    message: title,
+    detail: pattern
+      ? `${pattern}\n\nThis action runs in the directory served by OpenCode.`
+      : "This action runs in the directory served by OpenCode.",
+    buttons: ["Reject", "Allow once", "Always allow"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  };
+
+  renderer.codespan = function (token) {
+    const source = String(token?.text ?? "");
+    return source.startsWith("math:")
+      ? renderExportInlineMathHtml(source.slice("math:".length))
+      : defaultCodespanRenderer(token);
+  };
+  const choice = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+  const response = choice.response === 2 ? "always" : choice.response === 1 ? "once" : "reject";
+  const permissionId = permission?.id;
+  if (typeof permissionId !== "string" || !permissionId) throw new Error("Invalid OpenCode permission request.");
+  await fetchOpenCodeDescriptor(
+    opencodeProvider.request(
+      record.config,
+      record.password,
+      `/session/${encodeURIComponent(record.sessionId)}/permissions/${encodeURIComponent(permissionId)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: { response, remember: response === "always" }
+      }
+    )
+  );
+}
+
+async function readOpenCodeFinalMessage(record, signal) {
+  const json = await fetchOpenCodeDescriptor(
+    opencodeProvider.request(
+      record.config,
+      record.password,
+      `/session/${encodeURIComponent(record.sessionId)}/message?limit=20`
+    ),
+    signal
+  );
+  const messages = json?.data ?? json;
+  if (!Array.isArray(messages)) throw new Error("OpenCode returned an invalid message list.");
+  const assistant = [...messages].reverse().find((message) => message?.info?.role === "assistant");
+  if (!assistant) throw new Error("OpenCode completed without an assistant response.");
+  return opencodeProvider.parseMessage(assistant, 200);
+}
+
+async function runOpenCodePrompt({ sender, record, messages, system, signal, onEvent }) {
+  const eventResponse = await fetch(
+    `${opencodeProvider.baseUrl(record.config)}/event`,
+    {
+      headers: { ...opencodeProvider.authHeaders(record.config, record.password), Accept: "text/event-stream" },
+      signal
+    }
+  );
+  if (!eventResponse.ok || !eventResponse.body) {
+    let json = null;
+    try { json = await eventResponse.json(); } catch { json = null; }
+    const error = new Error(opencodeProvider.errorMessage(json, eventResponse.status));
+    error.status = eventResponse.status;
+    throw error;
+  }
+
+  await fetchOpenCodeDescriptor(
+    opencodeProvider.buildPromptRequest({
+      sessionId: record.sessionId,
+      config: record.config,
+      password: record.password,
+      messages,
+      system,
+      asynchronous: true
+    }),
+    signal
+  );
+
+  const decoder = aiProviders.createSseDecoder();
+  const reader = eventResponse.body.getReader();
+  const textDecoder = new TextDecoder();
+  let streamedText = "";
+  let done = false;
+  while (!done) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    for (const frame of decoder.push(textDecoder.decode(chunk.value, { stream: true }))) {
+      if (!frame.json) continue;
+      for (const event of opencodeProvider.parseEvent(frame.json, record.sessionId)) {
+        if (event.type === "text") {
+          streamedText += event.text;
+          onEvent?.(event);
+        } else if (event.type === "provider_tool") {
+          onEvent?.(event);
+        } else if (event.type === "permission") {
+          await answerOpenCodePermission(sender, record, event.permission);
+        } else if (event.type === "question") {
+          await fetchOpenCodeDescriptor(
+            opencodeProvider.buildSessionActionRequest({
+              sessionId: record.sessionId,
+              config: record.config,
+              password: record.password,
+              action: "abort"
+            })
+          );
+          throw new Error("OpenCode requested an interactive question, which Nexus does not support yet.");
+        } else if (event.type === "error") {
+          throw new Error(event.error);
+        } else if (event.type === "idle") {
+          done = true;
+        }
+      }
+    }
+  }
+  if (!done) throw new Error("The OpenCode event stream ended before the session completed.");
+  const result = await readOpenCodeFinalMessage(record, signal);
+  if (result.ok && !streamedText && result.text) onEvent?.({ type: "text", text: result.text });
+  return result;
+}
+
+ipcMain.handle("ai:release-conversation", async (event, payload) => {
+  const conversationId = payload?.conversationId;
+  if (typeof conversationId !== "string" || !conversationId) return;
+  await releaseOpenCodeConversation(event.sender.id, conversationId);
+});
+
 // Run a chat completion through the provider abstraction. Network I/O lives here in the main process
 // (Node fetch) to avoid CORS and keep API keys out of the renderer; the request shape and response
 // parsing are the pure adapter's job (`aiProviders.cjs`), so this handler is thin glue. Used by the
 // setup dialog's "Test connection" now, and reusable by future in-app AI features.
-ipcMain.handle("ai:chat", async (_event, payload) => {
+ipcMain.handle("ai:chat", async (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return { ok: false, error: "Invalid AI request." };
   }
@@ -4668,6 +4977,49 @@ ipcMain.handle("ai:chat", async (_event, payload) => {
   const { profileName, providerId, config, messages, system, temperature, maxTokens } = payload;
   if (!AI_PROVIDER_IDS.includes(providerId)) {
     return { ok: false, error: `Unknown AI provider: ${String(providerId)}` };
+  }
+
+  if (providerId === "opencode") {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 300000);
+    let record = null;
+    try {
+      record = await createOpenCodeSession({
+        senderId: event.sender.id,
+        conversationId: null,
+        profileName,
+        config,
+        title: "Nexus one-shot AI action",
+        signal: controller.signal
+      });
+      const result = await runOpenCodePrompt({
+        sender: event.sender,
+        record,
+        messages,
+        system,
+        signal: controller.signal
+      });
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        text: result.text,
+        model: result.model,
+        finishReason: result.finishReason,
+        usage: result.usage
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        ...(Number.isFinite(error?.status) ? { status: error.status } : {}),
+        error:
+          error?.name === "AbortError"
+            ? "OpenCode request timed out after 300 seconds."
+            : `OpenCode error: ${error?.message ?? error}`
+      };
+    } finally {
+      clearTimeout(timeout);
+      if (record?.disposable) await deleteOpenCodeSession(record);
+    }
   }
 
   const apiKey = await readAiProviderKey(profileName, providerId);
@@ -4761,12 +5113,67 @@ ipcMain.handle("mcp:call-tool", async (_event, payload) => {
 // per call; the renderer's agent loop reissues for tool follow-ups.
 const AI_CHAT_STREAM_TIMEOUT_MS = 120000;
 const aiChatStreamControllers = new Map();
+const aiChatStreamOpenCodeSessions = new Map();
 
 function sendAiChatStreamEvent(sender, requestId, event) {
   if (!sender || sender.isDestroyed()) {
     return;
   }
   sender.send("ai:chat-stream-event", { requestId, event });
+}
+
+async function runOpenCodeChatStream(sender, requestId, payload) {
+  const { profileName, config, messages, system, conversationId } = payload;
+  if (typeof conversationId !== "string" || !conversationId) {
+    sendAiChatStreamEvent(sender, requestId, {
+      type: "error",
+      error: "An OpenCode chat conversation ID is required."
+    });
+    return;
+  }
+  const controller = new AbortController();
+  aiChatStreamControllers.set(requestId, controller);
+  const timeout = setTimeout(() => controller.abort(), 300000);
+  try {
+    const record = await createOpenCodeSession({
+      senderId: sender.id,
+      conversationId,
+      profileName,
+      config,
+      title: "Nexus AI chat",
+      signal: controller.signal
+    });
+    aiChatStreamOpenCodeSessions.set(requestId, record);
+    const result = await runOpenCodePrompt({
+      sender,
+      record,
+      messages,
+      system,
+      signal: controller.signal,
+      onEvent: (event) => sendAiChatStreamEvent(sender, requestId, event)
+    });
+    if (!result.ok) {
+      sendAiChatStreamEvent(sender, requestId, {
+        type: "error",
+        status: result.status,
+        error: result.error
+      });
+      return;
+    }
+    sendAiChatStreamEvent(sender, requestId, { type: "result", result });
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      sendAiChatStreamEvent(sender, requestId, {
+        type: "error",
+        ...(Number.isFinite(error?.status) ? { status: error.status } : {}),
+        error: `OpenCode error: ${error?.message ?? error}`
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+    aiChatStreamControllers.delete(requestId);
+    aiChatStreamOpenCodeSessions.delete(requestId);
+  }
 }
 
 async function runAiChatStream(sender, requestId, payload) {
@@ -4787,6 +5194,10 @@ async function runAiChatStream(sender, requestId, payload) {
       error: `Unknown AI provider: ${String(providerId)}`
     });
     return;
+  }
+
+  if (providerId === "opencode") {
+    return runOpenCodeChatStream(sender, requestId, payload);
   }
 
   const apiKey = await readAiProviderKey(profileName, providerId);
@@ -4968,6 +5379,18 @@ ipcMain.on("ai:chat-abort", (_event, payload) => {
     controller.abort();
     aiChatStreamControllers.delete(requestId);
   }
+  const record = aiChatStreamOpenCodeSessions.get(requestId);
+  if (record) {
+    aiChatStreamOpenCodeSessions.delete(requestId);
+    void fetchOpenCodeDescriptor(
+      opencodeProvider.buildSessionActionRequest({
+        sessionId: record.sessionId,
+        config: record.config,
+        password: record.password,
+        action: "abort"
+      })
+    ).catch(() => {});
+  }
 });
 
 ipcMain.on("sftp:host-key-decision", (_event, payload) => {
@@ -5056,7 +5479,9 @@ ipcMain.handle("document-import:select", async (event) => {
   }
 
   try {
-    const prepared = await documentImport.prepareDocumentImport(result.filePaths.map(path.resolve));
+    const prepared = await documentImport.prepareDocumentImport(
+      documentImport.resolveImportPaths(result.filePaths)
+    );
     return { canceled: false, ...prepared };
   } catch (error) {
     return {
@@ -5715,6 +6140,10 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   rejectAllPendingMcpWrites("app-quit");
+  for (const record of openCodeChatSessions.values()) {
+    void deleteOpenCodeSession(record);
+  }
+  openCodeChatSessions.clear();
   void mcpServer.stop();
   // Kill the ngrok agent synchronously so it cannot outlive the app: the async stopTunnel chain is
   // not guaranteed to run before the process terminates after will-quit.

@@ -78,6 +78,7 @@ import { githubAlertsPlugin } from "./components/editor/githubAlertsPlugin";
 import { pasteLinkPlugin } from "./components/editor/pasteLinkPlugin";
 import { alignmentPlugin } from "./components/editor/alignmentPlugin";
 import { footnotesPlugin } from "./components/editor/footnotesPlugin";
+import { inlineMathPlugin } from "./components/editor/inlineMathPlugin";
 import { drawioPlugin } from "./components/editor/drawioPlugin";
 import { isoflowPlugin } from "./components/editor/isoflowPlugin";
 import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
@@ -98,10 +99,12 @@ import {
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
 import {
   buildDocumentImportContent,
-  mergeDocumentImportImages
+  mergeDocumentImportImages,
+  sanitizeDocumentImportMarkdown
 } from "./lib/documentImport";
 import { externalizeDiagrams, inlineDiagrams } from "./lib/diagramFiles";
 import ShadcnMdxToolbar from "./components/editor/ShadcnMdxToolbar";
+import RasterImageToolbar from "./components/editor/RasterImageToolbar";
 import McpWriteConfirmDialog from "./components/mcp/McpWriteConfirmDialog";
 import StatusBar from "./components/statusbar/StatusBar";
 
@@ -1940,7 +1943,9 @@ function App() {
         return;
       }
 
-      const proposedText = mergeDocumentImportImages(result.text, picked.items).trim();
+      const proposedText = sanitizeDocumentImportMarkdown(
+        await mergeDocumentImportImages(result.text, picked.items)
+      ).trim();
       if (!proposedText) {
         setAiNotice({
           message:
@@ -2655,7 +2660,11 @@ function App() {
                   linkPlugin(),
                   linkDialogPlugin(),
                   pasteLinkPlugin(),
-                  imagePlugin({ imagePreviewHandler, imageUploadHandler: readImageFileAsDataUrl }),
+                  imagePlugin({
+                    imagePreviewHandler,
+                    imageUploadHandler: readImageFileAsDataUrl,
+                    EditImageToolbar: RasterImageToolbar
+                  }),
                   drawioPlugin(),
                   isoflowPlugin(),
                   tablePlugin(),
@@ -2666,6 +2675,7 @@ function App() {
                   githubAlertsPlugin(),
                   alignmentPlugin(),
                   footnotesPlugin(),
+                  inlineMathPlugin(),
                   codeBlockPlugin({
                     defaultCodeBlockLanguage: "txt",
                     codeBlockEditorDescriptors: [

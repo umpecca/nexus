@@ -199,6 +199,12 @@ contextBridge.exposeInMainWorld("nexus", {
   aiChat(payload) {
     return ipcRenderer.invoke("ai:chat", payload);
   },
+  discoverOpenCode(profileName, config) {
+    return ipcRenderer.invoke("ai:discover-opencode", { profileName, config });
+  },
+  releaseAiConversation(conversationId) {
+    return ipcRenderer.invoke("ai:release-conversation", { conversationId });
+  },
   listMcpTools() {
     return ipcRenderer.invoke("mcp:list-tools");
   },

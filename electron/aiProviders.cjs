@@ -26,7 +26,7 @@ const OPENAI_COMPATIBLE_DEFAULT_BASE_URLS = {
 };
 
 // Local runtimes accept (and ignore) the Authorization header, so no API key is required to use them.
-const KEYLESS_PROVIDER_IDS = new Set(["ollama", "lm-studio"]);
+const KEYLESS_PROVIDER_IDS = new Set(["ollama", "lm-studio", "opencode"]);
 
 function openAiCompatibleDefaultBaseUrl(providerId) {
   return OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[providerId] || "https://api.openai.com/v1";

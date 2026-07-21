@@ -38,7 +38,10 @@ describe("buildDocumentImportPrompt", () => {
     const prompt = buildDocumentImportPrompt();
     expect(prompt.system).toContain("exact HTML comment marker");
     expect(prompt.system).toContain("preserve source order");
-    expect(prompt.user).toContain("ordered sources");
+      expect(prompt.system).toContain("language `math`");
+      expect(prompt.system).toContain("inline code span prefixed with `math:`");
+      expect(prompt.system).toContain("normalized bounding-box marker");
+      expect(prompt.user).toContain("ordered sources");
   });
 });
 

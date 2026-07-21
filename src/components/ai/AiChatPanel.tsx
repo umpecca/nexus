@@ -64,6 +64,10 @@ function selectionPreview(text: string): string {
   return oneLine.length > 90 ? `${oneLine.slice(0, 90)}…` : oneLine;
 }
 
+function createConversationId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function AiChatPanel({
   ai,
   profileName,
@@ -94,6 +98,8 @@ function AiChatPanel({
   const abortRef = useRef<AbortController | null>(null);
   const toolsRef = useRef<AiToolDefinition[] | null>(null);
   const idCounterRef = useRef(0);
+  const conversationIdRef = useRef(createConversationId());
+  const providerSignatureRef = useRef("");
 
   const providerId = useMemo(() => resolveActiveProvider(ai), [ai]);
   const providerConfig = providerId ? ai.providers[providerId] : null;
@@ -106,10 +112,33 @@ function AiChatPanel({
 
   // Abort any in-flight stream if the panel unmounts.
   useEffect(() => {
+    const conversationId = conversationIdRef.current;
     return () => {
       abortRef.current?.abort();
+      void window.nexus?.releaseAiConversation(conversationId);
     };
   }, []);
+
+  // A retained OpenCode session is valid only for the provider configuration that created it.
+  const providerSignature = JSON.stringify([
+    providerId,
+    providerConfig?.baseUrl,
+    providerConfig?.model,
+    providerConfig?.opencodeAgent,
+    providerConfig?.opencodeProviderId,
+    providerConfig?.opencodeUsername
+  ]);
+  useEffect(() => {
+    if (providerSignatureRef.current && providerSignatureRef.current !== providerSignature) {
+      abortRef.current?.abort();
+      void window.nexus?.releaseAiConversation(conversationIdRef.current);
+      conversationRef.current = [];
+      currentAssistantIdRef.current = null;
+      toolsRef.current = null;
+      setItems([]);
+    }
+    providerSignatureRef.current = providerSignature;
+  }, [providerSignature]);
 
   // Keep the transcript pinned to the newest content as it streams in.
   useEffect(() => {
@@ -179,6 +208,46 @@ function AiChatPanel({
                 : item
             )
           );
+          break;
+        }
+        case "provider-tool": {
+          const activity = event.activity;
+          const status: ToolStatus =
+            activity.status === "error"
+              ? "error"
+              : activity.status === "done"
+                ? "done"
+                : "running";
+          setItems((prev) => {
+            const existing = prev.find(
+              (item) => item.kind === "tool" && item.toolCallId === activity.id
+            );
+            if (existing) {
+              return prev.map((item) =>
+                item.kind === "tool" && item.toolCallId === activity.id
+                  ? {
+                      ...item,
+                      name: activity.title || activity.name,
+                      args: activity.input || item.args,
+                      status,
+                      result: activity.output || item.result
+                    }
+                  : item
+              );
+            }
+            return [
+              ...prev,
+              {
+                kind: "tool",
+                id: nextId(),
+                toolCallId: activity.id,
+                name: activity.title || activity.name,
+                args: activity.input || "{}",
+                status,
+                result: activity.output || ""
+              }
+            ];
+          });
           break;
         }
         case "error": {
@@ -253,11 +322,16 @@ function AiChatPanel({
     setIsStreaming(true);
 
     try {
-      const tools = await ensureTools();
+      const tools = providerId === "opencode" ? [] : await ensureTools();
       const config = toAiRequestConfig(providerConfig);
       const system = buildChatSystemPrompt({ fileName });
 
-      const runChatStream: ChatStreamRunner = ({ messages, signal, onTextDelta }) =>
+      const runChatStream: ChatStreamRunner = ({
+        messages,
+        signal,
+        onTextDelta,
+        onProviderToolUpdate
+      }) =>
         runAiChatStream({
           payload: {
             profileName,
@@ -267,10 +341,12 @@ function AiChatPanel({
             tools,
             messages,
             temperature: providerConfig.temperature,
-            maxTokens: providerConfig.maxTokens
+            maxTokens: providerConfig.maxTokens,
+            conversationId: providerId === "opencode" ? conversationIdRef.current : undefined
           },
           signal,
-          onTextDelta
+          onTextDelta,
+          onProviderToolUpdate
         });
 
       const runTool: ToolRunner = async ({ name, args }) => {
@@ -351,6 +427,7 @@ function AiChatPanel({
 
   const handleClear = useCallback(() => {
     abortRef.current?.abort();
+    void window.nexus?.releaseAiConversation(conversationIdRef.current);
     conversationRef.current = [];
     currentAssistantIdRef.current = null;
     setItems([]);

@@ -61,7 +61,8 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Per-OS-profile visual editor and PDF margin preferences stored locally.
 - A native desktop editor right-click menu for Cut, Copy, Paste, and spelling corrections.
 - Native desktop spell checking in the editor with inline misspelling underlines and correction suggestions in the editor right-click menu.
-- A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and embedded base64 images.
+- A shadcn-styled image import dialog for local image file paths, remote HTTP(S) image URLs, and
+  embedded base64 images, plus draggable edge cropping for ordinary raster images.
 - An offline visual OpenAPI editor, adapted from the MIT-licensed `waterrmalann/openapi-editor`, that
   inserts and reopens portable ```` ```yaml openapi ```` blocks from the rich-text toolbar. The
   editor covers routes, parameters, responses, schemas, API metadata, servers, tags, and security
@@ -75,7 +76,7 @@ Markdown is effective for structured writing, but many users still need a calm e
   executable-looking ```` ```sql sqlschema ```` PostgreSQL blocks. It supports positioned tables,
   columns, descriptions, colors, primary/unique/nullable/default fields, single-column foreign keys,
   inline SVG previews, and static document exports without database connections or network assets.
-- Optional, per-OS-profile AI provider configuration for OpenAI, Azure OpenAI, DeepSeek, Anthropic, Ollama, and LM Studio, with user-selectable models and connection testing.
+- Optional, per-OS-profile AI provider configuration for OpenAI, Azure OpenAI, DeepSeek, Anthropic, Ollama, LM Studio, and an existing `opencode serve` instance, with user-selectable models and connection testing.
 - AI provider API keys encrypted at rest using the operating system's secure storage and omitted from plaintext application settings.
 - AI selection actions for improving, shortening, expanding, correcting, summarizing, changing the tone of, and translating selected text, with an original-versus-proposed review before replacement.
 - A resizable, document-scoped AI chat panel that streams responses, can include the current editor selection, and can use the existing Nexus document tools to inspect or propose changes to the current document.
@@ -129,7 +130,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The optional MCP ngrok tunnel depends on the externally-installed ngrok CLI rather than a bundled ngrok library, consistent with the preference for minimal bundled dependencies; users who do not enable the tunnel need not install ngrok.
 - In-app AI is optional and sends only the user-requested prompt, selection, document content retrieved through tools, or import sources to the configured provider. Local editing, file operations, diagrams, and exports remain usable without an AI provider.
 - Hosted-provider API keys are encrypted at rest using the operating system's secure storage. When secure storage is unavailable, Nexus shall not persist those keys in plaintext.
-- Ollama and LM Studio allow AI requests to remain on a user-controlled local endpoint; Nexus does not assume that every configured model supports vision input or tool calling.
+- Ollama, LM Studio, and OpenCode Serve allow AI requests to remain on a user-controlled endpoint; Nexus does not assume that every configured model supports vision input or tool calling. OpenCode agent tools operate in the directory served by OpenCode under its configured permission policy, not against the Nexus document-tool catalog.
 - The project is early-stage, so the scaffold should favor clarity over architectural depth.
 
 ## 3. User Requirements
@@ -453,6 +454,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall upload packaged desktop artifacts for download from the workflow run.
 - The system shall allow the user to enable and configure supported hosted and local AI providers independently and choose one enabled provider as the default.
 - The system shall allow provider-specific endpoint, model, temperature, and output-token settings, including Azure deployment settings where required.
+- The system shall discover agents and connected provider/model IDs from an `opencode serve` endpoint while retaining manually editable identifiers, and shall use OpenCode's configured sampling and agent settings rather than overriding them.
 - The system shall provide a connection test for an AI provider before the user relies on it for document work.
 - The system shall encrypt hosted-provider API keys at rest using the operating system's secure storage, scoped by OS profile and provider, and shall not include API keys in renderer-to-main-process AI request payloads.
 - The system shall keep AI features optional and shall leave ordinary editing, file, diagram, export, and publishing workflows usable when no AI provider is configured.
@@ -462,8 +464,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall provide a resizable AI chat panel scoped to the document in its editor window.
 - The system shall stream AI chat responses and allow the user to stop an in-progress response.
 - The system shall allow the current editor selection to be attached explicitly as context to the next AI chat message.
-- The system shall expose the existing Nexus document read and write tool catalog to capable AI chat providers and shall pin every in-app chat tool call to that panel's document.
+- The system shall expose the existing Nexus document read and write tool catalog to capable direct AI chat providers and shall pin every in-app chat tool call to that panel's document. For OpenCode Serve, OpenCode owns and executes tool calls in its served directory; Nexus shall display their activity without invoking similarly named Nexus tools.
 - The system shall show AI chat tool-call status and results in the conversation.
+- The system shall let a user reject, allow once, or always allow OpenCode permission requests, and shall abort with a clear error when OpenCode requests an unsupported interactive free-text answer.
 - The system shall route AI chat write tools through the same confirmation and serialization boundary used by MCP writes.
 - The system shall allow importing one PDF or multiple ordered images from the AI menu as Markdown inserted at the caret captured before the native file picker opened.
 - The system shall extract selectable PDF text and embedded raster images locally, and shall send scanned PDF pages and standalone source images to the configured provider only when vision processing is required.
@@ -537,7 +540,16 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
 - Clean up formatting: a source-mode-only toolbar command that prettifies the raw Markdown in place. It normalizes unordered list markers to `-` and collapses marker spacing (ordered numbers are preserved), guarantees one blank line above and below ATX headings, re-pads GFM tables to align columns and reflect each column's alignment, normalizes thematic breaks to `---`, collapses runs of blank lines to one, and trims trailing whitespace (keeping a two-space hard break). Fenced code blocks and a leading YAML frontmatter block pass through untouched, the pass is idempotent, and it never reinterprets non-heading text (for example `##Section` with no space) as a heading. It edits the CodeMirror source buffer directly so the cleaned text is exactly what the command produced rather than MDXEditor's serializer conventions.
 - Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, embedded OpenAPI specifications, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
-- PDF/image document import: the AI menu accepts one PDF or multiple ordered image files, extracts selectable PDF text and embedded raster pictures locally, sends only scanned pages and standalone images as vision inputs, and inserts one Markdown transcription at the caret captured before the picker opened. Standalone source images are transcription-only; full screenshots/scans are not duplicated into the document. Cancellation and any extraction/provider error are non-destructive.
+- PDF/image document import: the AI menu accepts one PDF or multiple ordered image files, extracts
+  selectable PDF text and embedded raster pictures locally, sends scanned pages and standalone images
+  as vision inputs, and inserts one Markdown transcription at the caret captured before the picker
+  opened. Standalone images are retained beside their descriptions; scanned-page illustrations use
+  model-located, locally rendered cutouts rather than full-page images. Ordinary raster cutouts can be
+  refined with draggable crop edges, while embedded diagram editors remain unchanged. Cancellation
+  and any extraction/provider error are non-destructive.
+- Mathematics: fenced `math` blocks render standalone/display equations, while inline code spans
+  prefixed with `math:` render formulas within prose without interrupting sentence flow. AI document
+  import chooses between the two forms based on the formula's source context.
 - AI selection actions: the AI menu operates on the last non-empty editor selection in rich-text or source mode, sends the selected Markdown to the configured provider with the chosen rewrite instruction, and displays the original and proposed text side by side. The editor changes only when the user accepts the proposal; dismissal and provider errors are non-destructive.
 - AI chat: a resizable side panel streams a conversation with the configured provider, optionally attaches the editor selection to the next user turn, and gives tool-capable models the Nexus document tools for the panel's current document. Read tools provide document context on demand; write tools retain the existing per-call review boundary. Chat conversation state is local to the open editor window and is not persisted across application sessions.
 - Diff review mode: use MDXEditor's diff mode to compare the current editor buffer against a renderer-supplied baseline, with the diff side read-only and the editor background kept white like the other editing modes.

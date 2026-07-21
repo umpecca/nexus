@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -18,6 +18,7 @@ import {
   toAiRequestConfig
 } from "../../lib/ai/providers";
 import type {
+  OpenCodeDiscoveryResult,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,
@@ -53,6 +54,8 @@ function emptyByProvider<T>(value: T): Record<AiProviderId, T> {
 }
 
 function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: AiSettingsDialogProps) {
+  const aiRef = useRef(ai);
+  aiRef.current = ai;
   const [keys, setKeys] = useState<Record<AiProviderId, string>>(() => emptyByProvider(""));
   const [revealed, setRevealed] = useState<Record<AiProviderId, boolean>>(() =>
     emptyByProvider(false)
@@ -62,6 +65,8 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
   );
   const [testing, setTesting] = useState<AiProviderId | null>(null);
   const [encryptionAvailable, setEncryptionAvailable] = useState(true);
+  const [openCodeDiscovery, setOpenCodeDiscovery] = useState<OpenCodeDiscoveryResult | null>(null);
+  const [discoveringOpenCode, setDiscoveringOpenCode] = useState(false);
 
   // Load each provider's stored (encrypted) key when the dialog opens, and clear any stale test
   // readouts so a result never describes a configuration the user has since changed.
@@ -72,6 +77,7 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
 
     let active = true;
     setTestResults(emptyByProvider<TestResult | undefined>(undefined));
+    setOpenCodeDiscovery(null);
 
     void (async () => {
       const entries = await Promise.all(
@@ -88,12 +94,27 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
         next[id] = key;
       }
       setKeys(next);
+
+      // Populate the dropdowns immediately for an already-enabled OpenCode configuration. The main
+      // process reads the saved password directly, so no secret needs to enter this discovery call.
+      const openCodeConfig = aiRef.current.providers.opencode;
+      if (openCodeConfig.enabled && window.nexus?.discoverOpenCode) {
+        setDiscoveringOpenCode(true);
+        const discovery = await window.nexus.discoverOpenCode(
+          profileName,
+          toAiRequestConfig(openCodeConfig)
+        );
+        if (active) {
+          setOpenCodeDiscovery(discovery);
+          setDiscoveringOpenCode(false);
+        }
+      }
     })();
 
     return () => {
       active = false;
     };
-  }, [open, profileName]);
+  }, [open, profileName, ai.providers.opencode.enabled]);
 
   function updateProvider(providerId: AiProviderId, patch: Partial<AiProviderConfig>) {
     onAiChange({
@@ -129,6 +150,24 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
     void persistKey(providerId, "");
   }
 
+  async function loadOpenCodeOptions() {
+    setDiscoveringOpenCode(true);
+    try {
+      await persistKey("opencode", keys.opencode ?? "");
+      const discovery = await window.nexus?.discoverOpenCode(
+        profileName,
+        toAiRequestConfig(ai.providers.opencode)
+      );
+      if (!discovery) {
+        return { ok: false, error: "OpenCode discovery is only available in the desktop app." } as const;
+      }
+      setOpenCodeDiscovery(discovery);
+      return discovery;
+    } finally {
+      setDiscoveringOpenCode(false);
+    }
+  }
+
   async function handleTest(providerId: AiProviderId) {
     setTesting(providerId);
     setTestResults((current) => ({ ...current, [providerId]: undefined }));
@@ -137,11 +176,53 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
       // The main process reads the key from its encrypted store, so persist the field first to make
       // sure the test exercises exactly what the user has typed.
       await persistKey(providerId, keys[providerId] ?? "");
+      let effectiveConfig = ai.providers[providerId];
+
+      if (providerId === "opencode") {
+        const discovery = await loadOpenCodeOptions();
+        if (!discovery.ok) {
+          setTestResults((current) => ({
+            ...current,
+            opencode: { ok: false, message: discovery.error }
+          }));
+          return;
+        }
+        const current = ai.providers.opencode;
+        const providerId =
+          current.opencodeProviderId ||
+          Object.keys(discovery.defaultModels)[0] ||
+          discovery.providers[0]?.id ||
+          "";
+        const provider = discovery.providers.find((item) => item.id === providerId);
+        const model = current.model || discovery.defaultModels[providerId] || provider?.models[0]?.id || "";
+        const agent =
+          current.opencodeAgent ||
+          discovery.agents.find((candidate) => candidate === "build") ||
+          discovery.agents[0] ||
+          "";
+        effectiveConfig = {
+          ...current,
+          opencodeProviderId: providerId,
+          model,
+          opencodeAgent: agent
+        };
+        if (
+          providerId !== current.opencodeProviderId ||
+          model !== current.model ||
+          agent !== current.opencodeAgent
+        ) {
+          updateProvider("opencode", {
+            opencodeProviderId: providerId,
+            model,
+            opencodeAgent: agent
+          });
+        }
+      }
 
       const result = await window.nexus?.aiChat({
         profileName,
         providerId,
-        config: toAiRequestConfig(ai.providers[providerId]),
+          config: toAiRequestConfig(effectiveConfig),
         messages: [{ role: "user", content: "Reply with the single word: ok" }],
         temperature: 0,
         maxTokens: 16
@@ -191,6 +272,16 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
     const result = testResults[meta.id];
     const isTesting = testing === meta.id;
     const datalistId = `nexus-ai-models-${meta.id}`;
+    const discoveredOpenCodeProviders = openCodeDiscovery?.ok ? openCodeDiscovery.providers : [];
+    const selectedOpenCodeProvider = discoveredOpenCodeProviders.find(
+      (provider) => provider.id === config.opencodeProviderId
+    );
+    const providerValueIsMissing = Boolean(
+      config.opencodeProviderId && !selectedOpenCodeProvider
+    );
+    const modelValueIsMissing = Boolean(
+      config.model && !selectedOpenCodeProvider?.models.some((model) => model.id === config.model)
+    );
 
     return (
       <fieldset className="nexus-ai-provider" key={meta.id}>
@@ -208,7 +299,7 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
 
         <label className="nexus-settings-field">
           <span className="nexus-settings-label">
-            {meta.requiresApiKey ? "API key" : "API key (optional)"}
+            {meta.requiresApiKey ? meta.secretLabel : `${meta.secretLabel} (optional)`}
           </span>
           <div className="nexus-ai-key-row">
             <input
@@ -236,7 +327,126 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
           </div>
         </label>
 
-        {meta.usesAzureFields ? (
+        {meta.id === "opencode" ? (
+          <>
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Server URL</span>
+              <input
+                className="nexus-settings-input"
+                type="text"
+                spellCheck={false}
+                placeholder={meta.defaultBaseUrl}
+                value={config.baseUrl}
+                onChange={(event) => updateProvider(meta.id, { baseUrl: event.target.value })}
+              />
+            </label>
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Basic-auth username</span>
+              <input
+                className="nexus-settings-input"
+                type="text"
+                spellCheck={false}
+                placeholder="opencode"
+                value={config.opencodeUsername}
+                onChange={(event) => updateProvider(meta.id, { opencodeUsername: event.target.value })}
+              />
+            </label>
+            <label className="nexus-settings-field">
+              <span className="nexus-settings-label">Agent</span>
+              <input
+                className="nexus-settings-input"
+                type="text"
+                spellCheck={false}
+                list="nexus-opencode-agents"
+                value={config.opencodeAgent}
+                onChange={(event) => updateProvider(meta.id, { opencodeAgent: event.target.value })}
+              />
+              <datalist id="nexus-opencode-agents">
+                {openCodeDiscovery?.ok
+                  ? openCodeDiscovery.agents.map((agent) => <option key={agent} value={agent} />)
+                  : null}
+              </datalist>
+            </label>
+            <div className="nexus-ai-inline-fields">
+              <label className="nexus-settings-field">
+                <span className="nexus-settings-label">OpenCode provider ID</span>
+                <select
+                  className="nexus-settings-select"
+                  value={config.opencodeProviderId}
+                  disabled={!openCodeDiscovery?.ok || discoveringOpenCode}
+                  onChange={(event) => {
+                    const nextProviderId = event.target.value;
+                    const provider = discoveredOpenCodeProviders.find(
+                      (candidate) => candidate.id === nextProviderId
+                    );
+                    updateProvider(meta.id, {
+                      opencodeProviderId: nextProviderId,
+                      model:
+                        openCodeDiscovery?.ok
+                          ? openCodeDiscovery.defaultModels[nextProviderId] || provider?.models[0]?.id || ""
+                          : ""
+                    });
+                  }}
+                >
+                  <option value="">Select a provider</option>
+                  {providerValueIsMissing ? (
+                    <option value={config.opencodeProviderId}>
+                      {config.opencodeProviderId} (not reported by server)
+                    </option>
+                  ) : null}
+                  {discoveredOpenCodeProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name} ({provider.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="nexus-settings-field">
+                <span className="nexus-settings-label">Model ID</span>
+                <select
+                  className="nexus-settings-select"
+                  value={config.model}
+                  disabled={!selectedOpenCodeProvider || discoveringOpenCode}
+                  onChange={(event) => updateProvider(meta.id, { model: event.target.value })}
+                >
+                  <option value="">Select a model</option>
+                  {modelValueIsMissing ? (
+                    <option value={config.model}>{config.model} (not reported by server)</option>
+                  ) : null}
+                  {(selectedOpenCodeProvider?.models ?? []).map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} ({model.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="nexus-ai-test-row">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={discoveringOpenCode}
+                onClick={() => void loadOpenCodeOptions()}
+              >
+                {discoveringOpenCode ? "Loading options…" : "Refresh provider and model options"}
+              </Button>
+              {openCodeDiscovery?.ok ? (
+                <span className="nexus-settings-success" role="status">
+                  Loaded {openCodeDiscovery.providers.length} connected provider
+                  {openCodeDiscovery.providers.length === 1 ? "" : "s"}.
+                </span>
+              ) : openCodeDiscovery ? (
+                <span className="nexus-settings-warning" role="status">
+                  {openCodeDiscovery.error}
+                </span>
+              ) : null}
+            </div>
+            <p className="nexus-settings-warning">
+              OpenCode controls sampling, tools, and permissions. Its tools run in the directory
+              served by OpenCode, which may not be the folder containing the open Nexus document.
+            </p>
+          </>
+        ) : meta.usesAzureFields ? (
           <>
             <label className="nexus-settings-field">
               <span className="nexus-settings-label">Resource endpoint</span>
@@ -297,7 +507,7 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
           </label>
         )}
 
-        {meta.usesBaseUrl && (
+        {meta.usesBaseUrl && meta.id !== "opencode" && (
           <label className="nexus-settings-field">
             <span className="nexus-settings-label">API base URL (optional)</span>
             <input
@@ -312,7 +522,7 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
           </label>
         )}
 
-        <div className="nexus-ai-inline-fields">
+        {meta.usesSamplingFields && <div className="nexus-ai-inline-fields">
           <label className="nexus-settings-field">
             <span className="nexus-settings-label">Temperature</span>
             <input
@@ -353,7 +563,7 @@ function AiSettingsDialog({ open, onOpenChange, profileName, ai, onAiChange }: A
               }}
             />
           </label>
-        </div>
+        </div>}
 
         <div className="nexus-ai-test-row">
           <Button type="button" variant="outline" disabled={isTesting} onClick={() => handleTest(meta.id)}>

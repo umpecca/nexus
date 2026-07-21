@@ -5,7 +5,9 @@ import type {
   AiChatPayload,
   AiChatResult,
   AiChatStreamEvent,
-  AiProviderId
+  AiProviderId,
+  AiRequestConfig,
+  OpenCodeDiscoveryResult
 } from "./lib/ai/providers";
 import type { SelectionActionId, SelectionActionOptions } from "./lib/ai/prompts";
 
@@ -127,7 +129,12 @@ type SelectBase64ImageResult =
   | { canceled: true }
   | { canceled: false; filePath: string; mimeType: string; dataUrl: string };
 
-type DocumentImportImage = { mimeType: string; dataUrl: string; alt?: string };
+type DocumentImportImage = {
+  mimeType: string;
+  dataUrl: string;
+  alt?: string;
+  cropRegions?: boolean;
+};
 type DocumentImportItem = {
   id: string;
   label: string;
@@ -388,6 +395,11 @@ declare global {
         key: string
       ): Promise<QuickConnectTokenSaveResult>;
       aiChat(payload: AiChatPayload): Promise<AiChatResult>;
+      discoverOpenCode(
+        profileName: string,
+        config: AiRequestConfig
+      ): Promise<OpenCodeDiscoveryResult>;
+      releaseAiConversation(conversationId: string): Promise<void>;
       listMcpTools(): Promise<McpToolDefinition[]>;
       callMcpTool(payload: { name: string; args?: unknown }): Promise<McpToolResult>;
       startAiChatStream(requestId: string, payload: AiAgentChatPayload): void;

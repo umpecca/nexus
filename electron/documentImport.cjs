@@ -45,6 +45,10 @@ function validateImportPaths(filePaths) {
   return null;
 }
 
+function resolveImportPaths(filePaths, pathApi = path) {
+  return filePaths.map((filePath) => pathApi.resolve(filePath));
+}
+
 function rawImageToPngDataUrl(image, canvasModule) {
   const { width, height, channels, data } = image;
   const canvas = canvasModule.createCanvas(width, height);
@@ -71,6 +75,37 @@ function rawImageToPngDataUrl(image, canvasModule) {
   return canvas.toDataURL("image/png");
 }
 
+function createPdfCanvasFactory(canvasModule) {
+  return class NexusPdfCanvasFactory {
+    create(width, height) {
+      if (width <= 0 || height <= 0) {
+        throw new Error("Invalid PDF canvas size.");
+      }
+      const canvas = canvasModule.createCanvas(width, height);
+      return {
+        canvas,
+        context: canvas.getContext("2d", { willReadFrequently: true })
+      };
+    }
+
+    reset(target, width, height) {
+      if (!target?.canvas || width <= 0 || height <= 0) {
+        throw new Error("Invalid PDF canvas reset.");
+      }
+      target.canvas.width = width;
+      target.canvas.height = height;
+    }
+
+    destroy(target) {
+      if (!target?.canvas) return;
+      target.canvas.width = 0;
+      target.canvas.height = 0;
+      target.canvas = null;
+      target.context = null;
+    }
+  };
+}
+
 async function prepareImageFiles(filePaths, dependencies) {
   const items = [];
   let totalBytes = 0;
@@ -90,7 +125,11 @@ async function prepareImageFiles(filePaths, dependencies) {
       id: `image-${index + 1}`,
       label: path.basename(filePath),
       text: "",
-      visionImage: { mimeType, dataUrl: `data:${mimeType};base64,${data.toString("base64")}` },
+      visionImage: {
+        mimeType,
+        dataUrl: `data:${mimeType};base64,${data.toString("base64")}`,
+        alt: `Imported image: ${path.basename(filePath)}`
+      },
       embeddedImages: []
     });
   }
@@ -138,7 +177,7 @@ async function preparePdfFile(filePath, dependencies) {
             continue;
           }
           seenKeys.add(image.key);
-          const dataUrl = dependencies.encodeRawImage(image);
+          const dataUrl = await dependencies.encodeRawImage(image);
           const bytes = decodedDataUrlBytes(dataUrl);
           if (
             bytes > MAX_EMBEDDED_IMAGE_BYTES ||
@@ -165,7 +204,12 @@ async function preparePdfFile(filePath, dependencies) {
           throw new Error(`Rendered PDF page ${pageNumber} exceeds the vision import size limit.`);
         }
         totalVisionBytes += bytes;
-        visionImage = { mimeType: "image/png", dataUrl };
+        visionImage = {
+          mimeType: "image/png",
+          dataUrl,
+          alt: `Illustration from ${path.basename(filePath)}, page ${pageNumber}`,
+          cropRegions: true
+        };
       }
 
       items.push({
@@ -190,27 +234,50 @@ async function prepareDocumentImport(filePaths, injectedDependencies = {}) {
   }
 
   const fs = require("node:fs/promises");
+  const extension = path.extname(filePaths[0]).toLowerCase();
+  if (extension !== ".pdf") {
+    return prepareImageFiles(filePaths, {
+      readFile: fs.readFile,
+      ...injectedDependencies
+    });
+  }
+
   const unpdf = require("unpdf");
-  const canvasModule = require("@napi-rs/canvas");
+  let canvasModulePromise;
+  const loadCanvasModule = injectedDependencies.loadCanvasModule ?? (() => {
+    canvasModulePromise ??= Promise.resolve().then(() => require("@napi-rs/canvas"));
+    return canvasModulePromise;
+  });
   const dependencies = {
     readFile: fs.readFile,
-    getDocumentProxy: unpdf.getDocumentProxy,
+    getDocumentProxy: async (data) => {
+      const canvasModule = await loadCanvasModule();
+      // unpdf's bundled serverless PDF.js contains a deliberately throwing Node canvas mock.
+      // Supplying the real factory when the document is opened prevents image decoding from ever
+      // selecting that mock; renderPageAsImage's canvasImport alone is too late for this step.
+      globalThis.DOMMatrix ??= canvasModule.DOMMatrix;
+      globalThis.ImageData ??= canvasModule.ImageData;
+      globalThis.Path2D ??= canvasModule.Path2D;
+      return unpdf.getDocumentProxy(data, {
+        CanvasFactory: createPdfCanvasFactory(canvasModule)
+      });
+    },
     extractText: unpdf.extractText,
     extractImages: unpdf.extractImages,
     renderPageAsImage: unpdf.renderPageAsImage,
-    canvasImport: async () => canvasModule,
-    encodeRawImage: (image) => rawImageToPngDataUrl(image, canvasModule),
+    canvasImport: loadCanvasModule,
+    encodeRawImage: async (image) => rawImageToPngDataUrl(image, await loadCanvasModule()),
     ...injectedDependencies
   };
 
-  return path.extname(filePaths[0]).toLowerCase() === ".pdf"
-    ? preparePdfFile(filePaths[0], dependencies)
-    : prepareImageFiles(filePaths, dependencies);
+  return preparePdfFile(filePaths[0], dependencies);
 }
 
 module.exports = {
   MAX_IMPORT_ITEMS,
+  createPdfCanvasFactory,
   decodedDataUrlBytes,
+  resolveImportPaths,
   validateImportPaths,
   rawImageToPngDataUrl,
   prepareDocumentImport

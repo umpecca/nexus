@@ -34,7 +34,9 @@
     "asar": true,
     "asarUnpack": [
       "dist/drawio/**",
-      "dist/drawio-host.html"
+      "dist/drawio-host.html",
+      "node_modules/@napi-rs/canvas/**",
+      "node_modules/@napi-rs/canvas-*/**"
     ],
     "mac": {
       "icon": "nexus.icns",

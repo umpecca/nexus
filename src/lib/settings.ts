@@ -488,7 +488,10 @@ export function createDefaultAiProviderConfig(providerId: AiProviderId): AiProvi
     maxTokens: DEFAULT_AI_MAX_TOKENS,
     azureResourceUrl: "",
     azureDeployment: "",
-    azureApiVersion: meta.usesAzureFields ? DEFAULT_AZURE_API_VERSION : ""
+    azureApiVersion: meta.usesAzureFields ? DEFAULT_AZURE_API_VERSION : "",
+    opencodeUsername: providerId === "opencode" ? "opencode" : "",
+    opencodeAgent: "",
+    opencodeProviderId: ""
   };
 }
 
@@ -526,7 +529,17 @@ export function sanitizeAiProviderConfig(
     azureApiVersion:
       typeof source.azureApiVersion === "string" && source.azureApiVersion.trim()
         ? source.azureApiVersion.trim()
-        : defaults.azureApiVersion
+        : defaults.azureApiVersion,
+    opencodeUsername:
+      typeof source.opencodeUsername === "string" && source.opencodeUsername.trim()
+        ? source.opencodeUsername.trim()
+        : defaults.opencodeUsername,
+    opencodeAgent:
+      typeof source.opencodeAgent === "string" ? source.opencodeAgent.trim() : defaults.opencodeAgent,
+    opencodeProviderId:
+      typeof source.opencodeProviderId === "string"
+        ? source.opencodeProviderId.trim()
+        : defaults.opencodeProviderId
   };
 }
 

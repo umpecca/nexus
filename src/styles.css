@@ -2392,6 +2392,147 @@ body.nexus-resizing-col * {
   margin: 0;
 }
 
+/* Ordinary Markdown images use MDXEditor's image node; this toolbar replaces its stock settings
+   buttons and adds cropping without affecting the custom draw.io/isoflow decorator nodes. */
+.nexus-raster-image-toolbar {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  display: flex;
+  gap: 0.15rem;
+  opacity: 0;
+  padding: 0.2rem;
+  position: absolute;
+  right: 0.4rem;
+  top: 0.4rem;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+
+[data-editor-block-type="image"]:hover .nexus-raster-image-toolbar,
+[data-editor-block-type="image"]:focus-within .nexus-raster-image-toolbar {
+  opacity: 1;
+}
+
+.nexus-raster-image-toolbar button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.nexus-raster-image-toolbar button:hover {
+  background: var(--surface-strong, var(--surface-muted));
+}
+
+.nexus-raster-image-toolbar svg {
+  height: 15px;
+  width: 15px;
+}
+
+.nexus-image-crop-dialog {
+  max-height: min(92vh, 52rem);
+  width: min(52rem, calc(100vw - 2rem));
+}
+
+.nexus-image-crop-workspace {
+  align-items: center;
+  background: #202226;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  justify-content: center;
+  min-height: 12rem;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.nexus-image-crop-stage {
+  line-height: 0;
+  max-height: 58vh;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.nexus-image-crop-stage > img {
+  display: block;
+  max-height: 58vh;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.nexus-image-crop-selection {
+  border: 1px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.58);
+  position: absolute;
+}
+
+.nexus-image-crop-handle {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  position: absolute;
+  touch-action: none;
+}
+
+.nexus-image-crop-handle::after {
+  background: #fff;
+  border-radius: 3px;
+  content: "";
+  position: absolute;
+}
+
+.nexus-image-crop-handle-left,
+.nexus-image-crop-handle-right {
+  cursor: ew-resize;
+  height: 28px;
+  top: calc(50% - 14px);
+  width: 12px;
+  z-index: 1;
+}
+
+.nexus-image-crop-handle-left { left: -7px; }
+.nexus-image-crop-handle-right { right: -7px; }
+.nexus-image-crop-handle-left::after,
+.nexus-image-crop-handle-right::after {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  height: 20px;
+  left: 4px;
+  top: 4px;
+  width: 4px;
+}
+
+.nexus-image-crop-handle-top,
+.nexus-image-crop-handle-bottom {
+  cursor: ns-resize;
+  height: 12px;
+  left: calc(50% - 14px);
+  width: 28px;
+  z-index: 1;
+}
+
+.nexus-image-crop-handle-top { top: -7px; }
+.nexus-image-crop-handle-bottom { bottom: -7px; }
+.nexus-image-crop-handle-top::after,
+.nexus-image-crop-handle-bottom::after {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  height: 4px;
+  left: 4px;
+  top: 4px;
+  width: 20px;
+}
+
 /* The ribbon body: a flat tinted band under the chrome. */
 .editor-surface .mdxeditor-toolbar {
   background: var(--ribbon-grad);
@@ -3718,6 +3859,30 @@ button.nexus-footnote-def__name:hover {
 .nexus-math-rendered .katex {
   color: var(--ink);
   font-size: 1.1em;
+}
+
+.nexus-inline-math {
+  color: var(--ink);
+  display: inline-block;
+  line-height: 1;
+  margin: 0 0.08em;
+  vertical-align: -0.08em;
+}
+
+.nexus-inline-math .katex {
+  color: inherit;
+  font-size: 1em;
+}
+
+.nexus-inline-math-error {
+  color: var(--danger);
+}
+
+.nexus-inline-math-insert > span {
+  border-bottom: 1px solid currentColor;
+  font-family: Georgia, serif;
+  font-size: 1rem;
+  line-height: 0.9;
 }
 
 .nexus-math-empty,

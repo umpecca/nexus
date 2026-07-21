@@ -5,7 +5,12 @@
 // events are dropped and no more tokens render) and tell the main process to cancel the in-flight
 // fetch — the UI never waits for the backend to confirm teardown.
 
-import type { AiAgentChatPayload, AiAgentChatResult, AiToolCall } from "./providers";
+import type {
+  AiAgentChatPayload,
+  AiAgentChatResult,
+  AiProviderToolActivity,
+  AiToolCall
+} from "./providers";
 
 export type RunAiChatStreamParams = {
   payload: AiAgentChatPayload;
@@ -14,6 +19,8 @@ export type RunAiChatStreamParams = {
   onTextDelta?: (text: string) => void;
   /** Called with the tool calls assembled so far (for showing "calling tool…" before the result). */
   onToolCallUpdate?: (toolCalls: AiToolCall[]) => void;
+  /** OpenCode executes these tools itself; callers display the lifecycle without invoking MCP. */
+  onProviderToolUpdate?: (activity: AiProviderToolActivity) => void;
 };
 
 let streamCounter = 0;
@@ -34,7 +41,7 @@ function nextRequestId(): string {
  * (callers check `signal.aborted` to tell a user stop from a real error).
  */
 export function runAiChatStream(params: RunAiChatStreamParams): Promise<AiAgentChatResult> {
-  const { payload, signal, onTextDelta, onToolCallUpdate } = params;
+  const { payload, signal, onTextDelta, onToolCallUpdate, onProviderToolUpdate } = params;
 
   const nexus = typeof window !== "undefined" ? window.nexus : undefined;
   if (!nexus?.startAiChatStream) {
@@ -108,6 +115,9 @@ export function runAiChatStream(params: RunAiChatStreamParams): Promise<AiAgentC
           onToolCallUpdate?.(toolCallsByIndex.filter((call): call is AiToolCall => Boolean(call)));
           break;
         }
+        case "provider_tool":
+          onProviderToolUpdate?.(event);
+          break;
         case "result":
           settle(event.result);
           break;

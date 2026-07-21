@@ -36,6 +36,31 @@ function collect() {
 }
 
 describe("runAgent", () => {
+  it("forwards provider-owned tool activity without executing a Nexus tool", async () => {
+    const { events, onEvent } = collect();
+    const runTool = vi.fn<ToolRunner>(noTool);
+    const runChatStream: ChatStreamRunner = async ({ onProviderToolUpdate }) => {
+      onProviderToolUpdate?.({
+        type: "provider_tool",
+        id: "oc1",
+        name: "bash",
+        status: "running",
+        input: '{"command":"pwd"}'
+      });
+      return { ok: true, text: "Done", toolCalls: [], model: "opencode-model" };
+    };
+
+    await runAgent({
+      messages: [{ role: "user", content: "Run it" }],
+      runChatStream,
+      runTool,
+      onEvent
+    });
+
+    expect(runTool).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === "provider-tool")).toBe(true);
+  });
+
   it("streams a single text answer and finishes", async () => {
     const { events, onEvent } = collect();
     const messages = await runAgent({

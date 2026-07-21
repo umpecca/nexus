@@ -14,6 +14,7 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 - `.github/workflows/build-desktop.yml`: GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts on `develop` pushes and manual runs.
 - `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, View, Settings, and Help menus, handles file dialogs and unsaved-change prompts, forwards editor zoom menu actions, displays the current editor zoom percentage in the View menu, exports Markdown to self-contained HTML and paper-sized PDF with local image resolution, selected editor font, selected base font size, selected orientation, selected margins, and Mermaid diagram rendering, publishes the self-contained HTML rendering to a user-specified SFTP server with per-publish credentials and host-key confirmation, pushes the same self-contained HTML to a user-configured HTTP endpoint over QuickConnect with a bearer token, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, maintains a persisted recent-files list behind the File/Open Recent menu (mirrored to the OS recent documents), guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, owns the native editable context menu with spellcheck suggestions, hosts the optional embedded MCP server lifecycle, persists the MCP bearer token encrypted at rest with `safeStorage` (the `mcp:get-bearer-token`/`mcp:set-bearer-token` IPC handlers keep a per-profile ciphertext map in `mcp-bearer-tokens.json` under userData, mirroring the QuickConnect token store), manages the optional ngrok tunnel that forwards to the loopback MCP port, serves the cache-backed MCP read tool calls (list windows, get document, get outline, get section, search document, find) from the per-window MCP record, routes the MCP selection read tool through a renderer request/response round trip, computes the in-buffer MCP write tools (apply edits, replace section, set frontmatter) into a proposed buffer and routes every write — full replacement and granular edits — through the renderer confirmation dialog (or applies it directly when the profile's auto-approve-writes setting is on), answers the MCP "test connection" request by probing the server's `/health` endpoint locally and over the ngrok URL when connected, handles explicit stop/restart requests for the ngrok tunnel agent, and loads the built renderer.
 - `electron/preload.cjs`: Safe preload bridge exposing menu action subscriptions, open-recent-file subscriptions and the recent-file open request, initial OS-opened file lookup, close-request coordination, profile-name lookup, Markdown file open/save/watch/export APIs (HTML and PDF), paper-size, orientation, and margin PDF export options, the SFTP publish request and host-key-decision reporting bridge, the QuickConnect HTTP publish request, a private-key file picker, image selection and preview-resolution APIs, external file change subscriptions, the unsaved-change confirmation dialog, MCP server configure/get-state/regenerate-token requests, the encrypted MCP bearer token get/set requests, the MCP connection test request, the ngrok stop/restart requests, MCP renderer registration, MCP read/write tool dispatch from main, the MCP selection request subscription and selection-result reporting, and MCP write-confirmation result reporting.
+- `electron/opencodeProvider.cjs`: Pure OpenCode Serve wire adapter. It constructs Basic-authenticated discovery/session/message/action requests, translates Nexus text/image content into OpenCode prompt parts, and tolerantly normalizes discovery results, assistant responses, SSE text deltas, provider-owned tool activity, permission requests, questions, errors, and idle completion. `electron/main.cjs` performs the network I/O, retains chat sessions by renderer conversation ID, deletes disposable sessions, and shows native permission decisions.
 - `openapi-host.html` / `src/openapi-host/`: Separate Vite page for the offline visual OpenAPI editor.
   It receives one YAML snapshot through `openapiPreload.cjs`, edits the parsed source object directly
   so unknown keys remain attached to their owning nodes, and returns normalized YAML only on Save.
@@ -53,11 +54,20 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 - `src/components/editor/FileChangedDialog.tsx`: Shadcn-styled external file change and conflict prompt.
 - `src/components/editor/FindTextPanel.tsx`: Compact in-editor find-and-replace panel backed by MDXEditor's search plugin, with literal text search, match counts, next/previous navigation, active-match scroll callbacks, a collapsible replace row offering replace-current and replace-all (literal replacement text), and close behavior.
 - `src/components/editor/InsertImageImport.tsx`: Shadcn-styled image import dialog and toolbar button for local file URL, remote HTTP(S), and embedded base64 image insertion.
+- `src/components/editor/RasterImageToolbar.tsx`: ordinary-image delete/settings controls and a
+  draggable four-edge raster crop dialog; custom diagram decorator nodes bypass it.
+- `src/lib/imageCrop.ts`: percentage-inset validation, source-pixel conversion, and browser-canvas
+  PNG cropping shared by the ordinary-image crop UI.
+- `src/components/editor/InlineMathNode.tsx`: priority import/export visitors and an inline Lexical
+  KaTeX node for portable `` `math:...` `` code spans; fenced `math` blocks continue through the
+  existing code-block descriptor.
 - `src/components/editor/OutlineSidebar.tsx`: Shadcn-styled collapsible outline panel that lists the current document's headings as a depth-indented, clickable tree, reports the selected heading so the app shell can scroll the editor to it, highlights the active (scroll-spy) entry passed down by the app shell, and keeps that entry scrolled into view within its own list.
 - `src/components/editor/ListExitPlugin.ts`: Small MDXEditor/Lexical plugin that restores normal desktop list exit behavior when Enter is pressed on an empty list item.
 - `src/components/editor/ShadcnMdxToolbar.tsx`: Project-owned shadcn-styled grouped toolbar composition that keeps MDXEditor's broad rich-text command set visible in unlabeled button groups, applies consistent tooltips to Nexus-owned controls, includes paper/plain, paper orientation, plain-view responsive wrapping, and outline sidebar toggles, floats the view-control group in source and diff modes (adding the "Clean up formatting" button to that floating cluster only in source mode), and leaves undo, redo, refresh, zoom, and document actions in native menus.
 - `src/components/ui/button-group.tsx`: Local shadcn-style button group primitive used to cluster related toolbar controls without visible group labels.
 - `src/components/settings/SettingsDialog.tsx`: Shadcn-styled settings dialog for editor appearance, light/dark/system theme, unit-labeled base font size, paragraph spacing, paper-size, paper-orientation, margin preferences, and the optional MCP server enable/port/auth-mode/bearer-token section, including the ngrok tunnel toggle, optional custom-domain field, connected public URL and public `/mcp` endpoint URL with copy controls, the tunnel error and domain-fallback notices, ngrok CLI / `ngrok config add-authtoken` setup guidance, and the no-authentication exposure warning.
+- `src/components/settings/AiSettingsDialog.tsx`: AI provider setup, including OpenCode server/username/password/agent/provider/model fields, live discovery with manual identifier fallbacks, connection testing, and a warning that OpenCode tools run in its served directory. OpenCode sampling controls are hidden because its agent/model configuration owns them.
+- `src/components/ai/AiChatPanel.tsx`: Document-scoped chat UI and renderer conversation owner. Direct providers retain the Nexus MCP agent loop; OpenCode receives a stable conversation ID and read-only provider-tool activity because OpenCode executes its own tool loop.
 - `src/components/mcp/McpWriteConfirmDialog.tsx`: Shadcn-styled confirmation modal that renders the proposed Markdown alongside the current buffer when an MCP client invokes the document replace tool, with Approve and Reject actions resolving the pending tool call.
 - `src/components/publish/PublishWebDialog.tsx`: Shadcn-styled Publish as Web dialog that collects SFTP connection details (host, port, username, password or private-key file path with passphrase, remote directory, remote filename, optional public base URL), shows the server host-key fingerprint for confirmation before upload, reports progress and errors, and shows the resulting page URL with a copy control on success. Secret fields are kept in component state only and sent transiently to the main process.
 - `src/components/publish/QuickConnectDialog.tsx`: Shadcn-styled QuickConnect dialog that collects the HTTP endpoint URL, path, and bearer token (all pre-filled from saved per-profile settings), reports progress and errors, and shows the resulting page URL with a copy control when the server returns one. Simpler than the SFTP dialog: no host/port/username/auth-method or host-key step.
@@ -411,11 +421,41 @@ Deployment: Runs across the renderer app shell and Electron preload/main process
 
 Name: Caret-Aware PDF/Image Transcription
 
-Description: The AI menu's Import PDF or Images action captures the rich-text DOM range or source CodeMirror offset before opening a native picker for one PDF or multiple ordered image files. The main process delegates to `electron/documentImport.cjs`: `unpdf`/PDF.js extracts selectable text and embedded raster images locally, `@napi-rs/canvas` encodes extracted pixels as PNG data URLs, and only PDF pages without selectable text are rendered for vision transcription. Standalone images remain vision-only source material and are not embedded in the document. The renderer builds one ordered multimodal provider request for the entire import, using stable per-source HTML comment markers; after the model returns Markdown, `src/lib/documentImport.ts` removes the markers and inserts locally extracted PDF pictures beside their page transcription before applying the result at the captured caret. Limits cap a PDF or image selection at 20 pages/items, each source image at 8 MB, combined vision data at 20 MB, the PDF at 50 MB, and retained embedded pictures at 20 MB total. Cancel and extraction/provider failures leave the document unchanged.
+Description: The AI menu's Import PDF or Images action captures the rich-text DOM range or source
+CodeMirror offset before opening a native picker for one PDF or multiple ordered image files. The main
+process delegates to `electron/documentImport.cjs`: `unpdf`/PDF.js extracts selectable text and
+embedded raster images locally, `@napi-rs/canvas` encodes extracted pixels as PNG data URLs, and PDF
+pages without selectable text are rendered for vision transcription. The renderer builds one ordered
+multimodal request using stable source markers. For scanned pages, the model also returns normalized
+pictorial-region bounds; `src/lib/documentImport.ts` crops those bounds through a browser canvas and
+inserts only the resulting illustration PNGs beside their descriptions. Standalone source images are
+retained directly. Ordinary raster images use `RasterImageToolbar` for subsequent four-edge manual
+cropping, producing portable PNG data URLs and leaving custom Draw.io/Isoflow nodes untouched. Limits
+cap a selection at 20 pages/items, each source image at 8 MB, combined vision data at 20 MB, the PDF at
+50 MB, and retained embedded pictures at 20 MB total. Cancel and failures leave the document unchanged.
+Inline TeX delimiters returned during import normalize to `` `math:...` `` spans, while display TeX
+normalizes to fenced `math` blocks. Both rich text and HTML/PDF/web exports render the two forms with
+KaTeX using inline and display mode respectively.
 
 Technologies: Electron dialog/IPC, unpdf (PDF.js), @napi-rs/canvas, configured AI provider, MDXEditor.
 
 Deployment: PDF/image preparation runs in Electron's main process; request assembly, provider use, picture placement, and caret-aware Markdown insertion run in the renderer.
+
+#### OpenCode Serve Provider Workflow
+
+Name: OpenCode Agent Provider
+
+Description: Connects to an independently started `opencode serve` endpoint. AI settings discover
+health, agents, connected providers, default models, and models, with optional HTTP Basic credentials.
+Selection and import actions create and delete disposable OpenCode sessions. Each live Nexus chat
+conversation retains one session and sends only its newest user turn; Stop calls the session abort
+endpoint, while Clear, provider changes, window closure, and app exit release the session. OpenCode
+executes its own tools in its served directory. Nexus renders their lifecycle and mediates permission
+events through a native Reject / Allow once / Always allow dialog, but never routes them to Nexus MCP.
+
+Technologies: Electron IPC and safeStorage, Fetch, OpenCode HTTP session API and SSE events, React.
+
+Deployment: Nexus does not spawn OpenCode. The user starts and configures the server independently.
 
 #### Settings Workflow
 

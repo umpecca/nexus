@@ -6,7 +6,12 @@
 // error occurs, or the caller's AbortSignal fires. Every await is raced against the signal so Stop
 // short-circuits at any phase (mid-stream, between steps, or while a tool is running).
 
-import type { AiAgentChatResult, AiAgentMessage, AiToolCall } from "./providers";
+import type {
+  AiAgentChatResult,
+  AiAgentMessage,
+  AiProviderToolActivity,
+  AiToolCall
+} from "./providers";
 
 export const DEFAULT_MAX_AGENT_STEPS = 8;
 
@@ -19,6 +24,7 @@ export type ChatStreamRunner = (params: {
   signal?: AbortSignal;
   onTextDelta?: (text: string) => void;
   onToolCallUpdate?: (toolCalls: AiToolCall[]) => void;
+  onProviderToolUpdate?: (activity: AiProviderToolActivity) => void;
 }) => Promise<AiAgentChatResult>;
 
 /** Events the loop emits so the panel can render progress incrementally. */
@@ -28,6 +34,7 @@ export type AgentEvent =
   | { type: "assistant-message"; content: string; toolCalls: AiToolCall[] }
   | { type: "tool-start"; toolCall: AiToolCall }
   | { type: "tool-result"; toolCallId: string; toolName: string; content: string; isError: boolean }
+  | { type: "provider-tool"; activity: AiProviderToolActivity }
   | { type: "error"; error: string }
   | { type: "stopped" }
   | { type: "done" };
@@ -98,7 +105,8 @@ export async function runAgent(params: RunAgentParams): Promise<AiAgentMessage[]
         runChatStream({
           messages,
           signal,
-          onTextDelta: (text) => onEvent({ type: "assistant-delta", text })
+          onTextDelta: (text) => onEvent({ type: "assistant-delta", text }),
+          onProviderToolUpdate: (activity) => onEvent({ type: "provider-tool", activity })
         }),
         aborted
       ]);

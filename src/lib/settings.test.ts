@@ -905,7 +905,8 @@ describe("settings helpers", () => {
       "deepseek",
       "anthropic",
       "ollama",
-      "lm-studio"
+      "lm-studio",
+      "opencode"
     ]);
     expect(ai.providers.openai).toEqual({
       enabled: false,
@@ -915,11 +916,22 @@ describe("settings helpers", () => {
       maxTokens: 1024,
       azureResourceUrl: "",
       azureDeployment: "",
-      azureApiVersion: ""
+      azureApiVersion: "",
+      opencodeUsername: "",
+      opencodeAgent: "",
+      opencodeProviderId: ""
     });
     // Azure seeds an api-version (it has no base URL / model default).
     expect(ai.providers["azure-openai"].azureApiVersion).toBe("2024-10-21");
     expect(ai.providers.anthropic.model).toBe("claude-sonnet-4-6");
+    expect(ai.providers.opencode).toMatchObject({
+      enabled: false,
+      baseUrl: "http://127.0.0.1:4096",
+      model: "",
+      opencodeUsername: "opencode",
+      opencodeAgent: "",
+      opencodeProviderId: ""
+    });
   });
 
   it("loads saved AI provider config and the default provider", () => {
@@ -952,6 +964,37 @@ describe("settings helpers", () => {
     expect(ai.providers["azure-openai"].azureApiVersion).toBe("2025-01-01");
     // A provider absent from storage keeps its defaults.
     expect(ai.providers.openai.model).toBe("gpt-4o-mini");
+  });
+
+  it("loads and sanitizes OpenCode's non-secret connection fields", () => {
+    installLocalStorage({
+      [getSettingsStorageKey("alice")]: JSON.stringify({
+        ai: {
+          defaultProviderId: "opencode",
+          providers: {
+            opencode: {
+              enabled: true,
+              baseUrl: " http://localhost:4096/ ",
+              opencodeUsername: " alice ",
+              opencodeAgent: " build ",
+              opencodeProviderId: " anthropic ",
+              model: " claude-sonnet "
+            }
+          }
+        }
+      })
+    });
+
+    const ai = loadSettings("alice").ai;
+    expect(ai.defaultProviderId).toBe("opencode");
+    expect(ai.providers.opencode).toMatchObject({
+      enabled: true,
+      baseUrl: "http://localhost:4096/",
+      opencodeUsername: "alice",
+      opencodeAgent: "build",
+      opencodeProviderId: "anthropic",
+      model: "claude-sonnet"
+    });
   });
 
   it("sanitizes invalid AI settings (bad provider id, out-of-range numbers)", () => {
