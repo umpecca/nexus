@@ -3,7 +3,7 @@
 // connect. Implements RFC 9728 protected-resource metadata, RFC 8414 authorization-server metadata,
 // RFC 7591 dynamic client registration, and the authorization-code grant with mandatory PKCE (S256).
 //
-// Deliberately narrow: one user, one resource. After the user approves the browser consent page, the
+// Deliberately narrow: one user, one resource. After the owner approves a native Nexus dialog, the
 // token endpoint issues the server's existing static bearer token as the access token — OAuth here is
 // a standards-shaped delivery mechanism for that token. /mcp validation is unchanged, issued tokens
 // survive app restarts, and "Regenerate token" in settings revokes every client at once. Client
@@ -23,6 +23,8 @@ let clientStorePath = null;
 const clients = new Map();
 const pendingAuthRequests = new Map();
 const authorizationCodes = new Map();
+let authorizationGeneration = 0;
+let localApprovalPending = false;
 
 function randomId() {
   return randomBytes(24).toString("base64url");
@@ -118,6 +120,7 @@ function configure(options = {}) {
 }
 
 function clearVolatileState() {
+  authorizationGeneration += 1;
   pendingAuthRequests.clear();
   authorizationCodes.clear();
 }
@@ -267,6 +270,7 @@ function beginAuthorization(params) {
   const nonce = randomId();
   pendingAuthRequests.set(requestId, {
     clientId,
+    clientName: client.clientName || "An MCP client",
     redirectUri,
     codeChallenge,
     state,
@@ -285,10 +289,11 @@ function beginAuthorization(params) {
 }
 
 /**
- * Apply the user's consent decision (`/authorize/decision` form). The nonce ties the POST to the
- * consent page we served (a cross-origin page cannot read it), so consent cannot be forged via CSRF.
+ * The browser can request approval, but cannot grant it. requestLocalApproval is a trusted host
+ * callback backed by the native desktop dialog, never by another HTTP endpoint or renderer IPC.
+ * The nonce only binds the form to its request; it does not authenticate the document owner.
  */
-function decideAuthorization(form) {
+async function decideAuthorization(form, requestLocalApproval) {
   sweepExpired();
 
   const request = pendingAuthRequests.get(form.get("request_id") || "");
@@ -306,6 +311,30 @@ function decideAuthorization(form) {
   }
 
   if (form.get("action") !== "approve") {
+    return {
+      kind: "redirect",
+      url: redirectWith(request.redirectUri, { error: "access_denied", state: request.state })
+    };
+  }
+
+  const generation = authorizationGeneration;
+  let approved = false;
+  // Fail closed when the trusted host is absent or another native dialog is already open.
+  if (!localApprovalPending && typeof requestLocalApproval === "function") {
+    localApprovalPending = true;
+    try {
+      approved = (await requestLocalApproval({
+        clientName: request.clientName,
+        redirectUri: request.redirectUri
+      })) === true;
+    } catch {
+      // A failed or dismissed local dialog must never grant access.
+    } finally {
+      localApprovalPending = false;
+    }
+  }
+
+  if (!approved || generation !== authorizationGeneration || request.expiresAt <= Date.now()) {
     return {
       kind: "redirect",
       url: redirectWith(request.redirectUri, { error: "access_denied", state: request.state })

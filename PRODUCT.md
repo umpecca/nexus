@@ -38,9 +38,43 @@ Markdown is effective for structured writing, but many users still need a calm e
 - A Windows executable and installer icon loaded from the local `nexus.ico` asset.
 - A macOS application bundle icon loaded from the generated local `nexus.icns` asset.
 - A visual Markdown editor with a broad MDXEditor-backed toolbar enabled, including source mode and supported formatting, insert, and block controls.
-- A sticky white shadcn-styled editor toolbar organized into unlabeled button groups, with full rich-text controls in the toolbar row and compact view controls floating over source and diff editing modes.
+- Embedded base64 image payloads default to collapsed in source mode and both diff panes. Per-image
+  controls expand and collapse the exact source while keeping the image syntax and data URL prefix
+  visible. Copying, saving, editing, and diff comparison use the complete document; search reveals
+  matches within collapsed data. Literal code examples and ordinary image URLs stay visible.
+- Folded embedded images offer thumbnail previews on hover or keyboard focus, with a Preview
+  button to keep the thumbnail open. Source and review views provide Expand all / Collapse all
+  controls for image data; review controls affect both panes, including hidden unchanged sections.
+- An optional Images & Assets panel, opened from View or the status bar, lists document image
+  previews, dimensions, byte sizes, and source paths across rich-text, source, and diff modes.
+  It shows the embedded-image share of the current Markdown size and offers explicit Embed,
+  Extract to file, Replace, and Locate file actions. Changes remain unsaved until document Save.
+- A shared read-only, side-by-side change viewer for editor comparisons, AI selection/document
+  proposals, and MCP writes. It highlights changed lines and text, folds embedded image data,
+  navigates changes with Previous/Next controls, and optionally hides unchanged sections.
+- A sticky shadcn-styled editor ribbon with labeled groups for rich-text controls and compact view controls floating over source and diff editing modes.
 - A source-mode-only "Clean up formatting" command that normalizes the raw Markdown in place (consistent list markers and spacing, blank lines around headings, aligned tables, normalized thematic breaks, collapsed blank-line runs, trimmed trailing whitespace) while leaving fenced code and frontmatter untouched.
 - Native Electron File menu actions for New, Open, Save, Save As, and Exit.
+- File/Open Folder opens a local folder in a resizable sidebar available in rich-text, source,
+  diff, and code/text views. Folders load on demand; clicking supported documents uses the normal
+  unsaved-change protection. Other files can be shown for asset management.
+- The folder sidebar creates documents and folders, renames, duplicates, copies, cuts/pastes,
+  moves, copies paths, and reveals items in the system file manager. Confirmed deletion uses
+  the system Trash/Recycle Bin. Operations stay inside the opened folder and reject collisions;
+  linked items cannot be traversed or managed. Moving a document updates affected editor windows
+  while keeping their unsaved text; deleting it retains the buffer for Save As recovery.
+- Code, configuration, and plain text reference files in knowledge bases use a dedicated CodeMirror
+  editor with line numbers, automatic or selected syntax highlighting, folding, undo, find/replace,
+  and optional wrapping. Markdown retains its visual editor. Code/text opens and saves bypass
+  Markdown serialization and diagram conversion, preserving indentation, literal markup, BOM,
+  and line endings. Binary/non-UTF-8 files are rejected; code/text files are limited to 8 MB.
+- Save and Save As preserve edits made while a write is running and execute in order per window.
+  Newer edits remain unsaved; saving before close or document replacement proceeds only if the
+  buffer is still clean after the write. Save failures leave edits open and display an error.
+- Markdown and generated diagram saves replace the destination using a fully written, flushed
+  temporary file in the same directory. Save As prepares destination-specific assets before its
+  single commit. Superseded diagram assets are removed only after the document is saved; failed
+  saves retain the previous document and its diagrams, and cleanup failures leave extra assets.
 - A File/Open Recent submenu that remembers recently opened and saved documents across sessions for one-click reopening, with a Clear Recent command.
 - A native File/New Window action for opening multiple editor windows at the same time.
 - Operating-system file open handoff support for Markdown/text files launched from macOS Finder or Windows Explorer.
@@ -84,23 +118,23 @@ Markdown is effective for structured writing, but many users still need a calm e
 - AI chat write operations routed through the same document-change confirmation boundary as MCP writes.
 - An AI document-import workflow that converts one PDF or multiple ordered images into Markdown at the current caret, using local PDF extraction where possible and the configured vision-capable model where image understanding is required.
 - Local Markdown file open and save workflows through the Electron app menu.
-- HTML and PDF document export workflows through the Electron File menu.
+- HTML, PDF, and Microsoft Word (.docx) document export workflows through the Electron File menu, plus a paginated PDF Print Preview.
 - A Publish as Web workflow that uploads the self-contained HTML rendering of the current document to a user-specified SFTP server, with credentials entered per publish and never stored.
 - A QuickConnect publishing target that sends the same self-contained HTML rendering to a user-configured HTTP endpoint with a bearer token, intended for a simple self-hostable web server.
 - A toggleable rich-text editing surface that can show either a paper-width print layout or a plain words-first layout with optional responsive content wrapping.
-- A collapsible editor outline sidebar that lists the current document's headings as a clickable, depth-indented tree for jumping to sections in rich-text and source mode, with the section under the top of the viewport highlighted as the user scrolls.
+- A collapsible outline sidebar in rich-text mode that lists headings as a clickable, depth-indented tree, highlights the active section while scrolling, and supports filtering and keyboard navigation. Source and diff modes hide the sidebar and disable its toggle while preserving the visibility preference.
 - GitHub Actions desktop build workflow for Windows and macOS artifacts when changes land on `develop`.
-- A clean blank untitled document on every app launch and in every new editor window.
-- An optional embedded Model Context Protocol (MCP) server, off by default, that exposes the focused editor document to external AI clients (such as Claude Desktop via an mcp-remote shim, or ChatGPT custom connectors) when the user enables it from the preferences modal.
+- A clean blank untitled document when launching without a file to open and when choosing File/New Window; operating-system file handoffs open the requested documents in their own windows.
+- An optional embedded Model Context Protocol (MCP) server, off by default, that exposes the focused editor document to external AI clients (such as Claude Desktop via an mcp-remote shim, or ChatGPT custom connectors) when the user enables it from Settings > MCP Server.
 - An optional ngrok tunnel, off by default, that uses the user's installed ngrok CLI to expose the enabled MCP server through a public ngrok URL so remote AI clients can reach it without opening an inbound network port on the user's machine.
 - A read-only MCP tool surface for listing open editor windows, reading the active document, reading the document heading outline, reading a single document section, searching the document, finding text with surrounding context and the enclosing heading, and reading the user's current editor selection.
 - A write MCP tool surface for replacing the active document content, applying granular in-buffer edits (ordered find/replace edits, replacing a section by heading, and setting scalar frontmatter fields), each gated by an in-app shadcn-styled diff confirmation modal that the user must approve or reject for every individual write call.
 - An opt-in, off-by-default per-OS-profile setting that auto-approves MCP write calls without the per-call confirmation dialog, for trusted local sessions, with a warning that escalates when the ngrok tunnel is enabled.
-- An authenticated MCP verification endpoint and a Preferences "Test setup" button that probes the local server, and the public ngrok URL when the tunnel is connected, to confirm reachability and bearer-token acceptance.
-- A simple unauthenticated MCP landing page served at the server root that a user can open in a browser (locally or over the public ngrok URL) to confirm the server is reachable, with its URL shown in the preferences modal.
-- Preferences controls to stop and restart the running ngrok tunnel agent independently of the enable toggle.
+- An authenticated MCP verification endpoint and a "Test setup" button in Settings/MCP Server that probes the local server, and the public ngrok URL when the tunnel is connected, to confirm reachability and bearer-token acceptance.
+- A simple unauthenticated MCP landing page served at the server root that a user can open in a browser (locally or over the public ngrok URL) to confirm the server is reachable, with its URL shown in Settings/MCP Server.
+- Settings/MCP Server controls to stop and restart the running ngrok tunnel agent independently of the enable toggle.
 - Per-OS-profile MCP server enabled/disabled, port number, authentication mode (bearer token or none), and auto-approve-writes preferences stored locally, with the randomly generated bearer token encrypted at rest by the operating system's secure storage rather than saved in plaintext.
-- An OAuth 2.1 authorization flow on the MCP server (discovery metadata, dynamic client registration, a browser consent page, and a PKCE code exchange) so MCP clients that require OAuth — such as ChatGPT custom connectors — can connect; approving the consent page issues the existing bearer token as the access token.
+- An OAuth 2.1 authorization flow on the MCP server (discovery metadata, dynamic client registration, a browser consent page, and a PKCE code exchange) so MCP clients that require OAuth — such as ChatGPT custom connectors — can connect; the browser requests connection approval and a native Nexus dialog must approve it before the existing bearer token is issued as the access token.
 
 #### Out of Scope
 
@@ -118,8 +152,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Stored SFTP passwords, key passphrases, or remembered host keys (SFTP credentials are entered per publish and host keys are confirmed per publish in v1).
 - A bundled QuickConnect receiving server (Nexus only sends the HTTP push; the server that accepts and serves the pages is provided separately).
 - Full Git integration.
-- Advanced presentation export formats beyond HTML and PDF.
-- Microsoft Word (.docx) export (previously attempted in T_099–T_102 and removed in T_103 because the round-tripped HTML lost its body content during DOCX conversion; may be revisited later).
+- Slide-deck and other advanced presentation export formats beyond the supported HTML, PDF, and Word document exports.
 - Plugin marketplace or extension system.
 
 ### 2.5 Constraints & Assumptions
@@ -172,7 +205,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 > so that I can work without sending document content to a service.
 
 #### Acceptance Criteria
-- Given I launch Nexus  
+- Given I launch Nexus without a file to open
 - When the editor appears  
 - Then it starts as a blank untitled document
 
@@ -186,15 +219,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 - When the application launches
 - Then no network ports are opened and no AI client can read or write document content
 
-- Given I enable the MCP server from the preferences modal
+- Given I enable the MCP server from Settings > MCP Server
 - When an authenticated MCP client calls a read tool
 - Then the focused window's current Markdown is returned without prompting the user
 
-- Given I enable the MCP server from the preferences modal
+- Given I enable the MCP server from Settings > MCP Server with auto-approve disabled
 - When an authenticated MCP client calls a write tool
 - Then the editor shows a shadcn-styled diff confirmation modal and the write only applies after I click Approve
 
-- Given the MCP server is enabled and I turn on the ngrok tunnel with a valid authtoken
+- Given the MCP server is enabled with bearer authentication and auto-approve disabled, and I turn on the ngrok tunnel with a valid authtoken configured through the ngrok CLI
 - When the tunnel connects
 - Then the settings dialog shows a public URL I can give to a remote AI client, and that client reaches the same bearer-token-protected, write-confirmed MCP server
 
@@ -292,10 +325,63 @@ Markdown is effective for structured writing, but many users still need a calm e
 
 - The system shall display a Markdown editor as the primary workspace.
 - The system shall keep each editor window's current document content in that window's application state.
-- The system shall start each application launch with a blank untitled document and no current file path.
+- The system shall use the same read-only change viewer for editor diffs, AI previews, and MCP
+  confirmation dialogs, with labels identifying the original and proposed/current documents.
+- The system shall highlight changed lines and text and provide Previous/Next change controls that
+  scroll both panes, wrap between changes, and show the current change number.
+- The system shall offer Hide unchanged sections with three lines of context around changes,
+  allow hidden blocks to be revealed, and allow the full comparison to be restored.
+- The system shall show No changes and disable change navigation for identical comparison inputs.
+- Review navigation and folding shall affect display only; copying, approval, and save operations
+  shall continue to use the complete document, including folded image payloads and unchanged text.
+- The system shall lazily preview an embedded image when its folding widget is hovered or focused,
+  and shall allow Preview to pin the thumbnail without expanding the payload. The preview shall
+  show dimensions after loading or Preview unavailable when the image cannot be decoded.
+- Image previews shall remain within the window, dismiss on close, outside click, scrolling,
+  resize, document edits, or Escape, and leave the owning review dialog open when Escape is used.
+- Expand all / Collapse all shall change only image-data display state throughout the source
+  document or both review panes. Newly inserted images shall still start collapsed.
+- The image/asset panel shall start hidden, remain available across Markdown editor modes,
+  and hide for code/plain text. It shall inventory inline/reference Markdown and HTML images,
+  ignore literal code examples, and group shared destinations for coordinated replacement.
+- The panel shall show decoded image bytes separately from embedded source bytes and total
+  current-buffer UTF-8 bytes. Remote image sizes shall remain unknown until explicitly embedded;
+  inspection shall not download remote files to measure them. Previews shall report natural
+  dimensions or an unavailable state, and missing local files shall offer Locate file.
+- Embed shall read a linked image into the document. Extract shall require a saved document,
+  use a native destination picker, write a new image file without replacing an existing file,
+  and insert an encoded relative reference. Replace shall retain the image's embedded/linked
+  storage style; Locate shall repair the reference to a selected local image.
+- Asset actions shall leave surrounding image syntax and document text intact, support source
+  undo/redo, and reject results when the active document or buffer changes during the action.
+  Picker cancellation shall leave content unchanged. Asset actions shall not save the document
+  or remove old linked files. Local reads and embedding shall be limited to 40 MB per image.
+- The system shall start with a blank untitled document and no current file path when no file is supplied at launch; supplied files shall open in their own editor windows.
 - The system shall focus the editor automatically when a window starts with an empty untitled document.
-- The system shall provide Electron app menu items for File/New Window, File/New, File/Open, File/Open Recent, File/Save, File/Save As, File/Export as HTML, File/Export as PDF, and File/Exit.
+- The system shall provide Electron app menu items for File/New Window, File/New, File/Open, File/Open Recent, File/Save, File/Save As, File/Export as HTML, File/Export to Word, File/Print Preview, File/Export as PDF, and File/Exit.
 - The system shall provide an Electron File menu action that loads a built-in demo Markdown document showcasing supported editor and export features.
+- The system shall provide File/Open Folder and Close Folder. Opening or closing a folder shall
+  preserve the current document; the folder selection belongs to that editor window and is not
+  automatically restored at launch.
+- The folder browser shall lazily enumerate expanded directories, sort folders before files,
+  offer optional non-document files, refresh directory changes, and expose visible errors/retry.
+  It shall support keyboard tree navigation, keyboard or pointer resizing, F2 rename,
+  copy/cut/paste shortcuts, and Delete with native Trash/Recycle Bin confirmation.
+- The folder browser shall create Markdown/text documents and directories; rename, duplicate,
+  copy, and move files or directories within the opened root without overwriting existing items.
+  Folder copies shall include regular assets and reject nested symbolic links or junctions.
+- Moving or renaming an open document shall update its save path in every affected window without
+  replacing its text. Deleting it shall retain its text as an untitled unsaved document. Saves and
+  folder mutations shall coordinate so pending saves cannot recreate moved or deleted paths.
+- Relative links shall remain unchanged by move/copy operations. Users shall be reminded to move
+  associated assets when changing the document's directory.
+- The system shall open common code/configuration files and plain text from the folder tree,
+  File/Open, recents, drops, and OS handoff. The folder browser shall show recognized file types by
+  default; Show other files shall allow opening additional UTF-8 text files after binary checks.
+- Code/text documents shall use CodeMirror rather than the Markdown parser. They shall preserve
+  raw text and support existing save, dirty-buffer protection, move/rename, deletion recovery,
+  external-change detection, and shared change review. Markdown formatting, publishing, exports,
+  and writing actions shall be unavailable for these files; document-aware AI chat remains available.
 - The system shall record a document's file path in a recent-files list whenever the document is opened or saved.
 - The system shall present the recent-files list, most-recent-first, as a File/Open Recent submenu, showing a disabled placeholder when the list is empty.
 - The system shall limit the recent-files list to ten entries and remove duplicate paths.
@@ -338,10 +424,10 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall follow the desktop color scheme while the app theme preference is set to System.
 - The system shall store the selected app theme preference locally using a key scoped to the current OS profile name.
 - The system shall allow the user to reset the current OS profile's editor preferences to default values from the settings dialog.
-- The system shall allow the user to toggle paper view from the editor toolbar.
+- The system shall allow the user to toggle paper view from the View menu.
 - The system shall allow the user to choose Letter or A4 as the editor paper size from the settings dialog.
 - The system shall allow the user to choose Portrait or Landscape as the editor paper orientation from the settings dialog.
-- The system shall allow the user to switch the editor paper orientation from the editor toolbar.
+- The system shall allow the user to switch the editor paper orientation from the View menu.
 - The system shall allow the user to adjust top, right, bottom, and left paper margins from the settings dialog.
 - The system shall show units for numeric font-size, paper-size, and margin preferences in the settings dialog.
 - The system shall store the selected editor font locally using a key scoped to the current OS profile name.
@@ -355,11 +441,12 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall provide a collapsible outline sidebar that lists the current document's headings.
 - The system shall display outline entries indented to reflect each heading's level from H1 through H6.
 - The system shall update the outline entries when the document's headings change.
-- The system shall scroll the editor to the corresponding heading when the user selects an outline entry in rich-text and source mode.
-- The system shall highlight the outline entry for the section at the top of the editor viewport as the user scrolls, in rich-text and source mode.
+- The system shall scroll the rich-text editor to the corresponding heading when the user selects an outline entry.
+- The system shall highlight the outline entry for the section at the top of the rich-text editor viewport as the user scrolls.
 - The system shall keep the highlighted outline entry visible within the outline list as it changes.
-- The system shall allow the user to toggle the outline sidebar visibility from the editor toolbar.
-- The system shall show the outline sidebar in rich-text and source editing modes and hide it in diff editing mode.
+- The system shall allow the user to toggle the outline sidebar from the status bar or View/Show Outline while editing in rich-text mode.
+- The system shall show the outline sidebar only in rich-text mode, disable its toggle in source and diff modes, and restore the stored visibility preference when returning to rich text.
+- The system shall offer a heading filter when the outline contains at least eight headings, and shall support arrow-key and Home/End navigation between visible entries.
 - The system shall provide a "Clean up formatting" command in the editor toolbar only while editing in source mode, and hide it in rich-text and diff modes.
 - The system shall normalize the raw Markdown when the clean-up command runs — list markers and marker spacing, blank lines around ATX headings, GFM table column alignment, thematic breaks, blank-line runs, and trailing whitespace — without altering content inside fenced code blocks or a leading YAML frontmatter block, and without changing the document's meaning.
 - The system shall show an empty-state message in the outline sidebar when the current document has no headings.
@@ -376,7 +463,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow the user to replace a misspelled word with a suggestion from the editor right-click menu.
 - The system shall allow the user to add a misspelled word to the desktop spellchecker dictionary from the editor right-click menu.
 - The system shall allow the user to import local image files into the editor by choosing an image from the local file system.
-- The system shall store local image imports as local file URL sources in the Markdown image node.
+- The system shall store local image imports as paths relative to the saved Markdown document's folder where possible, and use absolute file URLs for untitled documents or paths that cannot be expressed relatively.
 - The system shall allow the user to import remote images by entering an `http` or `https` URL.
 - The system shall allow the user to import embedded base64 images by choosing an image file to encode or by pasting a base64/data URL value.
 - The system shall render relative local image paths in rich text preview relative to the currently opened Markdown file's folder.
@@ -384,6 +471,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall allow opening Markdown files from the local file system through File/Open.
 - The system shall allow saving the current document through File/Save and File/Save As.
 - The system shall allow exporting the current Markdown document to a self-contained HTML file through File/Export as HTML.
+- The system shall allow exporting the current Markdown document to a Word (.docx) file through File/Export to Word, using the selected font, base font size, paragraph spacing, and page margins where supported by the converter.
 - The system shall allow exporting the current Markdown document to a PDF file through File/Export as PDF.
 - The system shall provide File/Print Preview using the current unsaved Markdown and the same
   Chromium PDF renderer and page settings as PDF export.
@@ -481,6 +569,13 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall save AI chat history locally for saved documents using opaque, profile-scoped user-data files; untitled documents shall remain session-only.
 - The system shall allow the user to clear the active conversation and delete its saved history, and to delete all saved chat history for the current profile.
 - The system shall stream AI chat responses and allow the user to stop an in-progress response.
+- The system shall sanitize assistant Markdown with a DOM parser and an explicit HTML/attribute/URL
+  allowlist before insertion into chat, including persisted transcripts and partial streaming text.
+  Prose, lists, code, tables, and explicit HTTP/HTTPS/mail links or anchors remain supported; active
+  content, embedded documents, forms, remote chat images, and local-file/script URLs are excluded.
+- The main renderer shall enforce a CSP that blocks inline script execution and eval. Its privileged
+  IPC bridge shall accept only registered main editor frames at the expected application URL,
+  validate sensitive payload types, and scope confirmation responses to the requesting window.
 - The system shall allow the current editor selection to be attached explicitly as context to the next AI chat message.
 - The system shall expose the existing Nexus document read and write tool catalog to capable direct AI chat providers and shall pin every in-app chat tool call to that panel's document. For OpenCode Serve, OpenCode owns and executes tool calls in its served directory; Nexus shall display their activity without invoking similarly named Nexus tools.
 - The system shall show AI chat tool-call status and results in the conversation.
@@ -510,12 +605,12 @@ Markdown is effective for structured writing, but many users still need a calm e
 - The system shall expose an authenticated `GET /health` verification endpoint while the server is enabled that applies the same loopback bind and bearer-token check as `/mcp` and returns basic server identity, rejecting a missing or invalid token with 401 and a non-GET method with 405.
 - The system shall include an OAuth discovery challenge (`WWW-Authenticate` with the protected-resource metadata URL) on unauthorized MCP responses while the authentication mode is bearer-token.
 - The system shall serve OAuth protected-resource and authorization-server discovery metadata, accept dynamic client registrations whose redirect URIs are https or loopback http, and persist registrations (no secrets) across launches, while the authentication mode is bearer-token.
-- The system shall require explicit user approval on a browser consent page, showing the client name and redirect destination, before issuing any OAuth authorization code.
+- The system shall require explicit local owner approval in a native Nexus dialog, showing the client-reported name and full redirect destination, before issuing any OAuth authorization code. The browser consent form only requests this approval; remote form submissions and auto-approve-writes cannot grant it. Missing approval support, dialog errors, replay, expiry, and server/token changes shall fail closed; only one native approval dialog may be pending at a time.
 - The system shall require PKCE (S256) for the OAuth authorization-code flow, treat authorization codes as single-use and short-lived, and issue the configured bearer token as the access token on a successful exchange.
 - The system shall report OAuth protocol errors to the client's registered redirect URI, except when the client or redirect URI itself cannot be validated, in which case the error shall be shown in place without redirecting.
 - The system shall disable the OAuth endpoints while the authentication mode is none.
 - The system shall provide a Preferences action that tests the MCP setup by probing the local verification endpoint, and the public ngrok URL when the tunnel is connected, and shall report a pass/fail result for each without requiring an external MCP client.
-- The system shall serve a simple unauthenticated landing page at the MCP server root while the server is enabled so the server URL can be opened in a browser to confirm reachability, and shall show that page's local URL, and its public ngrok URL when the tunnel is connected, in the preferences modal.
+- The system shall serve a simple unauthenticated landing page at the MCP server root while the server is enabled so the server URL can be opened in a browser to confirm reachability, and shall show that page's local URL, and its public ngrok URL when the tunnel is connected, in Settings > MCP Server.
 - The system shall provide preferences controls to stop and restart the running ngrok tunnel agent, where restart tears down and re-establishes the tunnel and stop disconnects it, without changing the local MCP server.
 - The system shall support MCP `initialize`, `tools/list`, and `tools/call` JSON-RPC methods through the embedded server.
 - The system shall expose an MCP tool that lists open editor windows with stable identifiers, document titles, file paths, and dirty status.
@@ -555,9 +650,11 @@ Markdown is effective for structured writing, but many users still need a calm e
 #### 3.4.x Specialized Logic or Modes (Optional)
 
 - Visual editing mode: primary editing mode using MDXEditor.
-- Source editing mode: MDXEditor-provided source mode accessed through the editor toolbar.
+- Source editing mode: a CodeMirror Markdown editor integrated with MDXEditor's source-mode state,
+  accessed through the editor toolbar. Embedded image data starts collapsed; Preview inspects the
+  image without expanding it, and Expand all / Collapse all change only image-data visibility.
 - Clean up formatting: a source-mode-only toolbar command that prettifies the raw Markdown in place. It normalizes unordered list markers to `-` and collapses marker spacing (ordered numbers are preserved), guarantees one blank line above and below ATX headings, re-pads GFM tables to align columns and reflect each column's alignment, normalizes thematic breaks to `---`, collapses runs of blank lines to one, and trims trailing whitespace (keeping a two-space hard break). Fenced code blocks and a leading YAML frontmatter block pass through untouched, the pass is idempotent, and it never reinterprets non-heading text (for example `##Section` with no space) as a heading. It edits the CodeMirror source buffer directly so the cleaned text is exactly what the command produced rather than MDXEditor's serializer conventions.
-- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled grouped toolbar, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, embedded OpenAPI specifications, local JavaScript runner blocks, admonitions, frontmatter, paper/plain view, paper orientation, plain-view responsive wrapping, and source/diff toggles where supported by enabled plugins.
+- Toolbar controls: expose MDXEditor's broad toolbar command set through a project-owned white shadcn-styled ribbon with labeled groups, excluding undo/redo, refresh, and zoom because those actions live in native menus, and including text formatting, lists, block type, links, local/remote/base64 image imports, relative local image previews, tables, thematic breaks, code blocks, Mermaid diagrams, embedded OpenAPI specifications, local JavaScript runner blocks, admonitions, frontmatter, and source/diff toggles where supported by enabled plugins. Paper View, Landscape Orientation, and Responsive Wrapping are available from the View menu.
 - PDF/image document import: the AI menu accepts one PDF or multiple ordered image files, extracts
   selectable PDF text and embedded raster pictures locally, sends scanned pages and standalone images
   as vision inputs, and inserts one Markdown transcription at the caret captured before the picker
@@ -591,12 +688,13 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Plain view: rich-text editing can hide the page sheet, shadow, fixed page width, fixed height, and page margins so the user can focus on text flow while keeping export settings unchanged; the user can toggle whether plain view wraps to the full application width or to a centered readable column without adding page-level horizontal scrolling.
 - Publish as Web: a File menu action renders the current document to the same self-contained HTML output as HTML export (inline images, fonts, and diagrams) and uploads that single file to a user-specified SFTP server. The publish dialog collects the host, port, username, authentication method (password or private-key file), remote directory, remote filename, and an optional public base URL; only the non-secret fields are stored per OS profile to pre-fill future publishes. Credentials are entered every publish and never stored. Before any document data is sent, the user must review and accept the server's host-key fingerprint (OpenSSH-style SHA256 form); rejecting cancels the publish. The remote filename defaults to a slug derived from the document title or frontmatter and is editable. After a successful upload, the dialog shows the resulting page URL with a copy control when a public base URL is configured, and notes that SFTP upload alone does not guarantee HTTP serving. Publishing does not change the document's file path, saved baseline, or dirty state.
 - Publish as Web over QuickConnect: a second File menu action renders the same self-contained HTML and sends it as an HTTP POST to a user-configured endpoint URL, with the rendered HTML as the request body, a bearer token for authorization, and a user-configured path conveyed in the request. The QuickConnect dialog collects the URL, path, and bearer token; the URL and path are saved per OS profile to pre-fill future publishes, and the bearer token is stored encrypted at rest using the operating system's secure storage (Electron safeStorage) rather than in plaintext local settings (when secure storage is unavailable the token is entered per publish and not saved). A successful HTTP response confirms the publish; the dialog shows a returned page URL with a copy control when the server provides one, and reports the HTTP status when the request is rejected. A network timeout bounds the request. QuickConnect is intended for a simple self-hostable server that accepts these pushes and serves the pages. SFTP and QuickConnect are the only publishing transports in this version.
-- Outline sidebar: an optional, collapsible panel beside the rich-text editor lists the current document's headings as a depth-indented, clickable tree. Selecting an entry scrolls the rich-text editor to that heading. The outline tracks heading changes, shows an empty-state message when no headings exist, is hidden in source and diff modes so those modes keep the full editor area, and its open/closed state is stored per OS profile. v1 renders headings as an indented list by level and does not provide per-node expand/collapse or active-section tracking.
+- Outline sidebar: an optional, resizable panel beside the rich-text editor lists headings as a depth-indented, clickable tree. It tracks heading changes and the active section during scrolling, keeps the active entry visible, and shows an empty state when there are no headings. Documents with at least eight headings have a text filter; arrow keys and Home/End navigate the visible entries. Visibility and width are stored per OS profile. Source and diff modes hide the panel and disable its toggle while preserving the preference. Per-heading expand/collapse and reordering remain future features.
 - App theme: the settings dialog lets the user choose a Light, Dark, or System app theme. The selected theme is stored per OS profile, System tracks the desktop color-scheme setting, dark mode uses a restrained neutral palette with visible editor carets and toolbar icons, and document export output remains light for predictable PDF/HTML results.
 - Editable page background: rich-text, source, diff, and plain-view editor backgrounds match the toolbar background color for visual continuity.
 - Export: HTML and PDF exports render from the current Markdown buffer, resolve relative local images, render supported admonition directives as styled callout blocks, omit leading YAML frontmatter from PDF output, use the selected editor font, base font size, and paragraph spacing for rendered output, use the selected paper size, orientation, and margins for PDF page setup, print PDFs through the direct hidden-window rich export path, report failure instead of silently downgrading any export, and use native save dialogs without changing the active document. HTML export is self-contained for supported local images, Mermaid diagrams, and bundled web font assets by writing them as base64 data URLs.
+- Word export: File/Export to Word converts a rendered copy of the current Markdown buffer into a .docx document. It maps the selected font to a Word-compatible family, applies page margins and supported typography, and adapts tables, highlights, and callouts for Word. Mermaid and math rendering use PNG enhancement when available. Export uses a native save dialog and reports conversion failures without changing the Markdown document, file path, or saved baseline.
 - The app shall not provide a separate custom visual/source tab bar.
-- MCP server: a local HTTP-based Model Context Protocol server runs inside the Electron main process while enabled. Transport is Streamable HTTP at `http://127.0.0.1:{port}/mcp` with a single POST endpoint that accepts JSON-RPC requests and returns JSON-RPC responses. Authentication mode is either a static bearer token shown in the preferences modal (default) or no authentication (opt-in, intended for trusted single-user environments). In bearer mode, clients can send the token directly or obtain it through an OAuth 2.1 flow (discovery metadata, dynamic client registration, a browser consent page the user must approve, and a PKCE S256 code exchange) — used by clients that require the MCP authorization spec, such as ChatGPT custom connectors; the access token issued is the same bearer token, so regenerating the token revokes all clients at once, and the OAuth endpoints are disabled in no-auth mode. In either mode, the listener stays bound to `127.0.0.1` and, unless the user enables auto-approve, the write confirmation dialog still gates every write call. The tool surface stays focused: the read tools are list windows, read document, read outline, read section, search document, find (matches with surrounding context and the enclosing heading), and read selection; the write tools are replace document plus the in-buffer edits apply edits (ordered find/replace), replace section (by heading), and set frontmatter (scalar fields). Most read tools execute immediately against the latest cached document state held in the main process (no renderer round trip); the read-selection tool round-trips to the target renderer to capture the live selection. Each write tool computes a proposed full buffer from the cached document — failing without a dialog when an edit's anchor or section cannot be located — and routes the proposal through the target renderer's confirmation dialog (or applies it immediately when auto-approve is enabled), resolving with the outcome before responding to the MCP client. The server is intended for local AI assistants on the same machine. Remote reachability is opt-in only through the ngrok tunnel below.
+- MCP server: a local HTTP-based Model Context Protocol server runs inside the Electron main process while enabled. Transport is Streamable HTTP at `http://127.0.0.1:{port}/mcp` with a single POST endpoint that accepts JSON-RPC requests and returns JSON-RPC responses. Authentication mode is either a static bearer token shown in Settings > MCP Server (default) or no authentication (opt-in, intended for trusted single-user environments). In bearer mode, clients can send the token directly or obtain it through an OAuth 2.1 flow (discovery metadata, dynamic client registration, a browser page that requests explicit approval in a native Nexus dialog, and a PKCE S256 code exchange) — used by clients that require the MCP authorization spec, such as ChatGPT custom connectors; the access token issued is the same bearer token, so regenerating the token revokes all clients at once, and the OAuth endpoints are disabled in no-auth mode. In either mode, the listener stays bound to `127.0.0.1` and, unless the user enables auto-approve, the write confirmation dialog still gates every write call. The tool surface stays focused: the read tools are list windows, read document, read outline, read section, search document, find (matches with surrounding context and the enclosing heading), and read selection; the write tools are replace document plus the in-buffer edits apply edits (ordered find/replace), replace section (by heading), and set frontmatter (scalar fields). Most read tools execute immediately against the latest cached document state held in the main process (no renderer round trip); the read-selection tool round-trips to the target renderer to capture the live selection. Each write tool computes a proposed full buffer from the cached document — failing without a dialog when an edit's anchor or section cannot be located — and routes the proposal through the target renderer's confirmation dialog (or applies it immediately when auto-approve is enabled), resolving with the outcome before responding to the MCP client. The server is intended for local AI assistants on the same machine. Remote reachability is opt-in only through the ngrok tunnel below.
 - MCP ngrok tunnel: an optional, off-by-default tunnel that exposes the enabled MCP server to remote AI clients through a public ngrok URL by running the user's installed ngrok CLI as a background process. The authtoken is not stored in Nexus; the user configures it once with the ngrok CLI (`ngrok config add-authtoken <token>`) and Nexus relies on the ngrok CLI's own configuration. The user may optionally supply a reserved or custom ngrok domain; when a domain is set it is used, and when it cannot be bound the tunnel falls back to a random URL and reports that the domain was not used. The user may also point the tunnel at an explicit ngrok executable path (via a checkbox and path field) for non-standard install locations; with the checkbox off, or on but empty, the ngrok CLI is resolved from PATH. When the ngrok CLI is missing or no authtoken is configured, the settings dialog shows a clear message and the local MCP server keeps running. When the MCP server is enabled and the tunnel is turned on, Nexus runs the ngrok CLI to forward to the loopback MCP port; the ngrok agent connects outbound to ngrok's service, so no inbound port is opened and the MCP server keeps binding `127.0.0.1`. The settings dialog shows the public URL and the public `/mcp` endpoint URL with copy controls while connected. Bearer-token authentication and the write-confirmation dialog still apply over the tunnel. Enabling the tunnel while the authentication mode is none shows a prominent warning but is allowed. The tunnel stops when the MCP server is disabled, the toggle is turned off, or the app quits, and re-points when the MCP port changes. Tunnel start failures are reported and leave the local server running.
 
 ### 3.5 Non-Functional / Experience Requirements
@@ -610,7 +708,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 ## 4. Process Flow (Optional)
 
 1. Launch Nexus.
-2. Start from a blank untitled document.
+2. Start from a blank untitled document, or open the file supplied by the operating system.
 3. Begin typing immediately because the editor has focus.
 4. Edit visually, or switch to source mode through the editor toolbar; in source mode, use the Clean up formatting command to normalize the raw Markdown in place.
 5. Use File/New Window to open another blank editor window when working with multiple documents.
@@ -626,19 +724,19 @@ Markdown is effective for structured writing, but many users still need a calm e
 15. Right-click an underlined misspelled word to choose a correction or add the word to the dictionary.
 16. Use the editor toolbar image import control to insert a local image path, remote image URL, or embedded base64 image.
 17. Preview relative local image paths from opened Markdown files using the folder that contains the Markdown file.
-18. Use File/Export as HTML or File/Export as PDF to write a rendered copy of the current Markdown buffer.
+18. Use File/Export as HTML, File/Export to Word, or File/Export as PDF to write a rendered copy of the current Markdown buffer; use File/Print Preview to inspect PDF pagination before saving.
 19. If the opened file changes outside Nexus, choose whether to reload it or keep the current editor buffer.
 20. Use Edit/Refresh to reload the current opened file from disk.
 21. If a dirty opened file changes outside Nexus, choose Review Diff to compare the current buffer against the changed disk version.
 22. Use Edit/Compare with Previous Version to compare the current buffer against the preserved version from before the most recent save or reload.
-23. Optionally configure a hosted or local model from AI/AI Providers, test the connection, and choose the default provider.
+23. Optionally configure a hosted or local model from Settings/AI Providers, test the connection, and choose the default provider.
 24. Select text and choose an AI rewrite action, then compare the original and proposed Markdown before accepting or discarding the replacement.
 25. Choose AI/Content Organization to review a conservative cleanup of the complete document before accepting or discarding it.
 26. Open the AI chat panel to ask about the current document, optionally attach the current selection, and review any write proposed through a document tool.
 27. Use AI/Import PDF or Images to transcribe one PDF or multiple ordered images into Markdown at the current caret.
-28. Optionally enable the MCP server from Settings/Preferences, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it.
+28. Optionally enable the MCP server from Settings/MCP Server, copy the displayed connection URL and bearer token into Claude Desktop or ChatGPT, and review each proposed write through the in-app confirmation diff before applying it unless auto-approve is enabled.
 29. Optionally turn on the ngrok tunnel in the MCP server settings and copy the displayed public MCP endpoint URL into a remote AI client to reach the same authenticated, write-confirmed server.
-30. Use the editor toolbar outline toggle to show a sidebar of the document's headings, click a heading to jump to that section in rich-text or source mode, and follow the highlighted entry that tracks the section currently at the top of the editor as you scroll.
+30. In rich-text mode, use the status-bar Outline button or View/Show Outline to open the heading sidebar, select a heading to jump to its section, and follow the highlighted active section while scrolling. Filter longer outlines and navigate entries with the keyboard.
 31. Use File/Publish as Web to render the current document as a self-contained web page, enter SFTP connection details, accept the server's host-key fingerprint, and upload the page; copy the resulting URL when a public base URL is configured.
 32. Use File/Publish as HTML over QuickConnect to send the same self-contained web page to a configured HTTP endpoint with a saved URL, path, and bearer token; copy the resulting URL when the server returns one.
 
@@ -648,17 +746,17 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Do not show top-level New, Open, Save, or Save As buttons in the current version.
 - Keep document actions in the native Electron app menu.
 - Keep document actions scoped to the focused editor window so multiple open documents remain independent.
-- Keep HTML export and PDF export actions in the native File menu near Save actions.
+- Keep HTML, Word, PDF export, and Print Preview actions in the native File menu near Save actions.
 - Keep the Publish as Web action in the native File menu near the export actions, and use a compact shadcn-styled dialog for connection details, host-key confirmation, and the published URL result.
 - Keep the Publish as HTML over QuickConnect action next to the SFTP publish action, and use a compact shadcn-styled dialog with just the URL, path, and bearer token plus the published URL result.
-- Keep the ngrok tunnel controls inside the existing MCP server section of the settings dialog, with the toggle, authtoken field, connected public URL and public MCP endpoint URL, and the no-authentication exposure warning grouped with the other MCP settings.
+- Keep ngrok controls in Settings/MCP Server, with the enable toggle, optional executable path and custom domain, connection URLs, stop/restart actions, and the no-authentication exposure warning. Explain that the authtoken is configured through the ngrok CLI and is not stored by Nexus.
 - Keep the built-in demo document action in the native File menu near Open, because it replaces the current editor buffer rather than editing content in place.
 - Keep undo and redo actions in the native Electron Edit menu rather than duplicating them in the editor toolbar.
 - Keep manual Refresh available from the native Edit menu.
 - Keep common text editing actions available from the native editor right-click menu without adding another top-level toolbar.
 - Keep spelling corrections in the same editor right-click menu as common text editing actions.
 - Keep editor appearance settings in a compact shadcn-styled dialog opened from the native Settings menu.
-- Keep AI provider setup in a dedicated dialog opened from the native AI menu, with explicit provider enablement, default-provider selection, model settings, secret-key handling, and connection status.
+- Keep AI provider setup in a dedicated dialog opened from Settings/AI Providers, with explicit provider enablement, default-provider selection, model settings, secret-key handling, and connection status.
 - Keep AI selection actions in the native AI menu and require a compact original-versus-proposed review dialog before replacement.
 - Keep Content Organization in the AI menu and require a full-document original-versus-proposed review before replacement.
 - Keep the AI chat in a resizable side panel beside the document, showing streamed responses and expandable tool activity without obscuring the editor.
@@ -666,13 +764,15 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Keep application information in a compact shadcn-styled dialog opened from the native Help menu.
 - Keep the native application title aligned with the current document path.
 - Use compact shadcn-styled prompts for external file change and conflict decisions.
-- Keep diff review inside MDXEditor's existing diff mode instead of adding a separate review workspace.
-- Keep editor-specific controls inside a compact white shadcn-styled grouped toolbar with unlabeled button groups, consistent tooltips, a right-aligned view mode group, white bordered paragraph dropdown controls, and transform-offset dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
-- Keep the paper/plain view, paper orientation, and plain-view responsive wrapping toggles in the toolbar Modes group.
+- Keep editor comparisons in diff mode and reuse its side-by-side change viewer in AI and MCP
+  dialogs, with consistent navigation, highlighting, and folding controls. Keep accept/reject
+  actions in the owning dialog so reviewing a change never applies it implicitly.
+- Keep editor-specific controls inside a compact shadcn-styled ribbon with labeled groups, consistent tooltips, view-mode controls, and dropdown/tooltip surfaces that clear the toolbar instead of being covered by it.
+- Keep paper/plain view, paper orientation, and plain-view responsive wrapping toggles in the View menu.
 - Keep the rich-text toolbar visible while scrolling long documents without allowing it to overlap document content; in source and diff modes, let the compact right-side view controls intentionally overlap the editor content at the top-right.
 - On Windows, show a subtle top separator on the editor toolbar so it visually matches the bottom separator below the native menu.
 - Avoid modal-first workflows for common actions.
-- Keep the outline sidebar as a compact shadcn-styled panel beside the editor that follows the light/dark theme, can be toggled from the editor toolbar, and does not introduce a new top-level document action bar.
+- Keep the outline sidebar as a compact shadcn-styled panel beside the rich-text editor that follows the light/dark theme and can be toggled from the status bar or View menu.
 
 ## 6. Edge Cases
 
@@ -697,6 +797,9 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Closing the app or a window should cancel cleanly if the user chooses Cancel from the unsaved-change prompt.
 - Operating-system handed-off file paths that are not supported Markdown/text files should be ignored.
 - Saving from one Nexus window should not trigger an external-change prompt in that same window.
+- Watchers should ignore only the exact content successfully saved by their own window. Different
+  external edits and deletion immediately after save must still enter the reload/conflict flow;
+  failed saves must not suppress external changes. Atomic replacements must remain watchable.
 - Saving from one Nexus window should still be treated as an external file change for another Nexus window editing the same file.
 - Deleted or moved watched files should leave the current editor buffer open for recovery or Save As.
 - Closing a window after external file reload activity should clean up watchers without showing a main-process JavaScript error.
@@ -726,7 +829,7 @@ Markdown is effective for structured writing, but many users still need a calm e
 - An MCP request without a bearer token, with the wrong token, or with the wrong content type should receive an explicit 401/400 response instead of being silently dropped while the authentication mode is bearer-token.
 - An OAuth authorization request with an unknown client or unregistered redirect URI should show an in-place error page and never redirect to the unvalidated URI.
 - An OAuth authorization request without PKCE, or a token exchange with the wrong verifier, a replayed code, or an expired code, should be rejected with a standard OAuth error.
-- Denying the OAuth consent page should redirect to the client with access_denied and not issue a token.
+- Denying the browser request or native Nexus approval dialog should redirect to the client with access_denied and not issue a token. A caller with the public form nonce must not be able to approve its own connection.
 - Restarting the app should preserve OAuth client registrations but cancel any in-flight consent pages and unexchanged authorization codes.
 - Regenerating the bearer token should invalidate access previously issued through OAuth, requiring clients to re-authorize.
 - An MCP request that arrives while the authentication mode is none should be processed without checking the Authorization header, but the write confirmation dialog should still apply.
@@ -773,12 +876,12 @@ Markdown is effective for structured writing, but many users still need a calm e
 - Add accept/reject controls for individual changed blocks.
 - Add top-level document action buttons only if the app later needs visible duplicates of the native File menu.
 - Add Git-backed diffs when a document belongs to a repository.
-- Add export targets for PDF, DOCX, or slide decks.
+- Consider slide-deck export beyond the existing HTML, PDF, and Word document exports.
 - Add true paginated page breaks if print-layout editing becomes a core workflow.
-- Expand the MCP write tool surface with partial patch / find-replace tools, save and save-as tools, and image/attachment-aware tools, now that the read tools cover outline, section, search, and selection in addition to list-windows and read-document.
+- Consider MCP save/save-as and image/attachment-aware tools as explicit scope expansions beyond the existing in-buffer find/replace, section replacement, and frontmatter edits.
 - Add an MCP audit log or activity panel so users can see recent tool calls and decisions.
 - Add stdio MCP transport via a separate launcher binary for clients (such as current Claude Desktop) that do not yet support HTTP/Streamable transport directly.
-- Remember and reuse a stable ngrok domain, and offer optional encrypted storage for the ngrok authtoken instead of plaintext local settings.
+- Consider optional OS-encrypted ngrok authtoken management if users request it; custom-domain preferences are already supported, and Nexus currently relies on the ngrok CLI's own token configuration.
 - Add an MCP tunnel activity indicator or log so users can see when the server is publicly reachable and by which URL.
 - Add per-node expand/collapse and drag-to-reorder for outline headings.
 - Optionally remember accepted SFTP host keys (known-hosts style) so the fingerprint prompt only appears on first connect or when the key changes.

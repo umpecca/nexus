@@ -1,20 +1,28 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
-const { existsSync, watch, readFileSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, safeStorage, shell } = require("electron");
 const htmlToDocx = require("@turbodocx/html-to-docx");
 const crypto = require("node:crypto");
+const { writeFileAtomically } = require("./atomicFile.cjs");
+const { saveDocumentFile, stageDiagramAsset, releaseStagedDiagramAssets } = require("./documentSave.cjs");
+const { createDocumentWatcher } = require("./documentWatch.cjs");
+const { registerFolderBrowser } = require("./folderBrowserIpc.cjs");
+const { isTextDocument, readDocumentText } = require("./documentFiles.cjs");
 const SftpClient = require("ssh2-sftp-client");
 
 const mcpServer = require("./mcp-server.cjs");
+const { confirmMcpOauthConnection } = require("./mcpOauthApproval.cjs");
+const { createRendererIpc, sameRendererUrl, isPendingRequestOwner } = require("./rendererIpc.cjs");
 const ngrokTunnel = require("./ngrok-tunnel.cjs");
 const recentFilesStore = require("./recentFiles.cjs");
 const headingSlugger = require("./headingSlugger.cjs");
 const mcpDocumentTools = require("./mcpDocumentTools.cjs");
 const mcpDocumentEdits = require("./mcpDocumentEdits.cjs");
 const imagePaths = require("./imagePaths.cjs");
+const { registerAssetHandlers } = require("./documentAssets.cjs");
 const documentImport = require("./documentImport.cjs");
 const aiProviders = require("./aiProviders.cjs");
 const aiChatHistory = require("./aiChatHistory.cjs");
@@ -32,6 +40,11 @@ const {
 } = require("./aiSelectionCatalog.cjs");
 
 const isDev = Boolean(process.env.NEXUS_DEV_SERVER_URL);
+const mainRendererUrl = isDev
+  ? new URL(process.env.NEXUS_DEV_SERVER_URL).href
+  : pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).href;
+const trustedRenderers = new Map();
+const rendererIpc = createRendererIpc(ipcMain, trustedRenderers);
 // Routine main-process traces (export/publish progress, IPC handler entry, host-key flow, etc.) are
 // noise in packaged builds, so they go through debugLog and only print in dev mode or when
 // NEXUS_DEBUG is set. Genuine failures use console.error directly so they always surface.
@@ -43,12 +56,16 @@ function debugLog(...args) {
 }
 const appIconPath = path.join(__dirname, "..", "nexus.png");
 const closeStates = new Map();
-const fileWatchers = new Map();
+const documentWatcher = createDocumentWatcher({ onChange: sendFileWatchEvent });
 const pendingInitialFiles = new Map();
 const pendingExternalFilePaths = [];
 let isQuitting = false;
 
 const mcpWindowRecords = new Map();
+const folderBrowser = registerFolderBrowser({
+  ipc: rendererIpc, dialog, shell, BrowserWindow, readDocument: readMarkdownFile,
+  documents: mcpWindowRecords, watcher: documentWatcher, addRecent: addRecentFile, removeRecent: removeRecentFile
+});
 let mcpFocusedWindowId = null;
 let mcpPendingWriteCounter = 0;
 const mcpPendingWrites = new Map();
@@ -301,6 +318,11 @@ function requestComputedWrite(windowId, clientLabel, computeProposed) {
 }
 
 mcpServer.setHost({
+  requestOauthApproval: (request) => confirmMcpOauthConnection(
+    dialog,
+    BrowserWindow.getFocusedWindow(),
+    request
+  ),
   listWindows: mcpListWindows,
   getDocument: mcpGetDocument,
   getOutline: mcpGetOutline,
@@ -325,11 +347,8 @@ mcpServer.setHost({
     )
 });
 
-const openableFileExtensions = new Set([".md", ".markdown", ".mdx", ".txt"]);
 const admonitionTypes = new Set(["note", "tip", "danger", "info", "caution"]);
 const githubAlertTypes = new Set(["note", "tip", "important", "warning", "caution"]);
-const fileWatchDebounceMs = 350;
-const internalWriteSuppressMs = 1500;
 const exportProgressPaintDelayMs = 80;
 const exportProgressChannel = "export:progress";
 const htmlMermaidPngEnhancementTimeoutMs = 12000;
@@ -476,8 +495,7 @@ async function getOpenableFilePaths(args) {
     }
 
     const filePath = path.resolve(argument);
-    const extension = path.extname(filePath).toLowerCase();
-    if (!openableFileExtensions.has(extension)) {
+    if (!isTextDocument(filePath)) {
       continue;
     }
 
@@ -496,7 +514,7 @@ async function getOpenableFilePaths(args) {
 
 async function readMarkdownFile(filePath) {
   const resolvedFilePath = path.resolve(filePath);
-  const markdown = await fs.readFile(resolvedFilePath, "utf8");
+  const markdown = await readDocumentText(resolvedFilePath);
   // Any successful read means this file is now the active document (open dialog, watched
   // re-read, recent-file open, or OS file handoff), so record it in the recent-files list.
   addRecentFile(resolvedFilePath);
@@ -546,15 +564,16 @@ function resolveImagePreviewSource(documentPath, imageSource) {
     return source;
   }
 
-  if (path.isAbsolute(imagePath)) {
-    return `${pathToFileURL(imagePath).href}${suffix}`;
+  const decodedImagePath = imagePaths.decodeImagePath(imagePath);
+  if (path.isAbsolute(decodedImagePath)) {
+    return `${pathToFileURL(decodedImagePath).href}${suffix}`;
   }
 
   if (typeof documentPath !== "string" || documentPath.length === 0) {
     return source;
   }
 
-  const resolvedPath = path.resolve(path.dirname(documentPath), imagePath);
+  const resolvedPath = path.resolve(path.dirname(documentPath), decodedImagePath);
   return `${pathToFileURL(resolvedPath).href}${suffix}`;
 }
 
@@ -585,15 +604,16 @@ function resolveLocalImageFilePath(documentPath, imageSource) {
     return null;
   }
 
-  if (path.isAbsolute(imagePath)) {
-    return imagePath;
+  const decodedImagePath = imagePaths.decodeImagePath(imagePath);
+  if (path.isAbsolute(decodedImagePath)) {
+    return decodedImagePath;
   }
 
   if (typeof documentPath !== "string" || documentPath.length === 0) {
     return null;
   }
 
-  return path.resolve(path.dirname(documentPath), imagePath);
+  return path.resolve(path.dirname(documentPath), decodedImagePath);
 }
 
 async function getLocalImageDataUrl(documentPath, imageSource) {
@@ -1821,7 +1841,7 @@ function openDrawioEditor(parentWindow, initialXml) {
 
     function onFromEditor(event, raw) {
       // Scope to this window's editor so multiple diagram editors can be open at once.
-      if (event.sender !== editorWindow.webContents) {
+      if (event.sender !== editorWindow.webContents || event.senderFrame !== editorWindow.webContents.mainFrame) {
         return;
       }
       let message;
@@ -1945,7 +1965,7 @@ function openIsoflowEditor(parentWindow, initialModel) {
     };
 
     // Scope every IPC message to this window's host so multiple isoflow editors can be open at once.
-    const isFromThisWindow = (event) => event.sender === editorWindow.webContents;
+    const isFromThisWindow = (event) => event.sender === editorWindow.webContents && event.senderFrame === editorWindow.webContents.mainFrame;
 
     function onReady(event) {
       if (!isFromThisWindow(event) || editorWindow.isDestroyed()) {
@@ -2029,7 +2049,7 @@ function openSqlSchemaEditor(parentWindow, initialSchema, theme) {
       webPreferences: { preload: path.join(__dirname, "sqlSchemaPreload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: false }
     });
     let settled = false;
-    const fromEditor = (event) => event.sender === editorWindow.webContents;
+    const fromEditor = (event) => event.sender === editorWindow.webContents && event.senderFrame === editorWindow.webContents.mainFrame;
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -2075,7 +2095,7 @@ function openOpenApiEditor(parentWindow, initialYaml, theme) {
     });
 
     let settled = false;
-    const isFromThisWindow = (event) => event.sender === editorWindow.webContents;
+    const isFromThisWindow = (event) => event.sender === editorWindow.webContents && event.senderFrame === editorWindow.webContents.mainFrame;
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -3325,164 +3345,14 @@ function getWindowByWebContentsId(webContentsId) {
   });
 }
 
-function getFileSignature(stats) {
-  return `${stats.mtimeMs}:${stats.size}`;
-}
-
-async function readFileSignature(filePath) {
-  const stats = await fs.stat(filePath);
-  if (!stats.isFile()) {
-    throw new Error("The watched path is not a file.");
-  }
-
-  return getFileSignature(stats);
-}
-
 function sendFileWatchEvent(webContentsId, payload) {
   const window = getWindowByWebContentsId(webContentsId);
   if (!window || window.isDestroyed()) {
-    stopFileWatcher(webContentsId);
+    documentWatcher.stop(webContentsId);
     return;
   }
 
   window.webContents.send("file:external-change", payload);
-}
-
-function stopFileWatcher(webContentsId) {
-  const state = fileWatchers.get(webContentsId);
-  if (!state) {
-    return;
-  }
-
-  if (state.timeout) {
-    clearTimeout(state.timeout);
-  }
-
-  state.watcher?.close();
-  fileWatchers.delete(webContentsId);
-}
-
-async function refreshWatchedFileSignature(webContentsId, filePath) {
-  const state = fileWatchers.get(webContentsId);
-  if (!state || !isSameFilePath(state.filePath, filePath)) {
-    return;
-  }
-
-  try {
-    state.lastSignature = await readFileSignature(state.filePath);
-  } catch {
-    // A follow-up watcher event will report the missing file if it remains unavailable.
-  }
-}
-
-function markInternalWrite(webContentsId, filePath) {
-  const state = fileWatchers.get(webContentsId);
-  if (!state || !isSameFilePath(state.filePath, filePath)) {
-    return;
-  }
-
-  state.suppressUntil = Date.now() + internalWriteSuppressMs;
-}
-
-async function handleWatchedFileEvent(webContentsId) {
-  const state = fileWatchers.get(webContentsId);
-  if (!state) {
-    return;
-  }
-
-  if (Date.now() <= state.suppressUntil) {
-    await refreshWatchedFileSignature(webContentsId, state.filePath);
-    return;
-  }
-
-  let nextSignature;
-  try {
-    nextSignature = await readFileSignature(state.filePath);
-  } catch {
-    sendFileWatchEvent(webContentsId, {
-      filePath: state.filePath,
-      kind: "missing",
-      timestamp: Date.now()
-    });
-    stopFileWatcher(webContentsId);
-    return;
-  }
-
-  if (nextSignature === state.lastSignature) {
-    return;
-  }
-
-  state.lastSignature = nextSignature;
-  restartFileWatcherHandle(webContentsId, state);
-  sendFileWatchEvent(webContentsId, {
-    filePath: state.filePath,
-    kind: "changed",
-    timestamp: Date.now()
-  });
-}
-
-function scheduleWatchedFileEvent(webContentsId) {
-  const state = fileWatchers.get(webContentsId);
-  if (!state) {
-    return;
-  }
-
-  if (state.timeout) {
-    clearTimeout(state.timeout);
-  }
-
-  state.timeout = setTimeout(() => {
-    state.timeout = null;
-    void handleWatchedFileEvent(webContentsId);
-  }, fileWatchDebounceMs);
-}
-
-function attachFileWatcherHandle(webContentsId, state) {
-  state.watcher = watch(state.filePath, { persistent: false }, () => {
-    scheduleWatchedFileEvent(webContentsId);
-  });
-
-  state.watcher.on("error", () => {
-    sendFileWatchEvent(webContentsId, {
-      filePath: state.filePath,
-      kind: "missing",
-      timestamp: Date.now()
-    });
-    stopFileWatcher(webContentsId);
-  });
-}
-
-function restartFileWatcherHandle(webContentsId, state) {
-  try {
-    state.watcher?.close();
-    attachFileWatcherHandle(webContentsId, state);
-  } catch {
-    // The next file operation or watcher error will surface if the path is no longer watchable.
-  }
-}
-
-async function startFileWatcher(webContentsId, filePath) {
-  const resolvedFilePath = path.resolve(filePath);
-  const lastSignature = await readFileSignature(resolvedFilePath);
-
-  stopFileWatcher(webContentsId);
-
-  const state = {
-    filePath: resolvedFilePath,
-    lastSignature,
-    suppressUntil: 0,
-    timeout: null,
-    watcher: null
-  };
-
-  fileWatchers.set(webContentsId, state);
-  try {
-    attachFileWatcherHandle(webContentsId, state);
-  } catch (error) {
-    fileWatchers.delete(webContentsId);
-    throw error;
-  }
-  return { filePath: resolvedFilePath };
 }
 
 function getCloseState(window) {
@@ -3565,6 +3435,8 @@ function createWindow(options = {}) {
   });
 
   const webContentsId = window.webContents.id;
+  const rendererWebContents = window.webContents;
+  trustedRenderers.set(rendererWebContents, mainRendererUrl);
 
   closeStates.set(window, { allowed: false, pending: false });
 
@@ -3599,7 +3471,10 @@ function createWindow(options = {}) {
   });
 
   window.on("closed", () => {
-    stopFileWatcher(webContentsId);
+    folderBrowser.close(webContentsId);
+    releaseStagedDiagramAssets(webContentsId);
+    trustedRenderers.delete(rendererWebContents);
+    documentWatcher.stop(webContentsId);
     void releaseOpenCodeSessionsForSender(webContentsId);
     pendingInitialFiles.delete(webContentsId);
     closeStates.delete(window);
@@ -3644,29 +3519,11 @@ function createWindow(options = {}) {
     return { action: "deny" };
   });
 
-  // Never let an external link navigate the app window away from its own document;
-  // route external web links to the default browser instead.
+  // The main bridge belongs only to the editor document, including its heading anchors.
   window.webContents.on("will-navigate", (event, url) => {
-    let target;
-    try {
-      target = new URL(url);
-    } catch {
-      return;
-    }
-
-    if (target.protocol !== "http:" && target.protocol !== "https:") {
-      return;
-    }
-
-    let current = null;
-    try {
-      current = new URL(window.webContents.getURL());
-    } catch {
-      current = null;
-    }
-
-    if (!current || target.host !== current.host) {
-      event.preventDefault();
+    if (sameRendererUrl(url, mainRendererUrl)) return;
+    event.preventDefault();
+    if (/^(https?|mailto):/i.test(url)) {
       void shell.openExternal(url);
     }
   });
@@ -3730,6 +3587,8 @@ function runEditCommand(window, command) {
 }
 
 const menuState = {
+  assetsVisible: false,
+  documentKind: "markdown",
   editorZoomPercent: 100,
   showInvisibleCharacters: false,
   spellCheckEnabled: true,
@@ -3911,6 +3770,15 @@ function buildMenu() {
           label: "Open",
           accelerator: "CmdOrCtrl+O",
           click: () => sendMenuAction("open")
+        },
+        {
+          label: "Open Folder…",
+          accelerator: "CmdOrCtrl+Alt+O",
+          click: () => sendMenuAction("openFolder")
+        },
+        {
+          label: "Close Folder",
+          click: () => sendMenuAction("closeFolder")
         },
         {
           label: "Open Recent",
@@ -4120,6 +3988,13 @@ function buildMenu() {
           click: () => sendMenuAction("toggleOutline")
         },
         {
+          label: "Show Images & Assets",
+          type: "checkbox",
+          checked: menuState.assetsVisible,
+          enabled: menuState.documentKind !== "text",
+          click: () => sendMenuAction("toggleAssets")
+        },
+        {
           label: "Show AI Chat",
           type: "checkbox",
           accelerator: "CmdOrCtrl+Shift+A",
@@ -4176,12 +4051,21 @@ function buildMenu() {
     }
   ];
 
+  if (menuState.documentKind === "text") {
+    for (const menu of template) {
+      if (menu.label === "AI") menu.enabled = false;
+      for (const item of Array.isArray(menu.submenu) ? menu.submenu : []) {
+        if (/^(Export|Print Preview|Publish|Copy as HTML|Edit Frontmatter|Insert Table of Contents)/.test(item.label ?? "")) item.enabled = false;
+      }
+    }
+  }
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 const markdownFilters = [
   { name: "Markdown", extensions: ["md", "markdown", "mdx"] },
   { name: "Text", extensions: ["txt"] },
+  { name: "Code and Configuration", extensions: ["js", "jsx", "ts", "tsx", "py", "json", "yaml", "yml", "toml", "xml", "html", "css", "sql", "sh", "ps1", "go", "rs", "java", "c", "cpp", "cs", "svg"] },
   { name: "All Files", extensions: ["*"] }
 ];
 
@@ -4305,9 +4189,9 @@ async function selectImageFile() {
   return { canceled: false, filePath: path.resolve(result.filePaths[0]) };
 }
 
-ipcMain.handle("file:open", async () => {
+rendererIpc.handle("file:open", async () => {
   const result = await dialog.showOpenDialog({
-    title: "Open Markdown",
+    title: "Open Document",
     properties: ["openFile"],
     filters: markdownFilters
   });
@@ -4320,7 +4204,7 @@ ipcMain.handle("file:open", async () => {
   return readMarkdownFile(filePath);
 });
 
-ipcMain.handle("file:get-initial-open-file", async (event) => {
+rendererIpc.handle("file:get-initial-open-file", async (event) => {
   const pendingFile = pendingInitialFiles.get(event.sender.id);
   if (!pendingFile) {
     return { canceled: true };
@@ -4350,31 +4234,31 @@ ipcMain.handle("file:get-initial-open-file", async (event) => {
   }
 });
 
-ipcMain.handle("file:read", async (event, filePath) => {
+rendererIpc.handle("file:read", async (event, filePath) => {
   if (typeof filePath !== "string" || filePath.length === 0) {
     throw new Error("A file path is required to read the document.");
   }
 
   const result = await readMarkdownFile(filePath);
-  await refreshWatchedFileSignature(event.sender.id, result.filePath);
+  documentWatcher.acknowledgeRead(event.sender.id, result.filePath, result.markdown);
   return result;
 });
 
-ipcMain.handle("recent:list", () => recentFiles.slice());
+rendererIpc.handle("recent:list", () => recentFiles.slice());
 
-ipcMain.handle("recent:clear", () => {
+rendererIpc.handle("recent:clear", () => {
   clearRecentFiles();
   return recentFiles.slice();
 });
 
-ipcMain.handle("recent:open", async (event, filePath) => {
+rendererIpc.handle("recent:open", async (event, filePath) => {
   if (typeof filePath !== "string" || filePath.length === 0) {
     return { canceled: true };
   }
 
   try {
     const result = await readMarkdownFile(filePath);
-    await refreshWatchedFileSignature(event.sender.id, result.filePath);
+    documentWatcher.acknowledgeRead(event.sender.id, result.filePath, result.markdown);
     return result;
   } catch (error) {
     // The recent entry points at a file that can no longer be read; drop it and tell the user.
@@ -4398,60 +4282,67 @@ ipcMain.handle("recent:open", async (event, filePath) => {
   }
 });
 
-ipcMain.handle("file:watch", async (event, filePath) => {
+rendererIpc.handle("file:watch", async (event, filePath) => {
   if (typeof filePath !== "string" || filePath.length === 0) {
     throw new Error("A file path is required to watch the document.");
   }
 
-  return startFileWatcher(event.sender.id, filePath);
+  return documentWatcher.start(event.sender.id, filePath);
 });
 
-ipcMain.handle("file:unwatch", (event) => {
-  stopFileWatcher(event.sender.id);
+rendererIpc.handle("file:unwatch", (event) => {
+  documentWatcher.stop(event.sender.id);
 });
 
-ipcMain.handle("file:save", async (event, payload) => {
-  const { filePath, markdown } = payload ?? {};
+rendererIpc.handle("file:save", async (event, payload) => {
+  const { filePath, markdown, diagramNames } = payload ?? {};
   if (typeof filePath !== "string" || filePath.length === 0) {
     throw new Error("A file path is required to save the document.");
   }
 
-  markInternalWrite(event.sender.id, filePath);
-  await fs.writeFile(filePath, markdown ?? "", "utf8");
-  await refreshWatchedFileSignature(event.sender.id, filePath);
+  let finishWatchingSave;
+  let finishFolderSave;
+  let committed = false;
+  try {
+    finishFolderSave = folderBrowser.beginSave(event.sender.id, filePath);
+    finishWatchingSave = await documentWatcher.beginSave(event.sender.id, filePath, markdown);
+    await saveDocumentFile(filePath, markdown, diagramNames);
+    committed = true;
+  } finally {
+    finishFolderSave?.();
+    finishWatchingSave?.(committed);
+    releaseStagedDiagramAssets(event.sender.id);
+  }
+  addRecentFile(filePath);
   return { filePath };
 });
 
-ipcMain.handle("file:saveAs", async (event, payload) => {
-  const { currentPath, markdown } = payload ?? {};
+rendererIpc.handle("file:choose-save-path", async (_event, payload) => {
+  const { currentPath, kind } = payload ?? {};
   const result = await dialog.showSaveDialog({
-    title: "Save Markdown",
-    defaultPath: currentPath || "untitled.md",
-    filters: markdownFilters
+    title: kind === "text" ? "Save File" : "Save Markdown",
+    defaultPath: currentPath || (kind === "text" ? "untitled.txt" : "untitled.md"),
+    filters: kind === "text" ? [{ name: "All Files", extensions: ["*"] }, ...markdownFilters.slice(1, -1)] : markdownFilters
   });
 
   if (result.canceled || !result.filePath) {
     return { canceled: true };
   }
 
-  markInternalWrite(event.sender.id, result.filePath);
-  await fs.writeFile(result.filePath, markdown ?? "", "utf8");
-  await refreshWatchedFileSignature(event.sender.id, result.filePath);
-  addRecentFile(result.filePath);
   return { canceled: false, filePath: result.filePath };
 });
 
-ipcMain.handle("file:export-html", async (event, payload) => {
+rendererIpc.handle("file:export-html", async (event, payload) => {
   debugLog("Export HTML IPC handler started");
   return exportHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
-ipcMain.handle("file:export-word", async (event, payload) => {
+rendererIpc.handle("file:export-word", async (event, payload) => {
   debugLog("Export Word IPC handler started");
   return exportWordFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
-ipcMain.handle("file:export-pdf", async (event, payload) => {
+rendererIpc.handle("file:export-pdf", async (event, payload) => {
   debugLog("Export PDF IPC handler started");
   const window = BrowserWindow.fromWebContents(event.sender);
   const { currentPath } = payload ?? {};
@@ -4488,7 +4379,7 @@ ipcMain.handle("file:export-pdf", async (event, payload) => {
   }
 });
 
-ipcMain.handle("file:preview-pdf", async (_event, payload) => {
+rendererIpc.handle("file:preview-pdf", async (_event, payload) => {
   debugLog("Print Preview IPC handler started");
 
   try {
@@ -4501,7 +4392,7 @@ ipcMain.handle("file:preview-pdf", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("file:save-pdf-preview", async (event, payload) => {
+rendererIpc.handle("file:save-pdf-preview", async (event, payload) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const { currentPath, data } = payload ?? {};
 
@@ -4530,7 +4421,7 @@ ipcMain.handle("file:save-pdf-preview", async (event, payload) => {
   }
 });
 
-ipcMain.handle("sftp:publish", async (event, payload) => {
+rendererIpc.handle("sftp:publish", async (event, payload) => {
   const window = BrowserWindow.fromWebContents(event.sender);
 
   try {
@@ -4547,7 +4438,7 @@ ipcMain.handle("sftp:publish", async (event, payload) => {
   }
 });
 
-ipcMain.handle("quickconnect:publish", async (event, payload) => {
+rendererIpc.handle("quickconnect:publish", async (event, payload) => {
   const window = BrowserWindow.fromWebContents(event.sender);
 
   try {
@@ -4590,7 +4481,7 @@ async function writeQuickConnectTokenStore(store) {
   await fs.writeFile(filePath, JSON.stringify(store), "utf8");
 }
 
-ipcMain.handle("quickconnect:get-token", async (_event, profileName) => {
+rendererIpc.handle("quickconnect:get-token", async (_event, profileName) => {
   if (!safeStorage.isEncryptionAvailable()) {
     return "";
   }
@@ -4609,7 +4500,7 @@ ipcMain.handle("quickconnect:get-token", async (_event, profileName) => {
   }
 });
 
-ipcMain.handle("quickconnect:set-token", async (_event, payload) => {
+rendererIpc.handle("quickconnect:set-token", async (_event, payload) => {
   const profileKey = quickConnectProfileKey(payload?.profileName);
   const token = typeof payload?.token === "string" ? payload.token : "";
   const encryptionAvailable = safeStorage.isEncryptionAvailable();
@@ -4661,7 +4552,7 @@ async function writeMcpBearerTokenStore(store) {
   await fs.writeFile(filePath, JSON.stringify(store), "utf8");
 }
 
-ipcMain.handle("mcp:get-bearer-token", async (_event, profileName) => {
+rendererIpc.handle("mcp:get-bearer-token", async (_event, profileName) => {
   if (!safeStorage.isEncryptionAvailable()) {
     return "";
   }
@@ -4680,7 +4571,7 @@ ipcMain.handle("mcp:get-bearer-token", async (_event, profileName) => {
   }
 });
 
-ipcMain.handle("mcp:set-bearer-token", async (_event, payload) => {
+rendererIpc.handle("mcp:set-bearer-token", async (_event, payload) => {
   const profileKey = mcpBearerProfileKey(payload?.profileName);
   const token = typeof payload?.token === "string" ? payload.token : "";
   const encryptionAvailable = safeStorage.isEncryptionAvailable();
@@ -4776,13 +4667,13 @@ async function readAiProviderKey(profileName, providerId) {
   }
 }
 
-ipcMain.handle("ai:get-key", async (_event, payload) => {
+rendererIpc.handle("ai:get-key", async (_event, payload) => {
   const profileName = payload && typeof payload === "object" ? payload.profileName : undefined;
   const providerId = payload && typeof payload === "object" ? payload.providerId : undefined;
   return readAiProviderKey(profileName, providerId);
 });
 
-ipcMain.handle("ai:set-key", async (_event, payload) => {
+rendererIpc.handle("ai:set-key", async (_event, payload) => {
   const entryKey = aiKeyEntryKey(payload?.profileName, payload?.providerId);
   const key = typeof payload?.key === "string" ? payload.key : "";
   const encryptionAvailable = safeStorage.isEncryptionAvailable();
@@ -4855,7 +4746,7 @@ async function discoverOpenCode(profileName, config, signal) {
   return opencodeProvider.parseDiscovery({ health, providers, configProviders, agents });
 }
 
-ipcMain.handle("ai:discover-opencode", async (_event, payload) => {
+rendererIpc.handle("ai:discover-opencode", async (_event, payload) => {
   const profileName = payload?.profileName;
   const config = payload?.config && typeof payload.config === "object" ? payload.config : {};
   const controller = new AbortController();
@@ -5077,13 +4968,13 @@ async function runOpenCodePrompt({ sender, record, messages, system, signal, onE
   return result;
 }
 
-ipcMain.handle("ai:release-conversation", async (event, payload) => {
+rendererIpc.handle("ai:release-conversation", async (event, payload) => {
   const conversationId = payload?.conversationId;
   if (typeof conversationId !== "string" || !conversationId) return;
   await releaseOpenCodeConversation(event.sender.id, conversationId);
 });
 
-ipcMain.handle("ai:load-chat-history", async (_event, payload) => {
+rendererIpc.handle("ai:load-chat-history", async (_event, payload) => {
   const filePath = aiChatHistory.getAiChatHistoryFilePath(
     app.getPath("userData"),
     payload?.profileName,
@@ -5101,7 +4992,7 @@ ipcMain.handle("ai:load-chat-history", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("ai:save-chat-history", async (_event, payload) => {
+rendererIpc.handle("ai:save-chat-history", async (_event, payload) => {
   const filePath = aiChatHistory.getAiChatHistoryFilePath(
     app.getPath("userData"),
     payload?.profileName,
@@ -5123,7 +5014,7 @@ ipcMain.handle("ai:save-chat-history", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("ai:delete-chat-history", async (_event, payload) => {
+rendererIpc.handle("ai:delete-chat-history", async (_event, payload) => {
   const filePath = aiChatHistory.getAiChatHistoryFilePath(
     app.getPath("userData"),
     payload?.profileName,
@@ -5141,7 +5032,7 @@ ipcMain.handle("ai:delete-chat-history", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("ai:delete-all-chat-history", async (_event, payload) => {
+rendererIpc.handle("ai:delete-all-chat-history", async (_event, payload) => {
   const directory = aiChatHistory.getAiChatHistoryDirectory(app.getPath("userData"), payload?.profileName);
   try {
     await fs.rm(directory, { recursive: true, force: true });
@@ -5155,7 +5046,7 @@ ipcMain.handle("ai:delete-all-chat-history", async (_event, payload) => {
 // (Node fetch) to avoid CORS and keep API keys out of the renderer; the request shape and response
 // parsing are the pure adapter's job (`aiProviders.cjs`), so this handler is thin glue. Used by the
 // setup dialog's "Test connection" now, and reusable by future in-app AI features.
-ipcMain.handle("ai:chat", async (event, payload) => {
+rendererIpc.handle("ai:chat", async (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return { ok: false, error: "Invalid AI request." };
   }
@@ -5273,11 +5164,11 @@ ipcMain.handle("ai:chat", async (event, payload) => {
 // In-app AI chat — tool surface. Expose the MCP tool catalog and a direct tool-call path so the
 // chat panel offers exactly the same tools (and the same write-confirmation gate) as the network
 // MCP server, without requiring that server to be enabled.
-ipcMain.handle("mcp:list-tools", () => {
+rendererIpc.handle("mcp:list-tools", () => {
   return mcpServer.listTools();
 });
 
-ipcMain.handle("mcp:call-tool", async (_event, payload) => {
+rendererIpc.handle("mcp:call-tool", async (_event, payload) => {
   const name = payload && typeof payload === "object" ? payload.name : undefined;
   const args = payload && typeof payload === "object" ? payload.args : undefined;
   if (typeof name !== "string" || !name) {
@@ -5300,6 +5191,7 @@ ipcMain.handle("mcp:call-tool", async (_event, payload) => {
 const AI_CHAT_STREAM_TIMEOUT_MS = 120000;
 const aiChatStreamControllers = new Map();
 const aiChatStreamOpenCodeSessions = new Map();
+const aiChatStreamOwners = new Map();
 
 function sendAiChatStreamEvent(sender, requestId, event) {
   if (!sender || sender.isDestroyed()) {
@@ -5544,7 +5436,7 @@ async function runAiChatStream(sender, requestId, payload) {
   }
 }
 
-ipcMain.on("ai:chat-stream", (event, payload) => {
+rendererIpc.on("ai:chat-stream", (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -5552,14 +5444,19 @@ ipcMain.on("ai:chat-stream", (event, payload) => {
   if (typeof requestId !== "string" || !requestId) {
     return;
   }
-  void runAiChatStream(event.sender, requestId, chatPayload);
+  if (aiChatStreamOwners.has(requestId)) return;
+  aiChatStreamOwners.set(requestId, event.sender.id);
+  void runAiChatStream(event.sender, requestId, chatPayload).finally(() => {
+    aiChatStreamOwners.delete(requestId);
+  });
 });
 
-ipcMain.on("ai:chat-abort", (_event, payload) => {
+rendererIpc.on("ai:chat-abort", (event, payload) => {
   const requestId = payload && typeof payload === "object" ? payload.requestId : undefined;
   if (typeof requestId !== "string") {
     return;
   }
+  if (aiChatStreamOwners.get(requestId) !== event.sender.id) return;
   const controller = aiChatStreamControllers.get(requestId);
   if (controller) {
     controller.abort();
@@ -5579,7 +5476,7 @@ ipcMain.on("ai:chat-abort", (_event, payload) => {
   }
 });
 
-ipcMain.on("sftp:host-key-decision", (_event, payload) => {
+rendererIpc.on("sftp:host-key-decision", (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -5590,7 +5487,7 @@ ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   }
 
   const pending = sftpPendingHostKeys.get(requestId);
-  if (!pending) {
+  if (!isPendingRequestOwner(event, pending)) {
     debugLog(`[publish] host-key decision for unknown requestId=${requestId} (ignored)`);
     return;
   }
@@ -5600,7 +5497,7 @@ ipcMain.on("sftp:host-key-decision", (_event, payload) => {
   pending.resolve(decision === "accept");
 });
 
-ipcMain.handle("dialog:select-private-key", async (event) => {
+rendererIpc.handle("dialog:select-private-key", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const options = {
     title: "Select Private Key",
@@ -5617,7 +5514,9 @@ ipcMain.handle("dialog:select-private-key", async (event) => {
   return { canceled: false, filePath: path.resolve(result.filePaths[0]) };
 });
 
-ipcMain.handle("image:select-local", async (_event, payload) => {
+registerAssetHandlers({ rendererIpc, dialog, BrowserWindow });
+
+rendererIpc.handle("image:select-local", async (_event, payload) => {
   const result = await selectImageFile();
   if (result.canceled) {
     return result;
@@ -5633,7 +5532,7 @@ ipcMain.handle("image:select-local", async (_event, payload) => {
   };
 });
 
-ipcMain.handle("image:select-base64", async () => {
+rendererIpc.handle("image:select-base64", async () => {
   const result = await selectImageFile();
   if (result.canceled) {
     return result;
@@ -5650,7 +5549,7 @@ ipcMain.handle("image:select-base64", async () => {
   };
 });
 
-ipcMain.handle("document-import:select", async (event) => {
+rendererIpc.handle("document-import:select", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const options = {
     title: "Import PDF or Images",
@@ -5677,7 +5576,7 @@ ipcMain.handle("document-import:select", async (event) => {
   }
 });
 
-ipcMain.handle("image:resolve-preview", (_event, payload) => {
+rendererIpc.handle("image:resolve-preview", (_event, payload) => {
   const { documentPath, imageSource } = payload ?? {};
   return resolveImagePreviewSource(documentPath, imageSource);
 });
@@ -5688,7 +5587,7 @@ ipcMain.handle("image:resolve-preview", (_event, payload) => {
 // work; all diagram detection/encoding stays in the renderer's tested src/lib helpers. A sibling `.svg`
 // write does not trip the per-file `.md` watcher, so no internal-write suppression is needed here.
 
-ipcMain.handle("diagram:read-svg", async (_event, payload) => {
+rendererIpc.handle("diagram:read-svg", async (_event, payload) => {
   const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
   const src = typeof payload?.src === "string" ? payload.src : "";
   const filePath = resolveLocalImageFilePath(documentPath, src);
@@ -5702,7 +5601,7 @@ ipcMain.handle("diagram:read-svg", async (_event, payload) => {
   }
 });
 
-ipcMain.handle("diagram:write-svg", async (_event, payload) => {
+rendererIpc.handle("diagram:write-svg", async (event, payload) => {
   const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
   const svgText = typeof payload?.svgText === "string" ? payload.svgText : "";
   const kind = payload?.kind === "isoflow" ? "isoflow" : "drawio";
@@ -5714,83 +5613,58 @@ ipcMain.handle("diagram:write-svg", async (_event, payload) => {
   const hash = crypto.createHash("sha256").update(svgText, "utf8").digest("hex").slice(0, 10);
   const name = `${base}.${kind}.${hash}.svg`;
   const absPath = path.join(path.dirname(documentPath), name);
+  let release;
   try {
-    await fs.writeFile(absPath, svgText, "utf8");
+    // Pin even reused assets before writing: another window may currently be replacing their
+    // referencing document. Keep the pin through this window's document commit (or close).
+    release = await stageDiagramAsset(absPath, event.sender.id);
+    await writeFileAtomically(absPath, svgText);
   } catch (error) {
+    release?.();
     return { error: `Failed to write diagram file: ${error?.message ?? error}` };
   }
   return { src: imagePaths.toMarkdownImageSource(documentPath, absPath), name };
 });
 
-ipcMain.handle("diagram:cleanup-assets", async (_event, payload) => {
-  const documentPath = typeof payload?.documentPath === "string" ? payload.documentPath : "";
-  const keep = new Set(Array.isArray(payload?.keepNames) ? payload.keepNames : []);
-  if (!documentPath) {
-    return { removed: 0 };
-  }
-  const base = path.basename(documentPath).replace(/\.[^.]+$/, "");
-  const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Only ever delete files this feature generated for THIS document — never arbitrary user `.svg`.
-  const ownPattern = new RegExp(`^${escapedBase}\\.(?:drawio|isoflow)\\.[0-9a-f]{8,12}\\.svg$`, "i");
-  let removed = 0;
-  let entries;
-  try {
-    entries = await fs.readdir(path.dirname(documentPath));
-  } catch {
-    return { removed: 0 };
-  }
-  for (const entry of entries) {
-    if (ownPattern.test(entry) && !keep.has(entry)) {
-      try {
-        await fs.unlink(path.join(path.dirname(documentPath), entry));
-        removed += 1;
-      } catch {
-        // best-effort cleanup; ignore files we cannot remove
-      }
-    }
-  }
-  return { removed };
-});
-
-ipcMain.handle("drawio:edit", (event, payload) => {
+rendererIpc.handle("drawio:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const initialXml = typeof payload?.xml === "string" ? payload.xml : "";
   return openDrawioEditor(parentWindow, initialXml);
 });
 
-ipcMain.handle("isoflow:edit", (event, payload) => {
+rendererIpc.handle("isoflow:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const initialModel = payload && typeof payload === "object" ? payload.model ?? null : null;
   return openIsoflowEditor(parentWindow, initialModel);
 });
 
-ipcMain.handle("openapi:edit", (event, payload) => {
+rendererIpc.handle("openapi:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const initialYaml = typeof payload?.yaml === "string" ? payload.yaml : "";
   const theme = payload?.theme === "dark" ? "dark" : "light";
   return openOpenApiEditor(parentWindow, initialYaml, theme);
 });
 
-ipcMain.handle("sqlschema:edit", (event, payload) => {
+rendererIpc.handle("sqlschema:edit", (event, payload) => {
   const parentWindow = BrowserWindow.fromWebContents(event.sender);
   const schema = typeof payload?.schema === "string" ? payload.schema : "";
   const theme = payload?.theme === "dark" ? "dark" : "light";
   return openSqlSchemaEditor(parentWindow, schema, theme);
 });
 
-ipcMain.handle("edit:command", (event, command) => {
+rendererIpc.handle("edit:command", (event, command) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   runEditCommand(window, command);
 });
 
-ipcMain.handle("window:minimize", (event) => {
+rendererIpc.handle("window:minimize", (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (window && !window.isDestroyed()) {
     window.minimize();
   }
 });
 
-ipcMain.handle("window:toggle-maximize", (event) => {
+rendererIpc.handle("window:toggle-maximize", (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed()) {
     return;
@@ -5802,27 +5676,27 @@ ipcMain.handle("window:toggle-maximize", (event) => {
   }
 });
 
-ipcMain.handle("window:close", (event) => {
+rendererIpc.handle("window:close", (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (window && !window.isDestroyed()) {
     window.close();
   }
 });
 
-ipcMain.handle("window:is-maximized", (event) => {
+rendererIpc.handle("window:is-maximized", (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   return Boolean(window && !window.isDestroyed() && window.isMaximized());
 });
 
-ipcMain.handle("window:new", () => {
+rendererIpc.handle("window:new", () => {
   createWindow();
 });
 
-ipcMain.handle("app:quit", () => {
+rendererIpc.handle("app:quit", () => {
   requestAppQuit();
 });
 
-ipcMain.handle("clipboard:write-html", (_event, payload) => {
+rendererIpc.handle("clipboard:write-html", (_event, payload) => {
   const html = typeof payload?.html === "string" ? payload.html : "";
   const text = typeof payload?.text === "string" ? payload.text : "";
 
@@ -5834,12 +5708,12 @@ ipcMain.handle("clipboard:write-html", (_event, payload) => {
   return { written: true };
 });
 
-ipcMain.handle("clipboard:copy-html-document", async (event, payload) => {
+rendererIpc.handle("clipboard:copy-html-document", async (event, payload) => {
   debugLog("Copy HTML IPC handler started");
   return copyHtmlFromPayload(BrowserWindow.fromWebContents(event.sender), payload);
 });
 
-ipcMain.handle("image:to-data-url", async (_event, source) => {
+rendererIpc.handle("image:to-data-url", async (_event, source) => {
   if (typeof source !== "string" || source.length === 0) {
     return null;
   }
@@ -5872,7 +5746,7 @@ ipcMain.handle("image:to-data-url", async (_event, source) => {
   return null;
 });
 
-ipcMain.handle("app:get-profile-name", () => {
+rendererIpc.handle("app:get-profile-name", () => {
   try {
     return os.userInfo().username || "default";
   } catch {
@@ -5880,9 +5754,9 @@ ipcMain.handle("app:get-profile-name", () => {
   }
 });
 
-ipcMain.handle("app:get-version", () => app.getVersion());
+rendererIpc.handle("app:get-version", () => app.getVersion());
 
-ipcMain.handle("dialog:confirmSaveChanges", async (event) => {
+rendererIpc.handle("dialog:confirmSaveChanges", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
   const options = {
     type: "warning",
@@ -5909,7 +5783,7 @@ ipcMain.handle("dialog:confirmSaveChanges", async (event) => {
   return "cancel";
 });
 
-ipcMain.handle("app:resolve-close-request", (event, shouldClose) => {
+rendererIpc.handle("app:resolve-close-request", (event, shouldClose) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed()) {
     return;
@@ -5926,7 +5800,7 @@ ipcMain.handle("app:resolve-close-request", (event, shouldClose) => {
   }
 });
 
-ipcMain.handle("mcp:configure", async (_event, config) => {
+rendererIpc.handle("mcp:configure", async (_event, config) => {
   if (!config || typeof config !== "object") {
     return { ok: false, error: "invalid-config" };
   }
@@ -5981,7 +5855,7 @@ ipcMain.handle("mcp:configure", async (_event, config) => {
   };
 });
 
-ipcMain.handle("mcp:test-connection", async () => {
+rendererIpc.handle("mcp:test-connection", async () => {
   const tunnelState = ngrokTunnel.getTunnelState();
   const ngrokUrl = tunnelState.connected ? tunnelState.url : null;
   return mcpServer.testConnection({ ngrokUrl });
@@ -6007,12 +5881,12 @@ function currentNgrokStatus(enabled) {
   };
 }
 
-ipcMain.handle("mcp:stop-ngrok", async () => {
+rendererIpc.handle("mcp:stop-ngrok", async () => {
   await ngrokTunnel.stopTunnel();
   return currentNgrokStatus(false);
 });
 
-ipcMain.handle("mcp:restart-ngrok", async (_event, config) => {
+rendererIpc.handle("mcp:restart-ngrok", async (_event, config) => {
   // Stop first so ensureTunnel spawns a fresh agent instead of treating the request as a no-op.
   await ngrokTunnel.stopTunnel();
 
@@ -6026,7 +5900,7 @@ ipcMain.handle("mcp:restart-ngrok", async (_event, config) => {
   return currentNgrokStatus(ngrokEnabled);
 });
 
-ipcMain.on("mcp:register-window", (event, payload) => {
+rendererIpc.on("mcp:register-window", (event, payload) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed()) {
     return;
@@ -6057,7 +5931,7 @@ ipcMain.on("mcp:register-window", (event, payload) => {
   }
 });
 
-ipcMain.on("mcp:update-window-state", (event, payload) => {
+rendererIpc.on("mcp:update-window-state", (event, payload) => {
   const record = mcpWindowRecords.get(event.sender.id);
   if (!record || !payload || typeof payload !== "object") {
     return;
@@ -6067,7 +5941,7 @@ ipcMain.on("mcp:update-window-state", (event, payload) => {
     record.title = payload.title;
   }
   if (typeof payload.filePath === "string" || payload.filePath === null) {
-    record.filePath = payload.filePath;
+    if (folderBrowser.acceptState(event.sender.id, payload.filePath)) record.filePath = payload.filePath;
   }
   if (typeof payload.dirty === "boolean") {
     record.dirty = payload.dirty;
@@ -6080,7 +5954,7 @@ ipcMain.on("mcp:update-window-state", (event, payload) => {
   }
 });
 
-ipcMain.on("mcp:unregister-window", (event) => {
+rendererIpc.on("mcp:unregister-window", (event) => {
   const record = mcpWindowRecords.get(event.sender.id);
   if (!record) {
     return;
@@ -6102,7 +5976,7 @@ ipcMain.on("mcp:unregister-window", (event) => {
   }
 });
 
-ipcMain.on("mcp:write-decision", (_event, payload) => {
+rendererIpc.on("mcp:write-decision", (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -6113,7 +5987,7 @@ ipcMain.on("mcp:write-decision", (_event, payload) => {
   }
 
   const pending = mcpPendingWrites.get(requestId);
-  if (!pending) {
+  if (!isPendingRequestOwner(event, pending)) {
     return;
   }
 
@@ -6125,7 +5999,7 @@ ipcMain.on("mcp:write-decision", (_event, payload) => {
   }
 });
 
-ipcMain.on("mcp:selection-result", (_event, payload) => {
+rendererIpc.on("mcp:selection-result", (event, payload) => {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -6135,15 +6009,20 @@ ipcMain.on("mcp:selection-result", (_event, payload) => {
     return;
   }
 
+  if (!isPendingRequestOwner(event, mcpPendingSelections.get(requestId))) return;
   finishMcpSelection(requestId, normalizeSelectionResult(selection));
 });
 
-ipcMain.on("menu:set-state", (_event, state) => {
+rendererIpc.on("menu:set-state", (_event, state) => {
   if (!state || typeof state !== "object") {
     return;
   }
 
   let changed = false;
+  if (["markdown", "text"].includes(state.documentKind) && state.documentKind !== menuState.documentKind) {
+    menuState.documentKind = state.documentKind;
+    changed = true;
+  }
   if (Number.isFinite(state.editorZoomPercent)) {
     const nextEditorZoomPercent = Math.round(state.editorZoomPercent);
     if (nextEditorZoomPercent !== menuState.editorZoomPercent) {
@@ -6161,6 +6040,11 @@ ipcMain.on("menu:set-state", (_event, state) => {
   if (typeof state.spellCheckEnabled === "boolean" &&
       state.spellCheckEnabled !== menuState.spellCheckEnabled) {
     menuState.spellCheckEnabled = state.spellCheckEnabled;
+    changed = true;
+  }
+
+  if (typeof state.assetsVisible === "boolean" && state.assetsVisible !== menuState.assetsVisible) {
+    menuState.assetsVisible = state.assetsVisible;
     changed = true;
   }
 

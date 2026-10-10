@@ -25,4 +25,10 @@ describe("isOpenableDocumentFilename", () => {
     expect(isOpenableDocumentFilename("md")).toBe(false);
     expect(isOpenableDocumentFilename("my.md.backup")).toBe(false);
   });
+
+  it("recognizes code, configuration, and common extensionless reference files", () => {
+    for (const name of ["script.ts", "schema.sql", "system.yaml", "settings.json", "Dockerfile", ".gitignore", ".env.local", "diagram.puml", "C:/repo/style.css"]) {
+      expect(isOpenableDocumentFilename(name)).toBe(true);
+    }
+  });
 });

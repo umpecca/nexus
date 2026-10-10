@@ -9,8 +9,8 @@ describe("print preview Electron contract", () => {
   it("routes export and preview through the shared Chromium PDF renderer", () => {
     expect(mainSource).toContain("async function renderMarkdownPdfBuffer(payload)");
     expect(mainSource.match(/renderMarkdownPdfBuffer\(payload\)/g)).toHaveLength(3);
-    expect(mainSource).toContain('ipcMain.handle("file:preview-pdf"');
-    expect(mainSource).toContain('ipcMain.handle("file:save-pdf-preview"');
+    expect(mainSource).toContain('rendererIpc.handle("file:preview-pdf"');
+    expect(mainSource).toContain('rendererIpc.handle("file:save-pdf-preview"');
   });
 
   it("exposes preview generation and snapshot saving through the preload bridge", () => {

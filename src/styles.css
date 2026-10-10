@@ -506,6 +506,118 @@ button:active {
   min-width: 0;
 }
 
+.nexus-asset-panel {
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 40vw;
+  color: var(--ink);
+  font-size: 12px;
+}
+.nexus-asset-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.nexus-asset-panel header strong, .nexus-asset-panel header div { display: flex; align-items: center; gap: 6px; }
+.nexus-asset-panel svg { width: 16px; height: 16px; }
+.nexus-asset-panel button {
+  cursor: pointer;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font: inherit;
+}
+.nexus-asset-panel button:hover:not(:disabled) { background: var(--surface-muted); }
+.nexus-asset-panel button:disabled { opacity: 0.5; cursor: default; }
+.nexus-asset-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nexus-asset-summary { padding: 12px; display: grid; gap: 5px; border-bottom: 1px solid var(--line); }
+.nexus-asset-summary span, .nexus-asset-summary p, .nexus-asset-meta, .nexus-asset-source { color: var(--muted); }
+.nexus-asset-summary p { margin: 4px 0 0; line-height: 1.5; }
+.nexus-asset-scroll { overflow: auto; flex: 1; min-height: 0; }
+.nexus-asset-scroll ul { list-style: none; padding: 0; margin: 0; }
+.nexus-asset-row { display: grid; gap: 6px; padding: 12px; border-bottom: 1px solid var(--line); }
+.nexus-asset-row strong, .nexus-asset-source { overflow-wrap: anywhere; }
+.nexus-asset-source { max-height: 54px; overflow: auto; font-size: 11px; }
+.nexus-asset-thumbnail { height: 108px; display: grid; place-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.nexus-asset-thumbnail img { height: 100%; width: 100%; min-height: 0; object-fit: contain; }
+.nexus-asset-thumbnail > svg { width: 28px; height: 28px; color: var(--muted); }
+.nexus-asset-meta { display: flex; flex-wrap: wrap; gap: 5px 12px; font-size: 11px; }
+.nexus-asset-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 3px; }
+.nexus-asset-warning, .nexus-asset-error { color: var(--ink); background: var(--paper); padding: 8px; border: 1px solid var(--line); border-radius: 5px; margin: 0; overflow-wrap: anywhere; }
+.nexus-asset-error { margin: 8px 10px; }
+.nexus-asset-empty { color: var(--muted); padding: 12px; line-height: 1.6; }
+
+.nexus-files {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.nexus-files-header {
+  align-items: center;
+  background: var(--statusbar-grad);
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px 4px 12px;
+}
+.nexus-files-toolbar { display: flex; gap: 2px; padding: 4px 8px; }
+.nexus-files-toolbar svg, .nexus-files-header svg { width: 16px; height: 16px; }
+.nexus-files-filter { align-items: center; display: flex; gap: 6px; font-size: 12px; padding: 0 12px 8px; }
+.nexus-files-tree { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.nexus-file-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 8px;
+  text-align: left;
+  width: 100%;
+}
+.nexus-file-row svg, .nexus-file-indent { flex: 0 0 15px; width: 15px; height: 15px; }
+.nexus-file-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nexus-file-row:hover, .nexus-file-row[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.nexus-file-row.is-active { color: var(--accent); font-weight: 600; }
+.nexus-file-row.is-cut { opacity: 0.5; }
+.nexus-file-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nexus-files-tree > p, .nexus-files-error { font-size: 12px; overflow-wrap: anywhere; padding: 8px 12px; }
+.nexus-files-footer { border-top: 1px solid var(--line); font-size: 11px; overflow: hidden; padding: 8px 12px; text-overflow: ellipsis; white-space: nowrap; }
+.nexus-files-resizer { bottom: 0; cursor: col-resize; position: absolute; right: -3px; top: 0; touch-action: none; width: 6px; z-index: 3; }
+.nexus-files-resizer:focus-visible, .nexus-files-resizer:hover { background: var(--accent); }
+.nexus-file-form { display: grid; gap: 12px; }
+.nexus-file-form label { display: grid; font-size: 13px; gap: 6px; }
+.nexus-file-form input { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: inherit; padding: 8px; width: 100%; }
+.nexus-file-form input:focus-visible { outline: 2px solid var(--accent); }
+.nexus-file-form small { font-size: 12px; overflow-wrap: anywhere; }
+.nexus-file-form p[role="alert"], .nexus-files-error { color: var(--danger, #b42318); }
+
+.editor-surface.nexus-code-surface { background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+.nexus-code-file { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.nexus-code-file-toolbar { align-items: center; background: var(--toolbar); border-bottom: 1px solid var(--line); display: flex; flex: 0 0 auto; flex-wrap: wrap; font-size: 12px; gap: 12px; padding: 8px 12px; }
+.nexus-code-file-toolbar label { align-items: center; display: flex; gap: 6px; }
+.nexus-code-file-toolbar select { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; color: inherit; max-width: 220px; padding: 4px; }
+.nexus-code-file-content { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.nexus-code-file-content > .cm-editor { height: 100%; }
+.nexus-code-file-content .cm-scroller { font-family: "JetBrains Mono", Consolas, monospace; font-size: inherit; overflow: auto; }
+.nexus-code-file > .nexus-change-review { flex: 1; min-height: 0; }
+
 .nexus-outline {
   /* Indent geometry, shared by the entries' padding and their indent guides so the two can't
      drift apart. Each level costs one step; the guides are drawn from the same numbers. */
@@ -2518,45 +2630,111 @@ body.nexus-resizing-col * {
   }
 }
 
-/* AI selection-edit preview dialog: original above proposed, both in scrollable mono panes. */
-.nexus-ai-preview-content {
-  max-width: 640px;
+/* Shared diff review in the editor and AI/MCP confirmation dialogs. */
+.nexus-ai-preview-content,
+.nexus-mcp-confirm-dialog {
+  width: min(68rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  height: min(80vh, 48rem);
+  max-height: 90vh;
 }
 
-.nexus-ai-preview-body {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.nexus-ai-preview-pane {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.nexus-ai-preview-pane-label {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.nexus-ai-preview-text {
-  background: var(--surface);
-  border: 1px solid var(--input-border);
-  border-radius: calc(var(--radius) - 2px);
+.nexus-change-review {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   color: var(--ink);
-  font-size: 0.85rem;
-  margin: 0;
-  max-height: 30vh;
-  overflow: auto;
-  padding: 0.6rem 0.7rem;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
-.nexus-ai-preview-proposed {
-  border-color: rgba(22, 163, 74, 0.5);
+.nexus-change-review-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  flex-shrink: 0;
+}
+
+.nexus-source-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nexus-source-image-controls {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 12rem 0.5rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.nexus-image-fold-controls {
+  align-items: center;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.nexus-image-fold-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.editor-surface .nexus-change-review-controls {
+  padding-right: 9rem;
+}
+
+.nexus-change-review-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.nexus-change-review-collapse {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
+.nexus-change-review-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0;
+}
+
+.nexus-change-review-labels span {
+  padding-left: 0.75rem;
+}
+
+.nexus-change-review-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.85rem;
+}
+
+.nexus-change-review .cm-mergeView {
+  height: 100%;
+}
+
+.nexus-change-review .cm-mergeViewEditor {
+  min-width: 0;
+}
+
+.nexus-change-review .cm-content {
+  overflow-wrap: anywhere;
 }
 
 .nexus-ai-preview-footer {
@@ -2574,78 +2752,6 @@ body.nexus-resizing-col * {
   width: 0.85rem;
 }
 
-.nexus-mcp-confirm-dialog {
-  max-width: 720px;
-}
-
-.nexus-mcp-diff-summary {
-  align-items: baseline;
-  color: var(--muted);
-  display: flex;
-  font-size: 0.85rem;
-  gap: 0.5rem;
-}
-
-.nexus-mcp-diff-summary-label {
-  color: var(--muted);
-}
-
-.nexus-mcp-diff-add {
-  color: #15803d;
-  font-weight: 600;
-}
-
-.nexus-mcp-diff-remove {
-  color: #b91c1c;
-  font-weight: 600;
-}
-
-.nexus-mcp-diff-view {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) - 2px);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  max-height: 360px;
-  overflow: auto;
-  padding: 0.5rem 0;
-  white-space: pre;
-}
-
-.nexus-mcp-diff-line {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  padding: 0 0.5rem;
-}
-
-.nexus-mcp-diff-line.nexus-mcp-diff-add {
-  background: rgba(34, 197, 94, 0.12);
-  color: #15803d;
-}
-
-.nexus-mcp-diff-line.nexus-mcp-diff-remove {
-  background: rgba(239, 68, 68, 0.12);
-  color: #b91c1c;
-}
-
-.nexus-mcp-diff-marker {
-  color: var(--muted);
-  user-select: none;
-}
-
-.nexus-mcp-diff-text {
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.nexus-mcp-diff-empty {
-  color: var(--muted);
-  font-style: italic;
-  margin: 0;
-  padding: 1rem;
-  text-align: center;
-}
 
 .nexus-mcp-confirm-footer {
   display: flex;
@@ -3596,6 +3702,87 @@ body.nexus-resizing-col * {
 .editor-surface .cm-content {
   caret-color: var(--editor-caret);
   color: var(--ink);
+}
+
+.nexus-image-data-toggle,
+.nexus-image-preview-button {
+  background: var(--toolbar);
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85em;
+  margin: 0 3px;
+  padding: 1px 6px;
+  vertical-align: baseline;
+}
+
+.nexus-image-data-toggle:hover,
+.nexus-image-data-toggle:focus-visible,
+.nexus-image-preview-button:hover,
+.nexus-image-preview-button:focus-visible {
+  background: var(--editor-active-line);
+  outline: 2px solid var(--muted);
+  outline-offset: 1px;
+}
+
+.nexus-image-data-widget {
+  display: inline;
+}
+
+.nexus-image-preview {
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 8px;
+  box-shadow: var(--dialog-shadow);
+  color: var(--ink);
+  font: 0.85rem/1.4 ui-sans-serif, system-ui, sans-serif;
+  inset: auto;
+  margin: 0;
+  max-height: calc(100vh - 1rem);
+  overflow: auto;
+  padding: 0.65rem;
+  position: fixed;
+  width: min(18rem, calc(100vw - 1rem));
+  z-index: 160;
+}
+
+.nexus-image-preview-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.nexus-image-preview-header button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0 0.4rem;
+}
+
+.nexus-image-preview img {
+  background: var(--surface);
+  display: block;
+  max-height: 11rem;
+  max-width: 100%;
+  object-fit: contain;
+  margin: 0 auto;
+}
+
+.nexus-image-preview img[hidden] {
+  display: none;
+}
+
+.nexus-image-preview-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
 }
 
 .editor-surface .cm-cursor,

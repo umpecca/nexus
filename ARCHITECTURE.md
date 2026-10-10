@@ -10,6 +10,108 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 
 ## Project Structure
 
+- `src/components/assets/AssetPanel.tsx`: Optional Markdown-only sidebar for previews, natural
+  dimensions, image bytes, missing paths, and embedded-source contribution to current buffer size.
+  Debounced inventory follows source changes; refresh rechecks local files. Actions call App's
+  guarded snapshot boundary and preserve the document's dirty/save lifecycle across editor modes.
+- `src/lib/documentAssets.ts`: AST image inventory with short base64 stand-ins and original source
+  offsets. Groups inline/reference/HTML destinations, excludes literal code/comments, and rewrites
+  destination spans only. Source actions use one CodeMirror transaction for undo/redo.
+- `electron/documentAssets.cjs`: Trusted, validated asset IPC for local inspection, explicit bounded
+  remote embedding, native replacement/repair pickers, and extraction. Extraction writes/flushed
+  temporary bytes then creates the selected file exclusively; it never overwrites existing files.
+  Returned references encode path components and remain relative to the saved document when possible.
+- `src/components/editor/CodeFileEditor.tsx`: Dedicated CodeMirror editor for code/configuration and
+  plain text, with basic editing/history/folding, lazy language loading, a language override,
+  wrapping, search/replace, and the shared change review. It preserves BOM, whitespace, and newline
+  conventions through `EditorState.lineSeparator` and `state.sliceDoc()`. Compartments update themes,
+  wrapping, and languages without resetting undo; path moves keep the same editor instance.
+- `electron/documentFileTypes.json`: Shared file-type catalog used by native opens/OS handoffs,
+  renderer drops, and folder enumeration. Only Markdown extensions select MDXEditor; other files
+  select the code/text editor, whose kind remains intact through moves and deleted-file recovery.
+- `electron/documentFiles.cjs`: Strict UTF-8 decoding, BOM retention, binary-byte rejection, and an
+  8 MB limit for code/text files. All actual main-process document reads use it, including folder
+  reads and external refresh. App skips Markdown normalization and diagram inlining/externalization
+  for text documents; saves use exact comparison and a text-file Save As dialog.
+
+- `src/components/files/FolderSidebar.tsx`: Resizable keyboard-accessible directory tree, loaded
+  on expansion. Markdown/text opens pass through App's unsaved-change flow. Toolbar and context
+  menus provide create, rename, duplicate, copy/cut/paste, move, Trash, path-copy, and reveal actions.
+  File operations surface errors; directory events invalidate loaded branches. Folder roots are
+  per-window, with no automatic restore at launch.
+- `electron/folderBrowser.cjs`: Main-process folder grants keyed by renderer ID and root token.
+  Every path resolves within the native-picked canonical root and rejects link traversal. Copies
+  stage regular files/assets in a private temporary directory; collisions fail. Loaded directories
+  have debounced watches that close with their window/grant. A shared operation gate coordinates
+  saves and mutations across windows, and nested roots follow directory moves.
+- `electron/folderBrowserIpc.cjs`: Trusted, payload-validated IPC for native folder picking, listing,
+  reading, management, and reveal. Trash requires a native confirmation and uses `shell.trashItem`.
+  Moves/renames remap open document records (including aliases) and notify affected renderers;
+  deleted documents detach their path while retaining text. Old-path saves are blocked until the
+  renderer acknowledges its new path; preparation also rechecks the document generation before saving.
+- `scripts/folder-browser-smoke.cjs`: Hidden real Electron renderer/preload with real folder IPC
+  and fixture-only filesystem operations. Covers protected opens, dirty-buffer rename/move and save,
+  duplicate/create, trash cancellation/recovery, source mode, and closing the sidebar. Trash is
+  simulated inside its isolated temporary fixture. Run after build with `npm run test:folder-browser`;
+  optional screenshots use `NEXUS_FOLDER_SCREENSHOTS`.
+
+- `src/components/editor/ChangeReview.tsx`: Shared read-only CodeMirror MergeView for editor
+  comparisons, AI proposal previews, and MCP write confirmations. It provides line/text highlights,
+  Previous/Next chunk navigation in both panes, change counts, and optional unchanged-section
+  folding with context. Both panes reuse source image folding; full comparison inputs stay intact.
+- `src/components/editor/imageDataPreview.ts`: Lazily creates thumbnail previews for image-fold
+  widgets. Native popovers escape editor clipping while retaining dialog ownership. Hover/focus
+  previews can be pinned by clicking Preview; decoding reports dimensions or unavailable content.
+  Lifecycle cleanup closes previews on edits, scroll, resize, outside clicks, and widget destruction.
+  A window-level Escape handler dismisses the thumbnail before a review dialog can reject itself.
+- Image-folding bulk commands dispatch display-only CodeMirror effects. Source controls target its
+  live editor; shared review controls target both panes, including images outside visible chunks.
+- `src/components/editor/reviewSourcePlugin.tsx`: Integrates the shared review viewer with
+  MDXEditor's public Markdown/source/view-mode cells. It keeps the rich-text tree mounted while
+  source/diff modes are visible, updates external source changes in place, and publishes only
+  document edits so folding and navigation do not trigger document writes.
+- `src/components/ai/AiEditPreviewDialog.tsx`: Hosts the shared viewer for selection rewrites and
+  Content Organization. Copy uses the full proposal; acceptance remains owned by App's captured
+  selection/document transaction and stale-proposal checks.
+- `scripts/change-review-smoke.cjs`: Hidden Electron integration check using synthetic IPC and
+  an in-memory settings partition. It verifies all review surfaces, approval/rejection, real
+  scrolling, image/unchanged folding, thumbnail hover/click previews and dismissal, viewport bounds,
+  bulk image controls, and editing in source mode after leaving review.
+  Run `npx electron scripts/change-review-smoke.cjs` after building. Optional screenshots go to
+  the directory specified by `NEXUS_REVIEW_SCREENSHOTS`.
+- `src/components/editor/sourceImageFolding.ts`: CodeMirror state field shared by source mode and
+  both diff panes. It replaces base64 image payloads with accessible expand/collapse widgets while
+  leaving the document untouched. Markdown-node detection uses short payload stand-ins and retains
+  original offsets to avoid parsing megabytes of base64 on each edit. Expanded ranges map through
+  edits; selection within a hidden payload reveals it for search and programmatic navigation.
+- `electron/atomicFile.cjs`: Resolves file symlinks, preserves existing permission bits, writes an
+  exclusive sibling temporary file, flushes/closes it, and renames it over the destination without
+  unlink/truncate fallback. Handled failures remove the temporary file and preserve the original.
+- `electron/documentSave.cjs`: Serializes Markdown commits and post-commit diagram cleanup by
+  canonical path across editor windows. Cleanup removes only generated assets referenced by the
+  replaced disk version and absent from the committed text/keep list; it leaves unrelated,
+  orphaned, and other pending saves' staged assets intact. Sidecar writes pin assets by owning
+  window through commit, including reused old assets. Cleanup failures are non-fatal. Main
+  coordinates watcher acknowledgements with save completion using the exact submitted contents.
+- `electron/documentWatch.cjs`: Per-window, debounced directory watchers filtered to each document's
+  canonical filename. SHA-256 content fingerprints acknowledge only a successful save's submitted
+  bytes in its own window; pending saves defer checks until completion, followed by a disk recheck.
+  Different immediate external edits, failed-save changes, deletions, and saves from other windows
+  retain the existing external-change flow. Generation and watcher-identity checks discard stale
+  async reads and callbacks. Read acknowledgements use the returned contents rather than rereading
+  disk, and directory handles survive atomic document replacements.
+- Save As uses `file:choose-save-path` to select a destination without writing. The renderer
+  prepares sidecars, then sends one `file:save` with final Markdown and optional diagram names.
+  Generated sidecar writes also use atomic replacement; cleanup has no standalone renderer IPC.
+- `src/lib/useDocumentSave.ts`: Per-window Save/Save As queue. It captures the live buffer, path,
+  and prior baseline when each queued request starts, records only successful saved snapshots,
+  and rejects stale completions/queued requests after document replacement. The app updates its
+  saved baseline without replacing current Markdown; synchronous path/baseline refs let the next
+  queued save observe the preceding result before React renders. Save-before-close/replacement
+  rechecks the live buffer against the saved baseline. Failures display `SaveErrorDialog`.
+- `scripts/document-save-smoke.cjs`: Hidden Electron test of the actual editor/preload with delayed
+  synthetic save IPC, an isolated in-memory storage partition, and no real document writes. Run
+  `npm run test:document-save` after building; desktop CI runs it on Windows and macOS.
 - `package.json`: Project scripts, Electron package metadata, Windows and macOS icon packaging metadata, Markdown export dependency metadata, the `ssh2-sftp-client` SFTP publishing dependency, bundled Fontsource font dependencies, and runtime dependencies. Nexus does not bundle an ngrok library; the optional MCP tunnel uses the user's externally-installed ngrok CLI.
 - `.github/workflows/build-desktop.yml`: GitHub Actions workflow that builds and uploads Windows and macOS desktop artifacts on `develop` pushes and manual runs.
 - `electron/main.cjs`: Electron main process that creates one or more desktop browser windows, applies the local app icon, installs the File, Edit, View, Settings, and Help menus, handles file dialogs and unsaved-change prompts, forwards editor zoom menu actions, displays the current editor zoom percentage in the View menu, exports Markdown to self-contained HTML and paper-sized PDF with local image resolution, selected editor font, selected base font size, selected orientation, selected margins, and Mermaid diagram rendering, generates the same canonical PDF bytes for the in-app Print Preview, saves an already-rendered preview snapshot without regenerating it, publishes the self-contained HTML rendering to a user-specified SFTP server with per-publish credentials and host-key confirmation, pushes the same self-contained HTML to a user-configured HTTP endpoint over QuickConnect with a bearer token, resolves local image preview paths, watches opened files for external changes, accepts OS file-open handoffs, maintains a persisted recent-files list behind the File/Open Recent menu (mirrored to the OS recent documents), guards close attempts per window, coordinates application quit across multiple dirty windows, exposes the OS profile name, provides Exit, owns the native editable context menu with spellcheck suggestions, hosts the optional embedded MCP server lifecycle, persists the MCP bearer token encrypted at rest with `safeStorage` (the `mcp:get-bearer-token`/`mcp:set-bearer-token` IPC handlers keep a per-profile ciphertext map in `mcp-bearer-tokens.json` under userData, mirroring the QuickConnect token store), manages the optional ngrok tunnel that forwards to the loopback MCP port, serves the cache-backed MCP read tool calls (list windows, get document, get outline, get section, search document, find) from the per-window MCP record, routes the MCP selection read tool through a renderer request/response round trip, computes the in-buffer MCP write tools (apply edits, replace section, set frontmatter) into a proposed buffer and routes every write — full replacement and granular edits — through the renderer confirmation dialog (or applies it directly when the profile's auto-approve-writes setting is on), answers the MCP "test connection" request by probing the server's `/health` endpoint locally and over the ngrok URL when connected, handles explicit stop/restart requests for the ngrok tunnel agent, and loads the built renderer.
@@ -42,13 +144,28 @@ This document serves as a living overview of the Nexus codebase. Update it as th
   request-body, response, security, and locally resolved schema information as print-safe static
   HTML; ordinary YAML and invalid specifications continue through Marked's code renderer.
 - `electron/mcp-server.cjs`: Embedded Model Context Protocol server. Owns the `http.Server` bound to `127.0.0.1` on the configured port, implements the Streamable HTTP transport at `POST /mcp` with JSON-RPC framing, validates the bearer token, dispatches to the read-only tools (`nexus_list_windows`, `nexus_get_document`, `nexus_get_outline`, `nexus_get_section`, `nexus_search_document`, `nexus_find`, `nexus_get_selection`) and the write tools (`nexus_replace_document`, `nexus_apply_edits`, `nexus_replace_section`, `nexus_set_frontmatter`), and exposes start/stop/reconfigure hooks used by `electron/main.cjs`. The tool implementations delegate to host callbacks supplied by the main process; the write tools and the selection read tool ask the target renderer (to confirm/apply a change, or to report the live selection) before resolving, and an edit that cannot be located is returned as an `isError` result without a dialog. It also serves an authenticated `GET /health` verification endpoint (same loopback bind and bearer check as `/mcp`, returning server identity) and exposes `testConnection({ ngrokUrl })`, which probes that endpoint over loopback and, when a public URL is supplied, over the tunnel — used by the Preferences "Test setup" button. It additionally serves a static, unauthenticated landing page at `GET /` so the server URL (local or public) can be opened in a browser to confirm reachability; the page exposes no document content or tools. In bearer mode it also hosts the OAuth 2.1 surface for MCP clients that require the MCP authorization spec (ChatGPT custom connectors, Claude.ai): 401 responses carry an RFC 9728 `WWW-Authenticate` challenge, the well-known protected-resource/authorization-server metadata endpoints, `POST /register`, `GET /authorize` (a consent page), `POST /authorize/decision`, and `POST /token` route into `electron/mcpOauth.cjs`, with origins derived from the Host header plus ngrok's `X-Forwarded-Proto` so discovery works both on loopback and through the tunnel.
-- `electron/mcpOauth.cjs`: Minimal OAuth 2.1 authorization-server logic for the MCP server (no Electron or HTTP dependencies). RFC 9728/8414 metadata builders, RFC 7591 dynamic client registration with https-or-loopback redirect-URI validation and best-effort persistence to a per-machine JSON file (`mcp-oauth-clients.json` under userData — client ids and redirect URIs only, no secrets), consent-gated authorization requests (10-minute TTL, CSRF nonce bound to the served consent page), single-use 5-minute authorization codes, and a PKCE-S256-only token exchange that issues the server's existing static bearer token as the access token — so `/mcp` validation is unchanged, OAuth-issued access survives restarts, and regenerating the token revokes every client. Pending requests and codes are in-memory and cleared on server disable/stop. Exercised end to end by `electron/mcpServer.oauth.test.ts`.
+- `electron/mcpOauth.cjs`: Minimal OAuth 2.1 authorization-server logic for the MCP server (no Electron or HTTP dependencies). RFC 9728/8414 metadata builders, RFC 7591 dynamic client registration with https-or-loopback redirect-URI validation and best-effort persistence to a per-machine JSON file (`mcp-oauth-clients.json` under userData — client ids and redirect URIs only, no secrets), authorization requests gated by a trusted native owner-approval callback (10-minute TTL, CSRF nonce bound to the browser request form, one local dialog at a time), single-use 5-minute authorization codes, and a PKCE-S256-only token exchange that issues the server's existing static bearer token as the access token — so `/mcp` validation is unchanged, OAuth-issued access survives restarts, and regenerating the token revokes every client. Pending requests and codes are in-memory and cleared on server disable/stop, port/authentication changes, or token rotation; a generation check prevents a delayed local dialog response from granting access after invalidation. Exercised end to end by `electron/mcpServer.oauth.test.ts`.
 - `electron/ngrok-tunnel.cjs`: Small main-process module that manages the optional MCP tunnel by spawning the user's installed ngrok CLI as a child process (`ngrok http <port> [--domain <domain>] --log stdout --log-format json`, no shell). It reads the agent's JSON log lines from stdout and resolves the public URL from the `started tunnel` line, treats a spawn `ENOENT` as "ngrok CLI not found", and surfaces authtoken/start errors (error-level log lines) with a pointer to `ngrok config add-authtoken`. On macOS it prepends the standard Homebrew bin locations (`/opt/homebrew/bin`, `/usr/local/bin`) to `PATH` before spawning, because a Finder/Dock-launched app does not inherit the shell `PATH` and would otherwise not find a Homebrew-installed ngrok. Exposes `ensureTunnel({ port, domain, command })` (starts or restarts the agent using `command` as the executable — `"ngrok"` from PATH by default, or an explicit user-configured path — binding the optional reserved/custom `domain` when supplied and falling back to a random URL when the domain cannot be bound), `stopTunnel()` (kills the agent through the serialized queue), `killTunnelSync()` (a synchronous, idempotent kill used by the app's `will-quit` and `process.on("exit")` handlers so the non-detached agent cannot outlive a graceful quit; a hard kill/crash runs no JS and is out of scope), and `getTunnelState()` (returns `{ connected, url, error, domainFallback }`). It respawns when the command, port, or domain changes. Tracks the active port and domain and respawns when either changes, serializes calls, kills the agent on stop and on app quit, and reflects an unexpected agent exit as a disconnected tunnel. The ngrok authtoken is read from the ngrok CLI's own configuration and is never stored by Nexus.
 - `electron/recentFiles.cjs`: Pure CommonJS helper for the recent-files list shared by the main process. Exposes `sanitizeRecentFiles`, `addRecentFile`, `removeRecentFile`, and a `defaultComparePath` (case-insensitive on Windows) plus the `DEFAULT_RECENT_FILES_LIMIT`; every function returns a new, deduped, capped, most-recent-first list without mutating its input, keeping the ordering logic unit-testable apart from Electron. Covered by `electron/recentFiles.test.ts`.
 - `electron/aiChatHistory.cjs`: Pure CommonJS helper for opaque per-profile/per-document AI chat-history paths and safe transcript/agent-message sanitization. Main-process IPC reads and writes the resulting JSON files under userData's `ai-chats` directory; API keys are never included. Covered by `electron/aiChatHistory.test.ts`.
 - `electron/mcpDocumentTools.cjs`: Pure CommonJS logic for the cache-served MCP read tools. Exposes `buildDocumentOutline` (ATX heading tree mirroring `src/lib/outline.ts` but with 1-based lines and deduped slugs from `headingSlugger.cjs`), `getDocumentSection` (slice a section by heading index/slug/text through the next same-or-higher heading), `searchDocument` (literal/regex search with 1-based positions, accurate total, and a capped result list), `findInDocument` (the same search grouped by line, each match carrying surrounding context lines and the enclosing heading for comprehension), and the shared `getSectionRange` / `parseHeadings` helpers reused by the write edits module. No Electron dependencies, so it runs against the main-process MCP record's cached Markdown and is unit-tested by `src/lib/mcpDocumentTools.test.ts` (parity-checked against `extractOutline`).
 - `electron/mcpDocumentEdits.cjs`: Pure CommonJS logic for the in-buffer MCP write tools. Exposes `applyEdits` (ordered literal/regex find-replace that fails the batch on a missing or ambiguous anchor), `replaceSection` (swap a section's lines using `getSectionRange` from `mcpDocumentTools.cjs`), and `setFrontmatter` (set/merge/remove scalar YAML fields, refusing non-scalar blocks). Each returns `{ ok: true, markdown }` (a proposed full buffer) or `{ ok: false, reason, ... }`; the main process turns a success into a confirmation request and a failure into a tool error. Unit-tested by `src/lib/mcpDocumentEdits.test.ts`.
-- `index.html`: Vite application entry point.
+- `index.html`: Vite application entry point and main-renderer CSP. It blocks inline scripts, eval,
+  objects, base tags, and form submissions, while allowing document images, local fonts, temporary
+  workers, and blob PDF preview frames. Vite development adds a random nonce to its refresh scripts
+  and permits HMR sockets; production uses external scripts without an inline/eval exception.
+- `electron/rendererIpc.cjs`: Privileged main-editor IPC registration, sender/frame/URL validation,
+  sensitive file/credential/confirmation payload validation, and pending-response ownership checks.
+  Only main editor WebContents objects registered by `createWindow` may use the app bridge; embedded
+  editor windows retain their separate, window-scoped protocols, with subframe messages rejected.
+- `src/lib/ai/markdownToHtml.ts`: Private Marked and DOMPurify instances and a chat allowlist for untrusted
+  assistant Markdown, including saved history and partial streaming text. Keeps prose, lists, code,
+  tables, and explicit HTTP/HTTPS/mail links or anchors; excludes images, SVG/MathML, embedding,
+  forms, script/style/event attributes, and file/data/blob/relative links. Unsupported sanitizer
+  environments return empty HTML. DOM-based regression tests run with jsdom (test dependency only).
+- `scripts/renderer-security-smoke.cjs`: Hidden Electron smoke test against the built renderer.
+  Verifies CSP execution blocking, worker/image/PDF compatibility, and actual IPC rejection for
+  unregistered or navigated windows; run `npm run test:renderer-security` after building.
 - `src/main.tsx`: React bootstrap and bundled Fontsource font stylesheet imports for editor rendering.
 - `src/App.tsx`: Primary app shell, document state, blank startup behavior, initial empty-editor focus, application title formatting, font, paragraph spacing, paper-size, paper-orientation, margin, editor zoom state, light/dark/system theme resolution, paper/plain editor view state, print-preview snapshot/request lifecycle, plain-view responsive wrapping state, MDXEditor plugin registration, image preview handling, toolbar registration, rich/source scroll-position synchronization, find-panel command routing, outline sidebar visibility state and heading-to-section scrolling, source-mode "Clean up formatting" routing (rewriting the CodeMirror buffer in place), Publish as Web dialog routing and host-key confirmation handling, QuickConnect publish dialog routing, and diff baseline coordination.
 - `src/components/about/AboutDialog.tsx`: Shadcn-styled About dialog opened from the Help menu.
@@ -173,9 +290,14 @@ while retaining unknown vendor media types as explicitly editable Custom values.
 expanded static API reference. It deliberately omits edit, collapse, and request-execution controls,
 and uses local method-color and page-break-safe export CSS; malformed OpenAPI and ordinary YAML
 fences continue through the normal fenced-code renderer.
-35. When a renderer has a current file path, it asks preload to watch that path; the Electron main process owns one debounced `fs.watch` watcher per captured webContents ID.
+35. When a renderer has a current file path, it asks preload to watch that path; the Electron main
+process owns one debounced directory `fs.watch` handle per captured webContents ID, filtered to the
+canonical document filename so atomic file replacements remain observable.
 36. External file change events are sent back to the owning renderer, which prompts to reload clean buffers and shows a conflict prompt for dirty buffers.
-37. File saves suppress only that same window's watcher events, so another Nexus window editing the same file still sees the change as external.
+37. File saves acknowledge only the exact successfully submitted content fingerprint in that same
+window. Checks wait for pending saves to settle and then reread disk; a different external edit is
+never adopted merely because it arrived shortly after saving. Other windows still see saves as
+external changes, while failed saves do not update the saved fingerprint.
 38. Manual Refresh from Edit/Refresh reads the current file through preload, reloads silently when safe, and uses the same conflict prompt when disk contents differ from dirty editor contents.
 39. Dirty external-change and manual-refresh conflicts keep the changed disk contents in renderer state so Review Diff can open MDXEditor's diff mode without replacing the current editor buffer.
 40. Successful saves move the prior saved Markdown into a previous-version baseline before updating the current saved baseline.
@@ -191,7 +313,7 @@ fences continue through the normal fenced-code renderer.
 51. On approve, the renderer replaces the editor buffer with the proposed Markdown (using the same programmatic-change guard as external reloads so stale `onChange` events do not mark it dirty before the dirty comparison settles) and reports success back to the MCP server, which returns a JSON-RPC result to the client. On reject, the renderer reports rejection and the MCP server returns a JSON-RPC error result. When the per-OS-profile auto-approve-writes preference is on, the renderer's `mcp:confirm-write` handler applies the proposed Markdown immediately (through the same guard) and reports approval without showing the dialog; the decision is made in the renderer, where the setting lives, so the main process is unchanged. The per-window busy check still serializes writes so two confirmations never overlap.
 52. Closing a window while a pending MCP write confirmation is open auto-rejects that pending call and removes the window from the MCP registry. Disabling the MCP server while requests are in flight closes the HTTP listener and rejects all pending confirmation calls.
 52a. The MCP server also answers an authenticated `GET /health` request (loopback-bound, bearer-checked like `/mcp`) with its identity, and a static unauthenticated landing page at `GET /`. The Preferences "Test setup" button calls `mcp:test-connection`; the main process runs `mcpServer.testConnection`, which GETs `/health` over loopback with the active token and — when `ngrokTunnel.getTunnelState()` reports a connected tunnel — also GETs the public `{url}/health`. The renderer renders each probe as a pass/fail line. Running the probe from the main process avoids browser CORS and keeps the token inside the main process and the server module. The settings dialog also shows the landing page URL (local, and the public ngrok URL when connected) so the user can open it in a browser, and offers Restart/Stop tunnel buttons that call `mcp:restart-ngrok` (stop then `ensureTunnel` with the live port and configured domain/command) and `mcp:stop-ngrok` (`stopTunnel`), updating the displayed ngrok status from the result.
-52b. OAuth-requiring MCP clients (ChatGPT custom connectors, Claude.ai) connect through the MCP authorization flow: an unauthorized `/mcp` call returns 401 with a `WWW-Authenticate` challenge pointing at the protected-resource metadata, which names the same origin as the authorization server; the client fetches the RFC 8414 metadata, registers itself at `POST /register` (validated redirect URIs persisted to `mcp-oauth-clients.json`), and opens `GET /authorize` in the user's browser. Nexus serves a consent page (client name + redirect host, anti-clickjacking headers, CSRF nonce); Approve posts to `/authorize/decision`, which redirects to the client with a single-use PKCE-bound code, and the client exchanges it at `POST /token` for the server's static bearer token. Subsequent `/mcp` calls authenticate exactly like hand-configured bearer clients, so the write-confirmation gate and auto-approve setting apply unchanged. The whole surface 404s in no-auth mode and pending consents/codes are cleared when the server stops.
+52b. OAuth-requiring MCP clients (ChatGPT custom connectors, Claude.ai) connect through the MCP authorization flow: an unauthorized `/mcp` call returns 401 with a `WWW-Authenticate` challenge pointing at the protected-resource metadata, which names the same origin as the authorization server; the client fetches the RFC 8414 metadata, registers itself at `POST /register` (validated redirect URIs persisted to `mcp-oauth-clients.json`), and opens `GET /authorize` in the user's browser. Nexus serves a browser request page (client name + redirect host, anti-clickjacking headers, CSRF nonce); Request approval posts to `/authorize/decision`, which awaits the trusted `requestOauthApproval` main-process callback. `electron/mcpOauthApproval.cjs` shows a native warning dialog with the client-reported name and full callback address, defaulting to Deny. Only an explicit Allow response issues a single-use PKCE-bound code; missing/failed local approval, duplicate or concurrent requests, expiration, and configuration changes deny access. The client exchanges the code at `POST /token` for the server's static bearer token. Subsequent `/mcp` calls authenticate exactly like hand-configured bearer clients, so the write-confirmation gate and auto-approve setting apply unchanged. The whole surface 404s in no-auth mode and pending consents/codes are cleared when the server stops.
 53. When the outline sidebar is enabled and the editor is in rich-text or source mode (it is hidden in diff mode), the app shell extracts the current document's headings (level, text, ordinal position, and source line index) from the Markdown buffer with a helper that skips fenced code blocks, recomputes them as the document changes, and passes them to the outline sidebar. The sidebar shows an empty-state message when no headings exist.
 54. Selecting an outline entry asks the app shell to scroll the matching heading into view. In rich-text mode the shell finds the rendered heading element at the selected ordinal position inside the editor scroll container; in source mode it asks CodeMirror's height model for the heading line's top offset and scrolls the CodeMirror scroller there. The same editor scroll-into-view helpers are shared with find navigation. Independently, a scroll-spy effect highlights the outline entry for the section currently under the top of the editor viewport in both modes: it resolves each heading's content-top offset (rendered heading-element geometry in rich-text; CodeMirror's height model — correct even for virtualized off-screen lines — in source), passes them to the pure `getActiveHeadingIndex` helper with the live scroll position, and updates the highlighted entry on scroll, resize, and editor DOM changes (recomputation throttled to an animation frame, listeners rebinding when a mode switch mounts a new scroller). The outline sidebar's open/closed state is read on launch and persisted per OS profile through the settings store, defaulting to hidden when no stored value is available.
 55. File/Publish as Web routes through the menu action bridge to the focused renderer, which opens the Publish as Web dialog pre-filled with the non-secret publish target fields stored for the OS profile (host, port, username, remote directory, optional public base URL) and a remote filename defaulted to a slug derived from the document title or frontmatter. The user enters credentials (password, or a private-key file path plus optional passphrase) that stay in renderer component state.
@@ -307,7 +429,13 @@ Deployment: List state and the menu live in the Electron main process; the focus
 
 Name: Per-Window File Watchers
 
-Description: Watches each opened document path from the Electron main process using debounced `fs.watch` handles keyed by a captured renderer webContents ID. The renderer starts, replaces, or stops the watcher as its current file path changes. Clean buffers can reload directly from disk, dirty buffers show a shadcn-styled conflict dialog, and missing files leave the editor buffer open. Window close cleanup uses the captured ID rather than reading from a destroyed `BrowserWindow.webContents`.
+Description: Watches each opened document from the Electron main process using debounced directory
+`fs.watch` handles filtered to its canonical filename and keyed by a captured renderer webContents ID.
+Content fingerprints distinguish the window's successfully saved bytes from different external edits,
+without time-based suppression. The renderer starts, replaces, or stops its watcher as the current
+file path changes. Clean buffers can reload directly from disk, dirty buffers show a shadcn-styled
+conflict dialog, and missing files leave the editor buffer open. Window close cleanup uses the captured
+ID; generation and watcher-identity checks prevent stale async work from touching a replacement watcher.
 
 Technologies: Electron IPC, Node `fs.watch`, React state, Radix Dialog.
 
@@ -519,7 +647,7 @@ Deployment: Runs inside the desktop app renderer.
 
 Name: Local JavaScript Runner Blocks
 
-Description: Replaces Sandpack/CodeSandbox runtime usage with a local-only console runner for fenced JavaScript code blocks carrying the `nexus-run` meta flag. The renderer registers a custom MDXEditor code block descriptor, executes snippets in temporary Web Workers, captures console output, blocks common network and nested-worker APIs, and terminates long-running code after a short timeout.
+Description: Replaces Sandpack/CodeSandbox runtime usage with a local-only console runner for fenced JavaScript code blocks carrying the `nexus-run` meta flag. The renderer registers a custom MDXEditor code block descriptor, executes snippets as the source of temporary Web Workers (without eval or Function compilation), captures console output, blocks common network and nested-worker APIs, and terminates long-running code after a short timeout. The parent renderer CSP allows blob workers while denying eval.
 
 Technologies: MDXEditor code block descriptors, CodeMirror editor, browser Web Workers, React state.
 

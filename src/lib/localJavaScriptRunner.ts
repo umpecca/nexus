@@ -99,8 +99,12 @@ const runnerConsole = Object.fromEntries(["log", "info", "warn", "error"].map((m
 
 self.onmessage = async () => {
   try {
-    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-    const run = new AsyncFunction("console", ${JSON.stringify(`"use strict";\n${code}`)});
+    // The code is this disposable worker's source, so it needs no eval/Function permission
+    // in the parent renderer's CSP. It executes only after an explicit Run message.
+    const run = async function(console) {
+      "use strict";
+${code}
+    };
     await run(runnerConsole);
     self.postMessage({ type: "done" });
   } catch (error) {

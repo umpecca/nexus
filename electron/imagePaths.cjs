@@ -47,4 +47,9 @@ function toMarkdownImageSource(
   return posixRelative.startsWith(".") ? posixRelative : `./${posixRelative}`;
 }
 
-module.exports = { toMarkdownImageSource };
+function decodeImagePath(imagePath) {
+  try { return decodeURIComponent(imagePath); }
+  catch { return imagePath; } // Older documents can contain a literal, unescaped percent sign.
+}
+
+module.exports = { toMarkdownImageSource, decodeImagePath };

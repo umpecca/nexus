@@ -78,6 +78,12 @@ jobs:
       - name: Build renderer
         run: npm run build
 
+      - name: Verify renderer security in Electron
+        run: npm run test:renderer-security
+
+      - name: Verify document saves in Electron
+        run: npm run test:document-save
+
       - name: Build package
         run: npm run ${{ matrix.package_script }}
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createContext, runInContext } from "node:vm";
 import {
   createLocalJavaScriptWorkerSource,
   isRunnableJavaScriptBlock,
@@ -97,6 +98,22 @@ describe("local JavaScript runner", () => {
     expect(source).toContain('"XMLHttpRequest"');
     expect(source).toContain('"importScripts"');
     expect(source).toContain('"Worker"');
-    expect(source).toContain("new AsyncFunction");
+    expect(source).not.toContain("new AsyncFunction");
+    expect(source).toContain("await Promise.resolve();");
+  });
+
+  it("executes async code with runtime string compilation disabled", async () => {
+    const messages: unknown[] = [];
+    const self = {
+      postMessage: (message: unknown) => messages.push(message),
+      onmessage: undefined as undefined | (() => Promise<void>)
+    };
+    const context = createContext({ self }, { codeGeneration: { strings: false, wasm: false } });
+    runInContext(createLocalJavaScriptWorkerSource('await Promise.resolve(); console.log("done");'), context);
+    await self.onmessage?.();
+    expect(messages).toEqual([
+      { type: "console", method: "log", args: ["done"] },
+      { type: "done" }
+    ]);
   });
 });

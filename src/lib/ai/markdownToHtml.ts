@@ -1,32 +1,29 @@
-// Render an assistant chat message (Markdown) to HTML for display in the chat panel. `marked` is
-// already a project dependency. marked no longer ships a sanitizer, and the content comes from a
-// network LLM rendered inside an Electron renderer, so we post-process the HTML to drop scripting
-// vectors before it is injected with dangerouslySetInnerHTML. This is a defensive allowlist-ish
-// pass, not a full HTML sanitizer — the chat only needs prose, code, lists, links, and tables.
+import createDOMPurify from "dompurify";
+import { Marked } from "marked";
 
-import { marked } from "marked";
+// Keep chat options private; configuring Marked's global singleton also changes unrelated callers.
+const chatMarkdown = new Marked({ gfm: true, breaks: true });
+// Mermaid adds global DOMPurify hooks. A private instance keeps chat's policy independent.
+const chatSanitizer = createDOMPurify(typeof window === "undefined" ? undefined : window);
 
-marked.setOptions({ gfm: true, breaks: true });
-
-function stripDangerousHtml(html: string): string {
-  return (
-    html
-      // Drop entire scripting/embedding elements and their content.
-      .replace(/<\s*(script|style|iframe|object|embed)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
-      // Drop self-closing / unmatched dangerous or metadata tags.
-      .replace(/<\s*(script|style|iframe|object|embed|link|meta|base)\b[^>]*>/gi, "")
-      // Strip inline event handlers (onclick=, onerror=, …) in any quoting style.
-      .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
-      .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
-      .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
-      // Neutralize javascript: URLs in href/src.
-      .replace(/(href|src)\s*=\s*"\s*javascript:[^"]*"/gi, '$1="#"')
-      .replace(/(href|src)\s*=\s*'\s*javascript:[^']*'/gi, "$1='#'")
-  );
-}
-
-/** Render Markdown to sanitized HTML suitable for dangerouslySetInnerHTML in the chat transcript. */
+/** Treat assistant text (including saved transcripts and streaming fragments) as untrusted HTML. */
 export function renderChatMarkdown(markdown: string): string {
-  const html = marked.parse(markdown ?? "", { async: false }) as string;
-  return stripDangerousHtml(html);
+  if (!chatSanitizer.isSupported) {
+    // Unsupported environments must not fall back to returning unsanitized HTML.
+    return "";
+  }
+  const html = chatMarkdown.parse(markdown ?? "", { async: false }) as string;
+  return chatSanitizer.sanitize(html, {
+    ALLOWED_TAGS: [
+      "p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6",
+      "strong", "b", "em", "i", "s", "del", "blockquote", "pre", "code",
+      "ul", "ol", "li", "a", "table", "thead", "tbody", "tr", "th", "td"
+    ],
+    ALLOWED_ATTR: ["href", "title", "start", "colspan", "rowspan"],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    // DOMPurify checks parsed attributes after entity decoding. Chat only needs web/mail links
+    // and document anchors; file:, data:, blob:, relative paths, and script schemes fail closed.
+    ALLOWED_URI_REGEXP: /^(?:https?:\/\/|mailto:|#)/i
+  });
 }

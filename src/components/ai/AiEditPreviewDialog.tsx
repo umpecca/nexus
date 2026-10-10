@@ -1,4 +1,6 @@
 import { Button } from "../ui/button";
+import type { Extension } from "@codemirror/state";
+import ChangeReview from "../editor/ChangeReview";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,8 @@ type AiEditPreviewDialogProps = {
   actionLabel: string;
   originalText: string;
   proposedText: string;
+  reviewExtensions?: Extension[];
+  markdownDocument?: boolean;
   onAccept: () => void;
   onReject: () => void;
 };
@@ -28,6 +32,8 @@ function AiEditPreviewDialog({
   actionLabel,
   originalText,
   proposedText,
+  reviewExtensions,
+  markdownDocument,
   onAccept,
   onReject
 }: AiEditPreviewDialogProps) {
@@ -56,16 +62,7 @@ function AiEditPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="nexus-ai-preview-body">
-          <div className="nexus-ai-preview-pane">
-            <span className="nexus-ai-preview-pane-label">Original</span>
-            <pre className="nexus-ai-preview-text nexus-ai-preview-original">{originalText}</pre>
-          </div>
-          <div className="nexus-ai-preview-pane">
-            <span className="nexus-ai-preview-pane-label">Proposed</span>
-            <pre className="nexus-ai-preview-text nexus-ai-preview-proposed">{proposedText}</pre>
-          </div>
-        </div>
+        <ChangeReview original={originalText} proposed={proposedText} extensions={reviewExtensions} markdownDocument={markdownDocument} />
 
         <DialogFooter className="nexus-ai-preview-footer">
           <Button type="button" variant="outline" onClick={copyProposed}>

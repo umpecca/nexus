@@ -23,6 +23,9 @@ import {
 import type { SelectionActionId, SelectionActionOptions } from "../../lib/ai/prompts";
 
 export type TitlebarProps = {
+  assetsVisible?: boolean;
+  markdownDocument?: boolean;
+  folderOpen?: boolean;
   fileName: string | null;
   filePath: string | null;
   isDirty: boolean;
@@ -42,6 +45,9 @@ export type TitlebarProps = {
 };
 
 type AppMenuBarProps = {
+  assetsVisible?: boolean;
+  markdownDocument?: boolean;
+  folderOpen?: boolean;
   canEditFrontmatter: boolean;
   canToggleOutline: boolean;
   showInvisibleCharacters: boolean;
@@ -89,6 +95,9 @@ function useRecentFiles() {
 }
 
 function AppMenuBar({
+  assetsVisible,
+  markdownDocument = true,
+  folderOpen,
   canEditFrontmatter,
   canToggleOutline,
   showInvisibleCharacters,
@@ -125,6 +134,10 @@ function AppMenuBar({
             Open
             <MenubarShortcut>Ctrl+O</MenubarShortcut>
           </MenubarItem>
+          <MenubarItem onSelect={() => dispatchMenuAction("openFolder")}>
+            Open Folder…<MenubarShortcut>Ctrl+Alt+O</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem disabled={!folderOpen} onSelect={() => dispatchMenuAction("closeFolder")}>Close Folder</MenubarItem>
           <MenubarSub>
             <MenubarSubTrigger>Open Recent</MenubarSubTrigger>
             <MenubarSubContent>
@@ -161,14 +174,14 @@ function AppMenuBar({
             <MenubarShortcut>Ctrl+Shift+S</MenubarShortcut>
           </MenubarItem>
           <MenubarSeparator />
-          <MenubarItem onSelect={() => dispatchMenuAction("exportHtml")}>Export as HTML</MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("exportWord")}>Export to Word</MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("printPreview")}>Print Preview</MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("exportPdf")}>Export as PDF</MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("publishWeb")}>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("exportHtml")}>Export as HTML</MenubarItem>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("exportWord")}>Export to Word</MenubarItem>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("printPreview")}>Print Preview</MenubarItem>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("exportPdf")}>Export as PDF</MenubarItem>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("publishWeb")}>
             Publish as HTML over SFTP…
           </MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("publishQuickConnect")}>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("publishQuickConnect")}>
             Publish as HTML over QuickConnect…
           </MenubarItem>
           <MenubarSeparator />
@@ -210,7 +223,7 @@ function AppMenuBar({
           >
             Edit Frontmatter…
           </MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("insertTableOfContents")}>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("insertTableOfContents")}>
             Insert Table of Contents
           </MenubarItem>
           <MenubarSeparator />
@@ -222,7 +235,7 @@ function AppMenuBar({
             Copy
             <MenubarShortcut>Ctrl+C</MenubarShortcut>
           </MenubarItem>
-          <MenubarItem onSelect={() => dispatchMenuAction("copyHtml")}>
+          <MenubarItem disabled={!markdownDocument} onSelect={() => dispatchMenuAction("copyHtml")}>
             Copy as HTML
             <MenubarShortcut>Ctrl+Shift+C</MenubarShortcut>
           </MenubarItem>
@@ -234,7 +247,7 @@ function AppMenuBar({
       </MenubarMenu>
 
       <MenubarMenu>
-        <MenubarTrigger>AI</MenubarTrigger>
+        <MenubarTrigger disabled={!markdownDocument}>AI</MenubarTrigger>
         <MenubarContent>
           {AI_SELECTION_ACTIONS.map((action) => (
             <MenubarItem key={action.id} onSelect={() => onAiSelectionAction(action.id)}>
@@ -310,6 +323,13 @@ function AppMenuBar({
             onCheckedChange={() => dispatchMenuAction("toggleOutline")}
           >
             Show Outline
+          </MenubarCheckboxItem>
+          <MenubarCheckboxItem
+            checked={assetsVisible}
+            disabled={!markdownDocument}
+            onCheckedChange={() => dispatchMenuAction("toggleAssets")}
+          >
+            Show Images & Assets
           </MenubarCheckboxItem>
           <MenubarCheckboxItem
             checked={aiChatVisible}
@@ -415,6 +435,9 @@ function WindowControls() {
 }
 
 export function Titlebar({
+  assetsVisible,
+  markdownDocument = true,
+  folderOpen,
   fileName,
   filePath,
   isDirty,
@@ -440,6 +463,9 @@ export function Titlebar({
       <div className="nexus-titlebar-left">
         {isMac ? null : (
           <AppMenuBar
+            assetsVisible={assetsVisible}
+            markdownDocument={markdownDocument}
+            folderOpen={folderOpen}
             aiChatVisible={aiChatVisible}
             canEditFrontmatter={canEditFrontmatter}
             canToggleOutline={canToggleOutline}

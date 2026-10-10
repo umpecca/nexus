@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 // Boots the real MCP HTTP server and exercises the OAuth 2.1 surface end to end the way an MCP client
 // that requires the MCP authorization spec (ChatGPT custom connectors, Claude.ai) uses it: discovery
 // via the 401 challenge and well-known metadata, dynamic client registration, the consent page, and
@@ -10,9 +10,15 @@ const TOKEN = "oauth-test-bearer-token";
 const REDIRECT_URI = "https://client.example/callback";
 let port = 0;
 let baseUrl = "";
+const requestOauthApproval = vi.fn(async (_request: { clientName: string; redirectUri: string }): Promise<unknown> => false);
+
+beforeEach(() => {
+  requestOauthApproval.mockReset().mockResolvedValue(false);
+  setHost({ rejectAllPendingWrites: () => {}, requestOauthApproval });
+});
 
 beforeAll(async () => {
-  setHost({ rejectAllPendingWrites: () => {} });
+  setHost({ rejectAllPendingWrites: () => {}, requestOauthApproval });
   const result = await configure({ enabled: true, port: 0, authMode: "bearer", bearerToken: TOKEN });
   expect(result.ok).toBe(true);
   port = getListeningInfo().port;
@@ -58,13 +64,17 @@ async function getConsentPage(clientId: string, challenge: string, state = "st-1
   return { html, requestId: requestId as string, nonce: nonce as string };
 }
 
-async function decide(requestId: string, nonce: string, action: "approve" | "deny") {
-  const response = await fetch(`${baseUrl}/authorize/decision`, {
+function submitDecision(requestId: string, nonce: string, action: "approve" | "deny", extra = {}) {
+  return fetch(`${baseUrl}/authorize/decision`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ request_id: requestId, nonce, action }).toString(),
+    body: new URLSearchParams({ request_id: requestId, nonce, action, ...extra }).toString(),
     redirect: "manual"
   });
+}
+
+async function decide(requestId: string, nonce: string, action: "approve" | "deny") {
+  const response = await submitDecision(requestId, nonce, action);
   expect(response.status).toBe(302);
   return new URL(response.headers.get("location") ?? "");
 }
@@ -142,6 +152,7 @@ describe("MCP server OAuth surface", () => {
   });
 
   it("completes the full authorization-code + PKCE flow and issues the bearer token", async () => {
+    requestOauthApproval.mockResolvedValue(true);
     const { client_id } = await registerClient();
     const { verifier, challenge } = makePkcePair();
 
@@ -149,6 +160,10 @@ describe("MCP server OAuth surface", () => {
     expect(consent.html).toContain("Test Client");
 
     const redirect = await decide(consent.requestId, consent.nonce, "approve");
+    expect(requestOauthApproval).toHaveBeenCalledTimes(1);
+    expect(requestOauthApproval).toHaveBeenCalledWith({
+      clientName: "Test Client", redirectUri: REDIRECT_URI
+    });
     expect(redirect.origin + redirect.pathname).toBe(REDIRECT_URI);
     expect(redirect.searchParams.get("state")).toBe("xyz");
     const code = redirect.searchParams.get("code");
@@ -177,6 +192,7 @@ describe("MCP server OAuth surface", () => {
   });
 
   it("rejects a token exchange with the wrong PKCE verifier", async () => {
+    requestOauthApproval.mockResolvedValue(true);
     const { client_id } = await registerClient();
     const { challenge } = makePkcePair();
     const consent = await getConsentPage(client_id, challenge);
@@ -196,6 +212,111 @@ describe("MCP server OAuth surface", () => {
     const redirect = await decide(consent.requestId, consent.nonce, "deny");
     expect(redirect.searchParams.get("error")).toBe("access_denied");
     expect(redirect.searchParams.get("state")).toBe("deny-state");
+    expect(requestOauthApproval).not.toHaveBeenCalled();
+  });
+
+  it("cannot self-authorize with the public form nonce or forged local approval fields", async () => {
+    const { client_id } = await registerClient();
+    const { verifier, challenge } = makePkcePair();
+    const consent = await getConsentPage(client_id, challenge, "self-approval");
+    expect(consent.html).toContain("Request approval in Nexus");
+    const response = await submitDecision(consent.requestId, consent.nonce, "approve", {
+      ownerApproved: "true", approved: "true", autoApproveWrites: "true"
+    });
+    expect(response.status).toBe(302);
+    const redirect = new URL(response.headers.get("location") as string);
+    expect(redirect.searchParams.get("error")).toBe("access_denied");
+    expect(redirect.searchParams.get("state")).toBe("self-approval");
+    expect(redirect.searchParams.has("code")).toBe(false);
+    expect((await exchange(client_id, consent.requestId, verifier)).status).toBe(400);
+  });
+
+  it("fails closed when the local approval callback is missing, throws, or returns a non-boolean", async () => {
+    for (const approval of [undefined, async () => { throw new Error("Dialog unavailable"); }, async () => "true"]) {
+      setHost({ rejectAllPendingWrites: () => {}, requestOauthApproval: approval });
+      const { client_id } = await registerClient();
+      const consent = await getConsentPage(client_id, makePkcePair().challenge);
+      const redirect = await decide(consent.requestId, consent.nonce, "approve");
+      expect(redirect.searchParams.get("error")).toBe("access_denied");
+      expect(redirect.searchParams.has("code")).toBe(false);
+    }
+  });
+
+  it("rejects an invalid nonce without asking the owner", async () => {
+    const { client_id } = await registerClient();
+    const consent = await getConsentPage(client_id, makePkcePair().challenge);
+    const response = await submitDecision(consent.requestId, "forged-nonce", "approve");
+    expect(response.status).toBe(400);
+    expect(requestOauthApproval).not.toHaveBeenCalled();
+  });
+
+  it("waits for local approval and rejects replay or concurrent dialogs", async () => {
+    let approve!: (value: boolean) => void;
+    requestOauthApproval.mockImplementation(() => new Promise(resolve => { approve = resolve; }));
+    const { client_id } = await registerClient();
+    const { verifier, challenge } = makePkcePair();
+    const consent = await getConsentPage(client_id, challenge);
+    const pending = submitDecision(consent.requestId, consent.nonce, "approve");
+    await vi.waitFor(() => expect(requestOauthApproval).toHaveBeenCalledTimes(1));
+    try {
+      expect((await exchange(client_id, consent.requestId, verifier)).status).toBe(400);
+      expect((await submitDecision(consent.requestId, consent.nonce, "approve")).status).toBe(400);
+      const otherConsent = await getConsentPage(client_id, challenge);
+      const denied = await decide(otherConsent.requestId, otherConsent.nonce, "approve");
+      expect(denied.searchParams.get("error")).toBe("access_denied");
+      expect(requestOauthApproval).toHaveBeenCalledTimes(1);
+    } finally {
+      approve(true);
+    }
+    const response = await pending;
+    expect(response.status).toBe(302);
+    const code = new URL(response.headers.get("location") as string).searchParams.get("code") as string;
+    expect((await exchange(client_id, code, verifier)).status).toBe(200);
+  });
+
+  it("rejects local approval if the authorization request expires while the dialog is open", async () => {
+    let approve!: (value: boolean) => void;
+    requestOauthApproval.mockImplementation(() => new Promise(resolve => { approve = resolve; }));
+    const { client_id } = await registerClient();
+    const consent = await getConsentPage(client_id, makePkcePair().challenge);
+    const pending = submitDecision(consent.requestId, consent.nonce, "approve");
+    await vi.waitFor(() => expect(requestOauthApproval).toHaveBeenCalledTimes(1));
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 11 * 60 * 1000);
+    try {
+      approve(true);
+      const response = await pending;
+      const redirect = new URL(response.headers.get("location") as string);
+      expect(redirect.searchParams.get("error")).toBe("access_denied");
+      expect(redirect.searchParams.has("code")).toBe(false);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("invalidates pending local approvals and issued codes when the bearer token changes", async () => {
+    requestOauthApproval.mockResolvedValue(true);
+    const { client_id } = await registerClient();
+    const { verifier, challenge } = makePkcePair();
+    const firstConsent = await getConsentPage(client_id, challenge);
+    const firstRedirect = await decide(firstConsent.requestId, firstConsent.nonce, "approve");
+    const oldCode = firstRedirect.searchParams.get("code") as string;
+
+    let approve!: (value: boolean) => void;
+    requestOauthApproval.mockClear().mockImplementation(() => new Promise(resolve => { approve = resolve; }));
+    const consent = await getConsentPage(client_id, challenge);
+    const pending = submitDecision(consent.requestId, consent.nonce, "approve");
+    await vi.waitFor(() => expect(requestOauthApproval).toHaveBeenCalledTimes(1));
+    try {
+      await configure({ enabled: true, port, authMode: "bearer", bearerToken: "rotated-test-token" });
+      approve(true);
+      const response = await pending;
+      const redirect = new URL(response.headers.get("location") as string);
+      expect(redirect.searchParams.get("error")).toBe("access_denied");
+      expect((await exchange(client_id, oldCode, verifier)).status).toBe(400);
+    } finally {
+      approve(false);
+      await configure({ enabled: true, port, authMode: "bearer", bearerToken: TOKEN });
+    }
   });
 
   it("shows an in-place error page (no redirect) for an unknown client or unregistered redirect", async () => {

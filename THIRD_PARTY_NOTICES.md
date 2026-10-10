@@ -1,5 +1,11 @@
 # Third-Party Notices
 
+## DOMPurify
+
+AI chat HTML is sanitized with [DOMPurify](https://github.com/cure53/DOMPurify), distributed here
+under the Apache License 2.0. Copyright (c) Cure53 and other contributors. The full license is
+included in [licenses/DOMPurify-LICENSE.txt](licenses/DOMPurify-LICENSE.txt).
+
 ## React Flow and Dagre
 
 The data-model editor uses `@xyflow/react` (React Flow) for its offline canvas and

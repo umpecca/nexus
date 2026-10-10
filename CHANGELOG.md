@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- T_151: Recognize the exact content saved by Nexus instead of suppressing file-watcher events for
+  1.5 seconds. Immediate external edits and deletions remain visible, including after failed saves.
+  Directory watchers survive atomic file replacements, and other windows still receive save changes.
+
+- T_149: Save Markdown and diagram sidecars through flushed temporary files and atomic replacement.
+  Save As chooses its path before preparing assets and commits once. Diagram cleanup runs after
+  commit, preserves referenced and staged assets, and cannot invalidate a successful save.
+
+- T_148: Preserve edits typed during Save and Save As, serialize saves per window, and keep newer
+  edits dirty. Failed saves show an error and cannot authorize closing or replacing the buffer;
+  late saves cannot change a replacement document's path or baseline.
+
+- T_147: Replaced chat HTML regex filtering with a DOMPurify allowlist, added main-renderer CSP,
+  guarded privileged IPC senders and sensitive payloads, and restricted confirmation/stream responses
+  to their owning editor window. Local JavaScript snippets run in worker source without eval.
+
+- T_146: Require explicit native Nexus approval before an OAuth client can obtain an MCP
+  authorization code. Browser form submissions cannot approve themselves; failed, concurrent,
+  expired, and revoked approvals fail closed.
+
 - T_145: Kept the SQL data-model diagram fixed while long table and column controls scroll inside
   the modal's right-hand inspector, including when the bounded SQL preview is open.
 
@@ -17,6 +37,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from failing when the wrapper is unavailable in the temporary extraction directory.
 
 ### Added
+
+- T_156: Images & Assets sidebar in Markdown rich-text/source/diff views, with previews, natural
+  dimensions, byte sizes, missing-file states, and embedded-source contribution to document size.
+  Explicit Embed, Extract to file, Replace and Locate file actions preserve destination syntax,
+  source undo and unsaved state; picker cancellation/stale results do not overwrite document edits.
+  Extraction creates a new file and uses a portable relative reference without overwriting assets.
+
+- T_155: Edit code/configuration and plain text references in a dedicated CodeMirror view, with
+  syntax highlighting, language selection, folding, undo, search/replace, wrapping, and shared
+  change review. Preserve raw text, BOM and newline conventions; skip Markdown/diagram processing.
+  Recognized files appear in the folder tree and open through native, recent, drop, and OS flows.
+  Strict UTF-8/binary checks and an 8 MB code/text limit prevent accidental binary-file editing.
+
+- T_154: Open local folders in a resizable, keyboard-accessible sidebar across editor views.
+  Browse directories on demand and open Markdown/text files with unsaved-change protection.
+  Create, rename, duplicate, copy/cut/paste, move, reveal, and copy paths. Confirmed deletion uses
+  Trash/Recycle Bin; open documents retain recoverable text. Moves update save paths across windows,
+  directory changes refresh the tree, and filesystem guards prevent root escape and replacement.
+
+- T_153: Thumbnail previews for embedded images from source and review views on hover, focus,
+  or a pinned Preview action. Added Expand all / Collapse all image-data controls in source and
+  both review panes. Invalid images show an unavailable state; previews leave Markdown intact.
+
+- T_152: Unified editor diffs, AI proposal previews, and MCP write confirmations around one
+  side-by-side viewer with line/text highlights, Previous/Next change navigation, change counts,
+  optional unchanged-section folding, and collapsed embedded image data in both panes.
+
+- T_150: Embedded base64 image data starts collapsed in source and diff views, with per-image
+  expand/collapse controls. Folding preserves the full Markdown for editing, copying, saving,
+  and diff comparison; search reveals matches inside hidden payloads.
 
 - T_144: Added AI Content Organization for conservative whole-document restructuring, Markdown and
   extraction cleanup, and obvious page-number/header/footer removal. Proposals receive protected

@@ -1,5 +1,15 @@
 export {};
 
+export type FolderRoot = { id: string; path: string; name: string };
+export type FolderEntry = { name: string; path: string; kind: "folder" | "file" | "link"; openable: boolean };
+export type FolderTarget = { rootId: string; path: string };
+export type FolderMutation = FolderTarget & {
+  action: "newFile" | "newFolder" | "rename" | "copy" | "move" | "trash";
+  name?: string;
+  destination?: string;
+};
+export type FolderChange = { rootId: string; path: string | null; root?: FolderRoot | null };
+
 import type {
   AiAgentChatPayload,
   AiChatPayload,
@@ -26,8 +36,11 @@ export type McpToolResult = {
 };
 
 export type NexusMenuAction =
+  | "toggleAssets"
   | "new"
   | "open"
+  | "openFolder"
+  | "closeFolder"
   | "loadDemo"
   | "save"
   | "saveAs"
@@ -72,6 +85,8 @@ export type AiSelectionMenuPayload = {
 };
 
 type NexusMenuState = {
+  assetsVisible?: boolean;
+  documentKind?: "markdown" | "text";
   editorZoomPercent?: number;
   showInvisibleCharacters?: boolean;
   spellCheckEnabled?: boolean;
@@ -347,6 +362,14 @@ declare global {
       convertImageToDataUrl(source: string): Promise<string | null>;
       getProfileName(): Promise<string>;
       openMarkdownFile(): Promise<OpenMarkdownResult>;
+      openFolder(): Promise<FolderRoot | null>;
+      closeFolder(): Promise<void>;
+      listFolder(payload: FolderTarget): Promise<FolderEntry[]>;
+      readFolderDocument(payload: FolderTarget): Promise<OpenMarkdownResult>;
+      mutateFolder(payload: FolderMutation): Promise<{ canceled: boolean; path?: string | null }>;
+      revealFolderItem(payload: FolderTarget): Promise<void>;
+      onFolderChange(callback: (event: FolderChange) => void): () => void;
+      onFileRelocated(callback: (event: { oldPath: string; nextPath: string | null }) => void): () => void;
       openRecentFile(filePath: string): Promise<OpenMarkdownResult>;
       listRecentFiles(): Promise<string[]>;
       clearRecentFiles(): Promise<string[]>;
@@ -355,8 +378,8 @@ declare global {
       readWatchedMarkdownFile(filePath: string): Promise<OpenMarkdownResult>;
       watchMarkdownFile(filePath: string): Promise<{ filePath: string }>;
       unwatchMarkdownFile(): Promise<void>;
-      saveMarkdownFile(filePath: string, markdown: string): Promise<{ filePath: string }>;
-      saveMarkdownFileAs(currentPath: string | undefined, markdown: string): Promise<SaveMarkdownResult>;
+      saveMarkdownFile(filePath: string, markdown: string, diagramNames?: string[]): Promise<{ filePath: string }>;
+      chooseMarkdownSavePath(currentPath: string | undefined, kind?: "text"): Promise<SaveMarkdownResult>;
       exportMarkdownAsHtml(
         currentPath: string | undefined,
         markdown: string,
@@ -385,16 +408,14 @@ declare global {
       selectBase64Image(): Promise<SelectBase64ImageResult>;
       selectDocumentImportSources(): Promise<SelectDocumentImportResult>;
       resolveImagePreview(documentPath: string | undefined, imageSource: string): Promise<string>;
+      inspectDocumentAsset(documentPath: string | undefined, source: string): Promise<import("./components/assets/AssetPanel").AssetInfo>;
+      changeDocumentAsset(documentPath: string | undefined, source: string, action: import("./components/assets/AssetPanel").AssetAction): Promise<{ source?: string; canceled?: boolean; error?: string; filePath?: string }>;
       readDiagramSvg(documentPath: string | undefined, src: string): Promise<string | null>;
       writeDiagramSvg(
         documentPath: string,
         svgText: string,
         kind: "drawio" | "isoflow"
       ): Promise<{ src: string; name: string } | { error: string }>;
-      cleanupDiagramAssets(
-        documentPath: string,
-        keepNames: string[]
-      ): Promise<{ removed: number }>;
       editDiagram(payload: { xml: string }): Promise<EditDiagramResult>;
       editIsoflow(payload: { model: unknown | null }): Promise<EditIsoflowResult>;
       editOpenApi(payload: { yaml: string; theme: "light" | "dark" }): Promise<EditOpenApiResult>;

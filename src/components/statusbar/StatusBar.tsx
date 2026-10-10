@@ -1,6 +1,9 @@
-import { MessageSquare, Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
+import { Images, MessageSquare, Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
 
 export type StatusBarProps = {
+  assetsVisible?: boolean;
+  canToggleAssets?: boolean;
+  onToggleAssets?: () => void;
   aiBusy: boolean;
   aiChatVisible: boolean;
   canToggleOutline: boolean;
@@ -20,6 +23,9 @@ export type StatusBarProps = {
 
 /** Word 2010-style status bar: outline toggle + word count on the left, zoom slider on the right. */
 function StatusBar({
+  assetsVisible,
+  canToggleAssets,
+  onToggleAssets,
   aiBusy,
   aiChatVisible,
   canToggleOutline,
@@ -75,6 +81,11 @@ function StatusBar({
         ) : null}
       </div>
       <div className="nexus-statusbar-right">
+        {onToggleAssets ? <button type="button" className="nexus-statusbar-button nexus-statusbar-toggle"
+          aria-pressed={assetsVisible} disabled={!canToggleAssets} onClick={onToggleAssets}
+          title={assetsVisible ? "Hide images and assets" : "Show images and assets"}>
+          <Images aria-hidden="true" /><span>Assets</span>
+        </button> : null}
         <button
           aria-pressed={aiChatVisible}
           className="nexus-statusbar-button nexus-statusbar-toggle"

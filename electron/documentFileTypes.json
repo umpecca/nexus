@@ -1,0 +1,5 @@
+{
+  "markdown": [".md", ".markdown", ".mdx"],
+  "text": [".txt", ".text", ".log", ".csv", ".tsv", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".config", ".env", ".properties", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".kts", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".fs", ".php", ".swift", ".scala", ".r", ".lua", ".html", ".htm", ".css", ".scss", ".sass", ".less", ".xml", ".svg", ".sql", ".sh", ".bash", ".zsh", ".ps1", ".psm1", ".bat", ".cmd", ".dockerfile", ".tf", ".hcl", ".graphql", ".gql", ".vue", ".svelte", ".astro", ".proto", ".puml", ".plantuml", ".mermaid"],
+  "names": ["dockerfile", "containerfile", "makefile", "cmakelists.txt", "jenkinsfile", ".gitignore", ".gitattributes", ".editorconfig", ".npmrc", ".env"]
+}

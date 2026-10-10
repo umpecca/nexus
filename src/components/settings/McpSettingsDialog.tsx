@@ -229,8 +229,8 @@ function McpSettingsDialog({
             <p className="nexus-settings-help">
               Writes are approved in a diff confirmation dialog unless auto-approve is enabled below.
               Clients can send the bearer token directly, or connect with OAuth (used by ChatGPT
-              custom connectors and Claude.ai) — the OAuth flow opens a browser page asking for your
-              approval, then issues the same bearer token.
+              custom connectors and Claude.ai). The browser requests approval, then a native Nexus
+              dialog asks you to allow the connection before issuing the same bearer token.
             </p>
 
             <label className="nexus-settings-field">

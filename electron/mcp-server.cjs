@@ -411,16 +411,16 @@ function buildConsentPageHtml({ clientName, redirectUri, requestId, nonce }) {
 </head>
 <body>
 <main>
-<h1>Authorize access to Nexus?</h1>
+<h1>Request access to Nexus?</h1>
 <p><strong>${escapeHtml(clientName)}</strong> (${escapeHtml(redirectHost)}) is asking to connect to
-your Nexus MCP server. Approving lets it read your open document and propose edits, subject to your
-MCP write settings.</p>
+your Nexus MCP server. Continue to request approval in the Nexus desktop app, where you can review
+the client and callback address. Keep this page open while you respond in Nexus.</p>
 <form method="post" action="/authorize/decision">
 <input type="hidden" name="request_id" value="${escapeHtml(requestId)}" />
 <input type="hidden" name="nonce" value="${escapeHtml(nonce)}" />
 <div class="actions">
 <button type="submit" name="action" value="deny">Deny</button>
-<button type="submit" name="action" value="approve" class="approve">Approve</button>
+<button type="submit" name="action" value="approve" class="approve">Request approval in Nexus</button>
 </div>
 </form>
 </main>
@@ -988,7 +988,11 @@ async function handleRequest(req, res) {
       sendHtml(res, 400, buildOauthErrorPageHtml("The request could not be read."), OAUTH_PAGE_HEADERS);
       return;
     }
-    respondAuthorizationOutcome(res, mcpOauth.decideAuthorization(new URLSearchParams(decisionBody)));
+    const outcome = await mcpOauth.decideAuthorization(
+      new URLSearchParams(decisionBody),
+      host?.requestOauthApproval
+    );
+    respondAuthorizationOutcome(res, outcome);
     return;
   }
 
@@ -1130,6 +1134,13 @@ async function configure(nextConfig) {
   const bearerToken = typeof nextConfig?.bearerToken === "string" ? nextConfig.bearerToken : "";
   const credentialsReady = authMode === "none" || bearerToken.length > 0;
 
+  // Invalidate both issued codes and decisions awaiting the owner before changing credentials or
+  // stopping the listener. A delayed dialog response cannot authorize a new server configuration.
+  if (currentConfig.enabled !== enabled || currentConfig.port !== port ||
+      currentConfig.authMode !== authMode || currentConfig.bearerToken !== bearerToken) {
+    mcpOauth.clearVolatileState();
+  }
+
   mcpOauth.configure({
     clientStorePath:
       typeof nextConfig?.oauthClientStorePath === "string" ? nextConfig.oauthClientStorePath : null
@@ -1169,6 +1180,7 @@ async function configure(nextConfig) {
 }
 
 async function stop() {
+  mcpOauth.clearVolatileState();
   await stopListening();
   currentConfig = { enabled: false, port: 0, authMode: "bearer", bearerToken: "" };
   mcpOauth.clearVolatileState();

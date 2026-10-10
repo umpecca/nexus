@@ -1,14 +1,11 @@
-// Pure helper for the "drag a Markdown file onto the window to open it" feature. The DataTransfer /
-// Electron plumbing lives in App.tsx; the extension check is isolated here so it can be unit-tested.
+import types from "../../electron/documentFileTypes.json";
 
-/**
- * File extensions Nexus opens as a document. Kept in sync by hand with the main process'
- * `openableFileExtensions` (electron/main.cjs) and the open-dialog `markdownFilters`.
- */
-const OPENABLE_DOCUMENT_EXTENSIONS = [".md", ".markdown", ".mdx", ".txt"];
-
-/** True when a dropped file's name has an extension Nexus knows how to open. Case-insensitive. */
+const basename = (name: string) => name.split(/[\\/]/).pop()!.toLowerCase();
+export function isMarkdownFilename(name: string): boolean {
+  return types.markdown.some(extension => basename(name).endsWith(extension));
+}
+/** Shared file types for native opens, the folder tree, and drops. Reads still validate UTF-8. */
 export function isOpenableDocumentFilename(name: string): boolean {
-  const lower = name.toLowerCase();
-  return OPENABLE_DOCUMENT_EXTENSIONS.some((extension) => lower.endsWith(extension));
+  const lower = basename(name);
+  return isMarkdownFilename(lower) || types.text.some(extension => lower.endsWith(extension)) || types.names.includes(lower) || lower.startsWith(".env.");
 }

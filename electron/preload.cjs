@@ -13,6 +13,22 @@ const aiChatStreamEventChannel = "ai:chat-stream-event";
 
 contextBridge.exposeInMainWorld("nexus", {
   platform: process.platform,
+  openFolder() { return ipcRenderer.invoke("folder:open"); },
+  closeFolder() { return ipcRenderer.invoke("folder:close"); },
+  listFolder(payload) { return ipcRenderer.invoke("folder:list", payload); },
+  readFolderDocument(payload) { return ipcRenderer.invoke("folder:read", payload); },
+  mutateFolder(payload) { return ipcRenderer.invoke("folder:mutate", payload); },
+  revealFolderItem(payload) { return ipcRenderer.invoke("folder:reveal", payload); },
+  onFolderChange(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("folder:changed", listener);
+    return () => ipcRenderer.removeListener("folder:changed", listener);
+  },
+  onFileRelocated(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("file:relocated", listener);
+    return () => ipcRenderer.removeListener("file:relocated", listener);
+  },
   getAppVersion() {
     return ipcRenderer.invoke("app:get-version");
   },
@@ -93,11 +109,11 @@ contextBridge.exposeInMainWorld("nexus", {
   unwatchMarkdownFile() {
     return ipcRenderer.invoke("file:unwatch");
   },
-  saveMarkdownFile(filePath, markdown) {
-    return ipcRenderer.invoke("file:save", { filePath, markdown });
+  saveMarkdownFile(filePath, markdown, diagramNames) {
+    return ipcRenderer.invoke("file:save", { filePath, markdown, diagramNames });
   },
-  saveMarkdownFileAs(currentPath, markdown) {
-    return ipcRenderer.invoke("file:saveAs", { currentPath, markdown });
+  chooseMarkdownSavePath(currentPath, kind) {
+    return ipcRenderer.invoke("file:choose-save-path", { currentPath, ...(kind ? { kind } : {}) });
   },
   exportMarkdownAsHtml(currentPath, markdown, options) {
     return ipcRenderer.invoke("file:export-html", { currentPath, markdown, options });
@@ -126,14 +142,17 @@ contextBridge.exposeInMainWorld("nexus", {
   resolveImagePreview(documentPath, imageSource) {
     return ipcRenderer.invoke("image:resolve-preview", { documentPath, imageSource });
   },
+  inspectDocumentAsset(documentPath, source) {
+    return ipcRenderer.invoke("asset:inspect", { documentPath, source });
+  },
+  changeDocumentAsset(documentPath, source, action) {
+    return ipcRenderer.invoke("asset:action", { documentPath, source, action });
+  },
   readDiagramSvg(documentPath, src) {
     return ipcRenderer.invoke("diagram:read-svg", { documentPath, src });
   },
   writeDiagramSvg(documentPath, svgText, kind) {
     return ipcRenderer.invoke("diagram:write-svg", { documentPath, svgText, kind });
-  },
-  cleanupDiagramAssets(documentPath, keepNames) {
-    return ipcRenderer.invoke("diagram:cleanup-assets", { documentPath, keepNames });
   },
   editDiagram(payload) {
     return ipcRenderer.invoke("drawio:edit", payload);

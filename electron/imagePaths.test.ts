@@ -2,7 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 // The relative-image-source logic used by the "image:select-local" IPC handler. This test lives under
 // electron/ (outside the tsconfig "src" include) so it can require the raw CommonJS module directly.
-import { toMarkdownImageSource } from "./imagePaths.cjs";
+import { toMarkdownImageSource, decodeImagePath } from "./imagePaths.cjs";
 
 // Pin Windows path semantics regardless of where the test runs, with a deterministic file:// stub so
 // the absolute fallbacks are assertable cross-platform.
@@ -17,6 +17,10 @@ const posix = {
 };
 
 describe("toMarkdownImageSource (Windows)", () => {
+  it("resolves encoded image filenames once, retaining older literal percent signs", () => {
+    expect(decodeImagePath("./a%20b%2520%23%3F.svg")).toBe("./a b%20#?.svg");
+    expect(decodeImagePath("./100%.svg")).toBe("./100%.svg");
+  });
   it("makes a child-folder image relative with a ./ prefix", () => {
     expect(
       toMarkdownImageSource("C:\\docs\\readme.md", "C:\\docs\\images\\logo.png", win)

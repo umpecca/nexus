@@ -4,7 +4,6 @@ import {
   codeBlockPlugin,
   codeMirrorPlugin,
   directivesPlugin,
-  diffSourcePlugin,
   frontmatterPlugin,
   headingsPlugin,
   imagePlugin,
@@ -26,7 +25,9 @@ import {
 import type { ViewMode } from "@mdxeditor/editor";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
-import { isOpenableDocumentFilename } from "./lib/fileDrop";
+import { useDocumentSave, type DocumentSaveSnapshot } from "./lib/useDocumentSave";
+import { isMarkdownFilename, isOpenableDocumentFilename } from "./lib/fileDrop";
+import CodeFileEditor, { type CodeFileEditorHandle } from "./components/editor/CodeFileEditor";
 import {
   createDefaultSettings,
   getEditorPageSizeOption,
@@ -54,12 +55,18 @@ import EditorContextMenu from "./components/editor/EditorContextMenu";
 import FindTextPanel from "./components/editor/FindTextPanel";
 import FileChangedDialog from "./components/editor/FileChangedDialog";
 import FileReloadedNoticeDialog from "./components/editor/FileReloadedNoticeDialog";
+import SaveErrorDialog from "./components/editor/SaveErrorDialog";
 import ExportProgressDialog from "./components/editor/ExportProgressDialog";
 import PrintPreviewDialog from "./components/editor/PrintPreviewDialog";
 import { listExitPlugin } from "./components/editor/ListExitPlugin";
 import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
 import OutlineSidebar from "./components/editor/OutlineSidebar";
+import FolderSidebar from "./components/files/FolderSidebar";
+import AssetPanel, { type AssetAction } from "./components/assets/AssetPanel";
+import { assetReplacementChanges, replaceDocumentAsset, type DocumentAsset } from "./lib/documentAssets";
+import type { FolderRoot } from "./electron";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { Titlebar } from "./components/titlebar/Titlebar";
 import { extractOutline, getActiveHeadingIndex, type OutlineHeading } from "./lib/outline";
 import { cleanupMarkdownFormatting } from "./lib/format";
@@ -91,6 +98,8 @@ import { drawioPlugin } from "./components/editor/drawioPlugin";
 import { isoflowPlugin } from "./components/editor/isoflowPlugin";
 import { codeMirrorThemeExtensions } from "./components/editor/codeMirrorThemes";
 import { sourceImagePasteExtension } from "./components/editor/sourceImagePaste";
+import { sourceImageFoldingExtension } from "./components/editor/sourceImageFolding";
+import { reviewSourcePlugin } from "./components/editor/reviewSourcePlugin";
 import { readImageFileAsDataUrl } from "./lib/imagePaste";
 import { DEMO_DOCUMENT_MARKDOWN } from "./lib/demoDocument";
 import SettingsDialog from "./components/settings/SettingsDialog";
@@ -187,10 +196,6 @@ function formatWindowTitle(filePath: string | undefined, isDirty: boolean) {
   }
 
   return `${dirtyPrefix}${getDocumentName(filePath)} (${filePath})`;
-}
-
-function hasUnsavedMarkdownChanges(markdown: string, lastSavedMarkdown: string) {
-  return !areMarkdownBuffersEquivalent(markdown, lastSavedMarkdown);
 }
 
 function normalizeFilePathForComparison(filePath: string) {
@@ -316,7 +321,7 @@ type SourceEditorView = {
     };
     selection: { main: { from: number; to: number } };
   };
-  dispatch: (spec: { changes: { from: number; to: number; insert: string } }) => void;
+  dispatch: (spec: { changes: { from: number; to: number; insert: string } | { from: number; to: number; insert: string }[]; userEvent?: string }) => void;
   lineBlockAt: (position: number) => { top: number };
   scrollDOM: HTMLElement;
 };
@@ -474,7 +479,21 @@ function App() {
   const initialDraft = useMemo(createDefaultDraft, []);
   const [markdown, setMarkdown] = useState(initialDraft.markdown);
   const [filePath, setFilePath] = useState<string | undefined>(initialDraft.filePath);
+  const [documentKind, setDocumentKind] = useState<"markdown" | "text">("markdown");
+  const documentKindRef = useRef(documentKind);
+  documentKindRef.current = documentKind;
+  const hasUnsavedMarkdownChanges = useCallback((current: string, baseline: string) =>
+    documentKindRef.current === "text" ? current !== baseline : !areMarkdownBuffersEquivalent(current, baseline), []);
+  const codeEditorRef = useRef<CodeFileEditorHandle>(null);
+  const [codeDocumentVersion, setCodeDocumentVersion] = useState(0);
+  const lastMarkdownModeRef = useRef<ViewMode>("rich-text");
+  const [folderRoot, setFolderRoot] = useState<FolderRoot | null>(null);
+  const folderOpenRequestRef = useRef(0);
+  const folderPickerRequestRef = useRef(0);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [assetsVisible, setAssetsVisible] = useState(false);
   const [lastSavedMarkdown, setLastSavedMarkdown] = useState(initialDraft.markdown);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [previousVersionMarkdown, setPreviousVersionMarkdown] = useState<string | undefined>();
   const [diffMarkdown, setDiffMarkdown] = useState("");
   // The baseline for an in-progress run of external edits, pinned to the file it was taken from.
@@ -537,6 +556,23 @@ function App() {
   const activeScrollElementRef = useRef<HTMLElement | null>(null);
   const isApplyingScrollRef = useRef(false);
   const filePathRef = useRef(filePath);
+  const markdownRef = useRef(markdown);
+  const lastSavedMarkdownRef = useRef(lastSavedMarkdown);
+  // Identity changes on document replacement, including reloading the same path.
+  const documentIdRef = useRef(0);
+  const { saveDocument, saveDocumentAs, saveAndConfirmClean } = useDocumentSave({
+    getSnapshot: () => ({
+      documentId: documentIdRef.current,
+      markdown: getCurrentMarkdown(),
+      filePath: filePathRef.current,
+      lastSavedMarkdown: lastSavedMarkdownRef.current,
+      exactText: documentKindRef.current === "text"
+    }),
+    bridge: window.nexus,
+    prepareMarkdownForDisk,
+    onSaved: recordSuccessfulSave,
+    onError: setSaveError
+  });
   const autoApproveMcpWritesRef = useRef(settings.mcpServer.autoApproveWrites);
   // Tracks the bearer token already written to the encrypted store, so the persist effect only writes
   // on genuine changes (and skips re-writing the value hydrated at startup).
@@ -560,6 +596,8 @@ function App() {
   const menuHandlersRef = useRef({
     createNewDocument,
     openDocument,
+    openFolder,
+    closeFolder,
     openRecentFile,
     loadDemoDocument,
     saveDocument,
@@ -597,6 +635,7 @@ function App() {
         ...current,
         spellCheckEnabled: !current.spellCheckEnabled
       })),
+    toggleAssets: () => setAssetsVisible(current => !current),
     toggleOutline: () =>
       setSettings((current) => ({
         ...current,
@@ -662,7 +701,7 @@ function App() {
   } as React.CSSProperties;
   const isDirty = hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown);
   const parseErrorKey = parseError ? `${parseError.error}|${parseError.source}` : null;
-  const showParseError = parseError !== null && parseErrorKey !== dismissedErrorKey;
+  const showParseError = documentKind === "markdown" && parseError !== null && parseErrorKey !== dismissedErrorKey;
   const outlineHeadings = useMemo(() => extractOutline(markdown), [markdown]);
   const wordCount = useMemo(() => countWords(markdown), [markdown]);
   // CodeMirror (code blocks + source mode) gets a theme matched to the app theme: nord for dark,
@@ -674,13 +713,14 @@ function App() {
     ],
     [resolvedTheme, settings.showInvisibleCharacters]
   );
-  // The source/diff editor gets the shared CodeMirror config plus image-paste support, so pasting a
+  // The source/diff editor gets image-data folding plus image-paste support, so pasting a
   // clipboard image embeds it as a base64 markdown image (mirroring rich-text mode). Code blocks keep
   // the plain `codeMirrorExtensions` so an image paste there is left to the default behavior.
   const sourceCodeMirrorExtensions = useMemo(
     () => [
       ...codeMirrorExtensions,
       sourceImagePasteExtension(),
+      sourceImageFoldingExtension(),
       // CodeMirror disables spell check by default; mirror the editor-wide preference so source mode
       // matches rich-text mode. (Code blocks keep the plain `codeMirrorExtensions` and stay unchecked.)
       EditorView.contentAttributes.of({
@@ -693,7 +733,7 @@ function App() {
   // The outline lives only in rich-text mode; source and diff modes hide it and disable the toggle.
   // settings.outlineVisible is left untouched while in those modes, so the panel's open/closed state
   // is remembered and restored automatically when the user returns to rich-text.
-  const canToggleOutline = editorViewMode === "rich-text";
+  const canToggleOutline = documentKind === "markdown" && editorViewMode === "rich-text";
   const showOutlineSidebar = settings.outlineVisible && canToggleOutline;
   const defaultPublishFilename = useMemo(() => {
     if (filePath) {
@@ -804,10 +844,14 @@ function App() {
   }, []);
 
   filePathRef.current = filePath;
+  markdownRef.current = markdown;
+  lastSavedMarkdownRef.current = lastSavedMarkdown;
   autoApproveMcpWritesRef.current = settings.mcpServer.autoApproveWrites;
   menuHandlersRef.current = {
     createNewDocument,
     openDocument,
+    openFolder,
+    closeFolder,
     openRecentFile,
     loadDemoDocument,
     saveDocument,
@@ -845,6 +889,7 @@ function App() {
         ...current,
         spellCheckEnabled: !current.spellCheckEnabled
       })),
+    toggleAssets: () => setAssetsVisible(current => !current),
     toggleOutline: () =>
       setSettings((current) => ({
         ...current,
@@ -1001,10 +1046,12 @@ function App() {
 
   useEffect(() => {
     window.nexus?.setMenuState({
+      documentKind,
       editorZoomPercent,
       showInvisibleCharacters: settings.showInvisibleCharacters,
       spellCheckEnabled: settings.spellCheckEnabled,
       outlineVisible: settings.outlineVisible,
+      assetsVisible: assetsVisible && documentKind === "markdown",
       pageOrientation: settings.pageOrientation,
       responsiveContentWrappingEnabled: settings.responsiveContentWrappingEnabled,
       paperViewEnabled: settings.paperViewEnabled,
@@ -1016,11 +1063,12 @@ function App() {
     settings.showInvisibleCharacters,
     settings.spellCheckEnabled,
     settings.outlineVisible,
+    assetsVisible,
     settings.pageOrientation,
     settings.responsiveContentWrappingEnabled,
     settings.paperViewEnabled,
     settings.aiChatVisible,
-    editorViewMode
+    editorViewMode, documentKind
   ]);
 
   useEffect(() => {
@@ -1104,7 +1152,7 @@ function App() {
       filePath,
       hasUnsavedMarkdownChanges(markdown, lastSavedMarkdown)
     );
-  }, [filePath, lastSavedMarkdown, markdown]);
+  }, [filePath, lastSavedMarkdown, markdown, documentKind, hasUnsavedMarkdownChanges]);
 
   useEffect(() => {
     if (!window.nexus) {
@@ -1151,7 +1199,7 @@ function App() {
         }
       }
     });
-  }, [filePath, lastSavedMarkdown, markdown, settings]);
+  }, [filePath, lastSavedMarkdown, markdown, settings, documentKind, hasUnsavedMarkdownChanges]);
 
   useEffect(() => {
     if (!window.nexus) {
@@ -1517,6 +1565,22 @@ function App() {
     };
   }, []);
 
+  // Folder operations preserve the live buffer and only change the save destination.
+  useEffect(() => window.nexus?.onFileRelocated?.(({ oldPath, nextPath }) => {
+    if (!areFilePathsEquivalent(filePathRef.current, oldPath)) return;
+    documentIdRef.current++;
+    documentLoadTokenRef.current++;
+    folderOpenRequestRef.current++;
+    filePathRef.current = nextPath ?? undefined;
+    setFilePath(nextPath ?? undefined);
+    setExternalFileChangePrompt(null);
+    externalDiffBaselineRef.current = null;
+    if (!nextPath) {
+      lastSavedMarkdownRef.current = "";
+      setLastSavedMarkdown("");
+    }
+  }), []);
+
   // Leaving the diff view ends the run of external edits being reviewed, so the next one starts from
   // a fresh baseline rather than diffing against content the user has already seen and moved past.
   useEffect(() => {
@@ -1629,6 +1693,35 @@ function App() {
     setMarkdown(next);
   }
 
+  async function changeDocumentAsset(snapshot: string, asset: DocumentAsset, action: AssetAction) {
+    if (documentKindRef.current !== "markdown" || getCurrentMarkdown() !== snapshot) {
+      throw new Error("The document changed. Refresh assets and try again.");
+    }
+    const documentId = documentIdRef.current;
+    if (!window.nexus) throw new Error("Asset actions are unavailable in this window.");
+    const result = await window.nexus.changeDocumentAsset(filePathRef.current, asset.source, action);
+    if (result.error) throw new Error(result.error);
+    if (result.canceled || !result.source) return;
+    if (documentIdRef.current !== documentId || getCurrentMarkdown() !== snapshot) {
+      throw new Error(result.filePath
+        ? `The image was extracted to ${result.filePath}, but the document changed. Its reference was not updated.`
+        : "The document changed while choosing an image. Refresh assets and try again.");
+    }
+    const next = replaceDocumentAsset(snapshot, asset, result.source);
+    if (next === snapshot) return;
+    const sourceView = currentViewModeRef.current === "source" && editorSurfaceRef.current
+      ? getSourceEditorView(editorSurfaceRef.current) : null;
+    if (sourceView && sourceView.state.doc.toString() === snapshot) {
+      sourceView.dispatch({ changes: assetReplacementChanges(asset, result.source), userEvent: "input.asset" });
+      markdownRef.current = next;
+      setMarkdown(next);
+    } else {
+      beginProgrammaticMarkdownChange(next);
+      editorRef.current?.setMarkdown(next);
+      setMarkdown(next);
+    }
+  }
+
   function cleanUpFormatting() {
     const current = getCurrentMarkdown();
     const next = cleanupMarkdownFormatting(current);
@@ -1712,6 +1805,7 @@ function App() {
       }
 
       if (matchesTargetMarkdown) {
+        markdownRef.current = nextMarkdown;
         setMarkdown(nextMarkdown);
         return;
       }
@@ -1723,6 +1817,7 @@ function App() {
       }
     }
 
+    markdownRef.current = nextMarkdown;
     setMarkdown(nextMarkdown);
   }
 
@@ -1743,9 +1838,14 @@ function App() {
       }
       const normalized = editorRef.current?.getMarkdown();
       if (typeof normalized !== "string") {
+        requestAnimationFrame(() => {
+          if (documentLoadTokenRef.current === token && documentKindRef.current === "markdown") adoptNormalizedBaselineAfterLoad(markClean);
+        });
         return;
       }
       setMarkdown(normalized);
+      markdownRef.current = normalized;
+      lastSavedMarkdownRef.current = markClean ? normalized : "";
       setLastSavedMarkdown(markClean ? normalized : "");
     });
   }
@@ -1756,26 +1856,61 @@ function App() {
     options: { previousVersionMarkdown?: string; markClean?: boolean } = {}
   ) {
     const { markClean = true } = options;
+    const documentId = ++documentIdRef.current;
+    const nextKind = nextFilePath && !isMarkdownFilename(nextFilePath) ? "text" : "markdown";
+    if (documentKindRef.current === "markdown") lastMarkdownModeRef.current = currentViewModeRef.current;
     // Diagrams may be stored as sidecar `.svg` files; inline them back to base64 so they stay editable
     // (the editor only understands inline diagrams). A no-op for untitled buffers and plain documents.
-    const editorMarkdown = nextFilePath
+    const editorMarkdown = nextFilePath && nextKind === "markdown"
       ? await inlineDiagrams(nextMarkdown, (src) =>
           window.nexus?.readDiagramSvg(nextFilePath, src) ?? Promise.resolve(null)
         )
       : nextMarkdown;
+    if (documentIdRef.current !== documentId) {
+      return;
+    }
+    // Also supersede saves requested while sidecars were being read from the previous buffer.
+    documentIdRef.current += 1;
+    filePathRef.current = nextFilePath;
+    markdownRef.current = editorMarkdown;
+    lastSavedMarkdownRef.current = markClean ? editorMarkdown : "";
+    setSaveError(null);
     editorScrollSnapshotRef.current = { ratio: 0, top: 0 };
-    beginProgrammaticMarkdownChange(editorMarkdown);
-    editorRef.current?.setMarkdown(editorMarkdown);
+    if (nextKind === "markdown") {
+      beginProgrammaticMarkdownChange(editorMarkdown);
+      editorRef.current?.setMarkdown(editorMarkdown);
+    } else {
+      programmaticMarkdownChangeRef.current = null;
+      documentLoadTokenRef.current++;
+    }
+    documentKindRef.current = nextKind;
+    setDocumentKind(nextKind);
+    setCodeDocumentVersion(version => version + 1);
+    currentViewModeRef.current = nextKind === "text" ? "source" : lastMarkdownModeRef.current;
+    setEditorViewMode(currentViewModeRef.current);
+    editorSelectionSnapshotRef.current = null;
     setLastSavedMarkdown(markClean ? editorMarkdown : "");
     setPreviousVersionMarkdown(options.previousVersionMarkdown);
     setDiffMarkdown(options.previousVersionMarkdown ?? "");
     setMarkdown(editorMarkdown);
     setFilePath(nextFilePath);
     setExternalFileChangePrompt(null);
-    adoptNormalizedBaselineAfterLoad(markClean);
+    setPendingFindRequest(0);
+    setPendingReplaceRequest(0);
+    setPendingDiffViewRequest(0);
+    if (nextKind === "markdown") adoptNormalizedBaselineAfterLoad(markClean);
   }
 
   function clearDocument() {
+    documentIdRef.current += 1;
+    documentKindRef.current = "markdown";
+    setDocumentKind("markdown");
+    currentViewModeRef.current = lastMarkdownModeRef.current;
+    setEditorViewMode(lastMarkdownModeRef.current);
+    filePathRef.current = undefined;
+    markdownRef.current = "";
+    lastSavedMarkdownRef.current = "";
+    setSaveError(null);
     // Supersede any load baseline capture still pending on a microtask.
     documentLoadTokenRef.current += 1;
     externalDiffBaselineRef.current = null;
@@ -1790,24 +1925,33 @@ function App() {
     setExternalFileChangePrompt(null);
   }
 
-  function recordSuccessfulSave(currentMarkdown: string, nextFilePath: string, hadSavedVersion: boolean) {
+  function recordSuccessfulSave(snapshot: DocumentSaveSnapshot, nextFilePath: string) {
     // The saved text is already MDXEditor's serialized output; supersede any pending load capture.
     documentLoadTokenRef.current += 1;
-    if (hadSavedVersion) {
-      setPreviousVersionMarkdown(lastSavedMarkdown);
-      setDiffMarkdown(lastSavedMarkdown);
+    if (snapshot.filePath) {
+      setPreviousVersionMarkdown(snapshot.lastSavedMarkdown);
+      setDiffMarkdown(snapshot.lastSavedMarkdown);
     } else {
       setPreviousVersionMarkdown(undefined);
       setDiffMarkdown("");
     }
 
-    setLastSavedMarkdown(currentMarkdown);
-    setMarkdown(currentMarkdown);
+    // Update only the saved baseline. The live buffer may have advanced while the write awaited.
+    lastSavedMarkdownRef.current = snapshot.markdown;
+    filePathRef.current = nextFilePath;
+    setLastSavedMarkdown(snapshot.markdown);
     setFilePath(nextFilePath);
+    setSaveError(null);
   }
 
   function getCurrentMarkdown() {
-    return editorRef.current?.getMarkdown() ?? markdown;
+    return documentKindRef.current === "text"
+      ? codeEditorRef.current?.getValue() ?? markdownRef.current
+      : editorRef.current?.getMarkdown() ?? markdownRef.current;
+  }
+
+  function buffersEquivalent(first: string, second: string) {
+    return documentKindRef.current === "text" ? first === second : areMarkdownBuffersEquivalent(first, second);
   }
 
   function readEditorSelection(): McpEditorSelection {
@@ -2199,9 +2343,9 @@ function App() {
   // When "store diagrams as files" is on and a destination path is known, externalize inline base64
   // diagrams to sibling `.svg` files and return markdown that references them by relative path. The
   // editor keeps holding base64, so this only changes the bytes written to disk; otherwise a no-op.
-  async function prepareMarkdownForDisk(base64Markdown: string, targetPath: string): Promise<string> {
-    if (!settings.diagramsAsFiles || !window.nexus) {
-      return base64Markdown;
+  async function prepareMarkdownForDisk(base64Markdown: string, targetPath: string) {
+    if (documentKindRef.current === "text" || !settings.diagramsAsFiles || !window.nexus) {
+      return { markdown: base64Markdown };
     }
     const { markdown: externalized, usedNames } = await externalizeDiagrams(
       base64Markdown,
@@ -2213,50 +2357,8 @@ function App() {
         return written;
       }
     );
-    // Remove this document's now-unreferenced diagram files (e.g. after an edit changed the hash).
-    await window.nexus.cleanupDiagramAssets(targetPath, [...usedNames]);
-    return externalized;
-  }
-
-  async function saveDocument(): Promise<boolean> {
-    const currentMarkdown = getCurrentMarkdown();
-
-    if (filePath) {
-      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, filePath);
-      await window.nexus?.saveMarkdownFile(filePath, diskMarkdown);
-      recordSuccessfulSave(currentMarkdown, filePath, true);
-      return true;
-    }
-
-    const result = await window.nexus?.saveMarkdownFileAs(undefined, currentMarkdown);
-    if (result && !result.canceled) {
-      // Path is only known now; re-save with sidecar files written into the chosen folder if enabled.
-      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, result.filePath);
-      if (diskMarkdown !== currentMarkdown) {
-        await window.nexus?.saveMarkdownFile(result.filePath, diskMarkdown);
-      }
-      recordSuccessfulSave(currentMarkdown, result.filePath, false);
-      return true;
-    }
-
-    return false;
-  }
-
-  async function saveDocumentAs(): Promise<boolean> {
-    const currentMarkdown = getCurrentMarkdown();
-    const hadSavedVersion = Boolean(filePath);
-    const result = await window.nexus?.saveMarkdownFileAs(filePath, currentMarkdown);
-    if (result && !result.canceled) {
-      // Externalize into the (possibly new) destination folder if enabled.
-      const diskMarkdown = await prepareMarkdownForDisk(currentMarkdown, result.filePath);
-      if (diskMarkdown !== currentMarkdown) {
-        await window.nexus?.saveMarkdownFile(result.filePath, diskMarkdown);
-      }
-      recordSuccessfulSave(currentMarkdown, result.filePath, hadSavedVersion);
-      return true;
-    }
-
-    return false;
+    // Main commits this text before removing assets referenced only by the prior disk version.
+    return { markdown: externalized, diagramNames: [...usedNames] };
   }
 
   async function exportDocumentAsHtml() {
@@ -2385,8 +2487,9 @@ function App() {
   }
 
   async function confirmDirtyBufferAction() {
+    const documentId = documentIdRef.current;
     const currentMarkdown = getCurrentMarkdown();
-    const currentIsDirty = hasUnsavedMarkdownChanges(currentMarkdown, lastSavedMarkdown);
+    const currentIsDirty = hasUnsavedMarkdownChanges(currentMarkdown, lastSavedMarkdownRef.current);
 
     if (!currentIsDirty) {
       return true;
@@ -2394,29 +2497,27 @@ function App() {
 
     const choice = await window.nexus?.confirmSaveChanges();
 
+    if (documentIdRef.current !== documentId) {
+      return false;
+    }
+
     if (choice === "cancel" || !choice) {
       return false;
     }
 
     if (choice === "save") {
-      return saveDocument();
+      return saveAndConfirmClean();
     }
 
     return true;
   }
 
   async function openDocument() {
-    const result = await window.nexus?.openMarkdownFile();
-    if (!result || result.canceled) {
-      return;
-    }
-
-    const canReplace = await confirmDirtyBufferAction();
-    if (!canReplace) {
-      return;
-    }
-
-    await loadDocument(result.markdown, result.filePath);
+    try {
+      const result = await window.nexus?.openMarkdownFile();
+      if (!result || result.canceled || !(await confirmDirtyBufferAction())) return;
+      await loadDocument(result.markdown, result.filePath);
+    } catch (error) { setFolderError(error instanceof Error ? error.message : String(error)); }
   }
 
   async function openRecentFile(filePath: string) {
@@ -2432,6 +2533,41 @@ function App() {
 
     await loadDocument(result.markdown, result.filePath);
   }
+
+  async function openFolder() {
+    const request = ++folderPickerRequestRef.current;
+    try {
+      const selected = await window.nexus?.openFolder();
+      if (selected && request === folderPickerRequestRef.current) {
+        folderOpenRequestRef.current++;
+        setFolderRoot(selected);
+      }
+    } catch (error) {
+      setFolderError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function closeFolder() {
+    folderOpenRequestRef.current++;
+    folderPickerRequestRef.current++;
+    setFolderRoot(null);
+    void window.nexus?.closeFolder().catch(error => setFolderError(String(error)));
+  }
+
+  async function openFolderDocument(path: string) {
+    if (!folderRoot) return;
+    const request = ++folderOpenRequestRef.current;
+    const result = await window.nexus?.readFolderDocument({ rootId: folderRoot.id, path });
+    if (!result || result.canceled || request !== folderOpenRequestRef.current) return;
+    if (areFilePathsEquivalent(filePathRef.current, result.filePath)) return;
+    if (!(await confirmDirtyBufferAction()) || request !== folderOpenRequestRef.current) return;
+    await loadDocument(result.markdown, result.filePath);
+  }
+
+  const changeFolderRoot = useCallback((root: FolderRoot | null) => {
+    folderOpenRequestRef.current++;
+    setFolderRoot(root);
+  }, []);
 
   async function loadDemoDocument() {
     const canReplace = await confirmDirtyBufferAction();
@@ -2505,7 +2641,7 @@ function App() {
 
       const currentMarkdown = getCurrentMarkdown();
       const currentIsDirty = hasUnsavedMarkdownChanges(currentMarkdown, lastSavedMarkdown);
-      const diskDiffersFromCurrent = !areMarkdownBuffersEquivalent(
+      const diskDiffersFromCurrent = !buffersEquivalent(
         result.markdown,
         currentMarkdown
       );
@@ -2701,12 +2837,19 @@ function App() {
 
   const dispatchMenuAction = useCallback((action: NexusMenuAction, payload?: AiSelectionMenuPayload) => {
     const h = menuHandlersRef.current;
+    if (documentKindRef.current === "text" && ["editFrontmatter", "insertTableOfContents", "contentOrganization", "documentImport", "aiSelection", "exportHtml", "exportWord", "exportPdf", "printPreview", "publishWeb", "publishQuickConnect", "copyHtml"].includes(action)) return;
     switch (action) {
       case "new":
         void h.createNewDocument();
         break;
       case "open":
         void h.openDocument();
+        break;
+      case "openFolder":
+        void h.openFolder();
+        break;
+      case "closeFolder":
+        h.closeFolder();
         break;
       case "loadDemo":
         void h.loadDemoDocument();
@@ -2761,6 +2904,9 @@ function App() {
         break;
       case "toggleSpellCheck":
         h.toggleSpellCheck();
+        break;
+      case "toggleAssets":
+        if (documentKindRef.current === "markdown") h.toggleAssets();
         break;
       case "toggleOutline":
         h.toggleOutline();
@@ -2899,8 +3045,10 @@ function App() {
   return (
     <main className={appShellClassName} data-theme={resolvedTheme}>
       <Titlebar
-        canEditFrontmatter={editorViewMode === "rich-text"}
+        canEditFrontmatter={documentKind === "markdown" && editorViewMode === "rich-text"}
         canToggleOutline={canToggleOutline}
+        folderOpen={folderRoot !== null}
+        markdownDocument={documentKind === "markdown"}
         dispatchMenuAction={dispatchMenuAction}
         onAiSelectionAction={runSelectionAiAction}
         onAiDocumentImport={runDocumentImport}
@@ -2909,6 +3057,7 @@ function App() {
         filePath={filePath ?? null}
         isDirty={isDirty}
         outlineVisible={settings.outlineVisible}
+        assetsVisible={assetsVisible && documentKind === "markdown"}
         aiChatVisible={settings.aiChatVisible}
         pageOrientation={settings.pageOrientation}
         paperViewEnabled={settings.paperViewEnabled}
@@ -2917,10 +3066,12 @@ function App() {
         spellCheckEnabled={settings.spellCheckEnabled}
       />
       <section className="workspace">
+        {folderRoot ? <FolderSidebar key={folderRoot.id} root={folderRoot} filePath={filePath}
+          onOpen={openFolderDocument} onClose={closeFolder} onRootChange={changeFolderRoot} /> : null}
         <div className="editor-column">
           <div
             className={
-              showOutlineSidebar
+              documentKind === "text" ? "editor-surface nexus-code-surface" : showOutlineSidebar
                 ? `${editorSurfaceClassName} editor-surface-with-outline`
                 : editorSurfaceClassName
             }
@@ -2939,10 +3090,12 @@ function App() {
               />
             ) : null}
             <EditorContextMenu>
-              <MDXEditor
-                // spellCheckEnabled is in the key because diffSourcePlugin only reads
-                // codeMirrorExtensions on init: a remount is what lets source mode pick up the new
-                // spell-check contentAttributes (rich text also re-reads the spellCheck prop here).
+              {documentKind === "text" ? <CodeFileEditor key={codeDocumentVersion} ref={codeEditorRef} value={markdown}
+                filename={filePath ? getDocumentName(filePath) : "Untitled.txt"} extensions={codeMirrorExtensions} zoom={editorZoomPercent}
+                onChange={value => { markdownRef.current = value; setMarkdown(value); }}
+                findRequest={pendingFindRequest} replaceRequest={pendingReplaceRequest} diffRequest={pendingDiffViewRequest}
+                comparison={diffMarkdown} onReviewChange={review => { currentViewModeRef.current = review ? "diff" : "source"; setEditorViewMode(currentViewModeRef.current); }} /> : <MDXEditor
+                // Remount when display preferences change; rich text re-reads spellCheck here too.
                 key={`editor-${settings.showInvisibleCharacters}-${resolvedTheme}-${settings.spellCheckEnabled}`}
                 ref={editorRef}
                 markdown={markdown}
@@ -3006,11 +3159,11 @@ function App() {
                   }),
                   markdownShortcutPlugin(),
                   searchPlugin(),
-                  diffSourcePlugin({
+                  reviewSourcePlugin({
                     diffMarkdown,
-                    readOnlyDiff: true,
                     viewMode: currentViewModeRef.current,
-                    codeMirrorExtensions: sourceCodeMirrorExtensions
+                    sourceExtensions: sourceCodeMirrorExtensions,
+                    reviewExtensions: codeMirrorExtensions
                   }),
                   toolbarPlugin({
                     toolbarContents: () => (
@@ -3036,7 +3189,7 @@ function App() {
                     toolbarClassName: "nexus-editor-toolbar"
                   })
                 ]}
-              />
+              />}
             </EditorContextMenu>
             {showParseError && parseError ? (
               <ParseErrorPanel
@@ -3047,6 +3200,8 @@ function App() {
             ) : null}
           </div>
         </div>
+        {assetsVisible && documentKind === "markdown" ? <AssetPanel key={`${codeDocumentVersion}:${filePath ?? ""}`}
+          markdown={markdown} documentPath={filePath} onClose={() => setAssetsVisible(false)} onAction={changeDocumentAsset} /> : null}
         {settings.aiChatVisible ? (
           <AiChatPanel
             ai={settings.ai}
@@ -3085,6 +3240,9 @@ function App() {
         aiBusy={aiBusy}
         aiChatVisible={settings.aiChatVisible}
         canToggleOutline={canToggleOutline}
+        canToggleAssets={documentKind === "markdown"}
+        assetsVisible={assetsVisible && documentKind === "markdown"}
+        onToggleAssets={() => dispatchMenuAction("toggleAssets")}
         isDirty={isDirty}
         maxZoom={MAX_EDITOR_ZOOM_PERCENT}
         minZoom={MIN_EDITOR_ZOOM_PERCENT}
@@ -3117,6 +3275,9 @@ function App() {
           onDismiss={() => setExternalFileReloadedNotice(null)}
           open
         />
+      ) : null}
+      {saveError !== null ? (
+        <SaveErrorDialog message={saveError} onDismiss={() => setSaveError(null)} />
       ) : null}
       <SettingsDialog
         fontFamily={settings.fontFamily}
@@ -3202,8 +3363,10 @@ function App() {
           open
           target={pendingAiEdit.target}
           actionLabel={pendingAiEdit.actionLabel}
+          markdownDocument={documentKind === "markdown"}
           originalText={pendingAiEdit.originalText}
           proposedText={pendingAiEdit.proposedText}
+          reviewExtensions={codeMirrorExtensions}
           onAccept={applyPendingAiEdit}
           onReject={() => {
             pendingAiApplyRef.current = null;
@@ -3212,6 +3375,12 @@ function App() {
         />
       ) : null}
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
+      <Dialog open={folderError !== null} onOpenChange={open => { if (!open) setFolderError(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>Could not open file or folder</DialogTitle>
+          <DialogDescription>The current document is still open.</DialogDescription></DialogHeader>
+          <p role="alert">{folderError}</p>
+        </DialogContent>
+      </Dialog>
       <ExportProgressDialog
         open={exportProgress !== null}
         title={exportProgress?.title ?? ""}
@@ -3231,10 +3400,12 @@ function App() {
         onSave={() => void savePrintPreview()}
       />
       <McpWriteConfirmDialog
+        markdownDocument={documentKind === "markdown"}
         open={pendingMcpWrite !== null}
         clientLabel={pendingMcpWrite?.clientLabel ?? ""}
         currentMarkdown={markdown}
         proposedMarkdown={pendingMcpWrite?.markdown ?? ""}
+        reviewExtensions={codeMirrorExtensions}
         onApprove={approvePendingMcpWrite}
         onReject={rejectPendingMcpWrite}
       />
