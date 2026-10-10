@@ -175,7 +175,7 @@ This document serves as a living overview of the Nexus codebase. Update it as th
 - `src/components/editor/PrintPreviewDialog.tsx`: Large in-app PDF snapshot viewer with loading and
   inline error states, Refresh and Save PDF actions, and object-URL cleanup when snapshots are
   replaced or the dialog closes.
-- `src/components/editor/FindTextPanel.tsx`: Compact in-editor find-and-replace panel backed by MDXEditor's search plugin, with literal text search, match counts, next/previous navigation, active-match scroll callbacks, a collapsible replace row offering replace-current and replace-all (literal replacement text), and close behavior.
+- `src/components/editor/FindTextPanel.tsx`: Shared Nexus find-and-replace controls with literal text search, match counts, next/previous navigation, active-match scroll callbacks, a collapsible replace row offering replace-current and replace-all, and close behavior. Markdown uses MDXEditor's search plugin; code/text uses the same controls with `codeEditorSearch.ts` supplying CodeMirror matching, highlighting, scrolling, and undoable literal replacement. Menus, toolbar actions, and editor shortcuts all open the Nexus panel.
 - `src/components/editor/InsertImageImport.tsx`: Shadcn-styled image import dialog and toolbar button for local file URL, remote HTTP(S), and embedded base64 image insertion.
 - `src/components/editor/RasterImageToolbar.tsx`: ordinary-image delete/settings controls and a
   draggable four-edge raster crop dialog; custom diagram decorator nodes bypass it.

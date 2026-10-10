@@ -19,7 +19,7 @@ const trusted = new Map();
 const writes = [];
 const rendererIpc = createRendererIpc(ipcMain, trusted);
 app.on("window-all-closed", () => {});
-const deadline = setTimeout(() => { console.error("Folder browser smoke timed out."); app.exit(1); }, 45000);
+const deadline = setTimeout(() => { console.error("Folder browser smoke timed out."); app.exit(1); }, 120000);
 const pause = () => new Promise(resolve => setTimeout(resolve, 25));
 async function evaluate(code) { return window.webContents.executeJavaScript(code); }
 async function until(test) {
@@ -31,6 +31,11 @@ async function row(relative) { await until(() => evaluate(`${item(relative)} !==
 async function toolbar(label) { await evaluate(`document.querySelector(${JSON.stringify(`[aria-label="${label}"]`)}).click()`); }
 async function field(index, value) {
   await evaluate(`(() => { const input = document.querySelectorAll('#folder-operation input')[${index}];
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+}
+async function searchInput(label, value) {
+  await evaluate(`(() => { const input = document.querySelector(${JSON.stringify(`[aria-label="${label}"]`)});
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
     input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 }
@@ -65,6 +70,30 @@ async function screenshot(name) {
   await fs.mkdir(folder, { recursive: true });
   await fs.writeFile(path.join(folder, `${name}.png`), (await window.webContents.capturePage()).toPNG());
 }
+async function checkZoomAlignment(selector = ".nexus-code-file-content") {
+  const container = `document.querySelector(${JSON.stringify(selector)})`;
+  for (const action of [null, "zoomIn", "zoomOut", "zoomOut", "zoomIn"]) {
+    const before = await evaluate(`getComputedStyle(${container}.querySelector('.cm-content')).fontSize`);
+    if (action) {
+      window.webContents.send("menu:action", action);
+      await until(() => evaluate(`getComputedStyle(${container}.querySelector('.cm-content')).fontSize !== ${JSON.stringify(before)}`));
+    }
+    await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    const alignment = await evaluate(`(() => {
+      return [...${container}.querySelectorAll('.cm-editor')].flatMap(editor => {
+        const lines = [...editor.querySelectorAll('.cm-line')];
+        const numbers = [...editor.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].filter(node => node.style.visibility !== 'hidden');
+        return lines.map((line, index) => ({
+          number: numbers[index]?.textContent,
+          delta: numbers[index] ? Math.abs(line.getBoundingClientRect().top - numbers[index].getBoundingClientRect().top) : null
+        }));
+      });
+    })()`);
+    assert(alignment.length >= 2, "Expected multiple rendered lines");
+    assert(alignment.every(line => line.delta !== null && line.delta < 1), `Line numbers drift after ${action}: ${JSON.stringify(alignment)}`);
+  }
+  console.log(`Zoom alignment passed: ${selector}`);
+}
 app.whenReady().then(async () => {
   work = await fs.mkdtemp(path.join(os.tmpdir(), "nexus-folder-smoke-"));
   const canonical = await fs.realpath(work);
@@ -74,7 +103,8 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(work, "nested", "child.md"), "# Child\n");
   await fs.writeFile(path.join(work, "image.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   const code = '\ufeff// Architecture reference\r\nexport const nodes = ["api", "db"];\r\n\tconst literal = "![x](./demo.drawio.abc.svg)";\r\n';
-  const plain = "# This is literal text\n\t**not formatted**  \n";
+  const plain = "# This is literal text\n\t**not formatted**  \n" + "A long sample line for wrapping. ".repeat(12) + "\n"
+    + Array.from({ length: 60 }, (_, index) => `Plain text line ${index + 5}`).join("\n");
   await fs.writeFile(path.join(work, "architecture.ts"), code);
   await fs.writeFile(path.join(work, "notes.txt"), plain);
   await fs.writeFile(path.join(work, "binary.bin"), Buffer.from([0, 1, 2, 3]));
@@ -109,7 +139,7 @@ app.whenReady().then(async () => {
   });
   window = new BrowserWindow({ show: false, width: 1280, height: 900, webPreferences: {
     preload: path.join(__dirname, "..", "electron", "preload.cjs"), sandbox: true,
-    contextIsolation: true, nodeIntegration: false, partition: `folder-smoke-${Date.now()}`
+    contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, partition: `folder-smoke-${Date.now()}`
   } });
   const html = path.join(__dirname, "..", "dist", "index.html");
   trusted.set(window.webContents, pathToFileURL(html).href);
@@ -174,13 +204,28 @@ app.whenReady().then(async () => {
   await until(() => evaluate("document.querySelector('.nexus-code-file .cm-content') !== null"));
   assert.equal(state.markdown, code); assert.equal(state.dirty, false);
   assert(await evaluate("document.querySelector('[aria-label=\"Code language\"]').selectedOptions[0].textContent.includes('TypeScript')"));
+  await checkZoomAlignment();
   const count = writes.length;
   window.webContents.send("menu:action", "save");
   await until(() => writes.length === count + 1);
   assert.deepEqual(await fs.readFile(path.join(work, "architecture.ts")), Buffer.from(code, "utf8"));
   await screenshot("folder-code");
   window.webContents.send("menu:action", "find");
-  await until(() => evaluate("document.querySelector('.nexus-code-file .cm-search') !== null"));
+  await until(() => evaluate("document.querySelector('.nexus-code-file .nexus-find-panel') !== null"));
+  assert(await evaluate("document.querySelector('.cm-search') === null"));
+  await searchInput("Find text", "nodes");
+  await until(() => evaluate("document.querySelector('.nexus-find-count').textContent === '1 of 1'"));
+  window.webContents.send("menu:action", "replace");
+  await until(() => evaluate("document.querySelector('[aria-label=\"Replace with\"]') !== null"));
+  await searchInput("Replace with", "items");
+  await toolbar("Replace match");
+  await until(() => state?.markdown === code.replace("nodes", "items") && state.dirty);
+  await searchInput("Find text", "items");
+  await searchInput("Replace with", "nodes");
+  await toolbar("Replace match");
+  await until(() => state?.markdown === code && !state.dirty);
+  await screenshot("folder-native-find");
+  await toolbar("Close find");
   await evaluate("document.querySelector('.nexus-code-file .cm-content').focus()");
   window.webContents.selectAll(); await evaluate("new Promise(resolve => requestAnimationFrame(resolve))");
   window.webContents.insertText("export const count = 2;");
@@ -192,11 +237,39 @@ app.whenReady().then(async () => {
   assert.equal(await fs.readFile(state.filePath, "utf8"), "export const count = 2;");
   window.webContents.send("menu:action", "comparePreviousVersion");
   await until(() => evaluate("document.querySelector('.nexus-code-file .nexus-change-review') !== null"));
-  await evaluate("[...document.querySelectorAll('button')].find(button => button.textContent === 'Back to editor').click()");
+  await checkZoomAlignment(".nexus-code-file .nexus-change-review");
+  await evaluate("document.querySelector('.cm-mergeView .cm-content').dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))");
+  await until(() => evaluate("document.querySelector('.nexus-code-file .nexus-find-panel') !== null && document.querySelector('.nexus-change-review') === null"));
+  assert(await evaluate("document.querySelector('.cm-search') === null"));
+  await toolbar("Close find");
   await row("notes.txt"); await until(() => state?.filePath === path.join(canonical, "notes.txt"));
   assert.equal(state.markdown, plain); assert.equal(state.dirty, false);
   assert(await evaluate("document.querySelector('.nexus-code-file') !== null"));
   assert(await evaluate("document.querySelector('h1') === null"));
+  await checkZoomAlignment();
+  await evaluate("document.querySelector('.nexus-code-file-content .cm-scroller').scrollTop = 500");
+  await checkZoomAlignment();
+  assert(await evaluate("document.querySelector('.nexus-code-file-content .cm-scroller').scrollTop > 0"), "Expected a scrolled editor");
+  await evaluate("document.querySelector('.nexus-code-file-content .cm-scroller').scrollTop = 0");
+  await evaluate("document.querySelector('.nexus-code-file-toolbar input[type=checkbox]').click()");
+  await until(() => evaluate("document.querySelector('.nexus-code-file-content .cm-lineWrapping') !== null"));
+  assert(await evaluate(`(() => {
+    const lines = [...document.querySelectorAll('.nexus-code-file-content .cm-line')];
+    return Math.max(...lines.map(line => line.getBoundingClientRect().height)) > 2 * parseFloat(getComputedStyle(lines[0]).lineHeight);
+  })()`), "Expected the long plain text line to wrap");
+  await checkZoomAlignment();
+  window.webContents.send("menu:action", "replace");
+  await until(() => evaluate("document.querySelector('[aria-label=\"Replace with\"]') !== null"));
+  await searchInput("Find text", "Plain text line");
+  await until(() => evaluate("document.querySelector('.nexus-find-count').textContent.endsWith('of 60')"));
+  await searchInput("Replace with", "Reference line");
+  await toolbar("Replace all matches");
+  await until(() => state?.markdown === plain.replaceAll("Plain text line", "Reference line") && state.dirty);
+  await searchInput("Find text", "Reference line");
+  await searchInput("Replace with", "Plain text line");
+  await toolbar("Replace all matches");
+  await until(() => state?.markdown === plain && !state.dirty);
+  await toolbar("Close find");
   await evaluate("document.querySelector('.nexus-files-filter input').click()");
   await row("binary.bin");
   await until(() => evaluate("document.querySelector('.nexus-files [role=alert]')?.textContent.includes('binary')"));
@@ -208,7 +281,13 @@ app.whenReady().then(async () => {
   await toolbar("Close folder");
   await until(() => evaluate("document.querySelector('.nexus-files') === null"));
   assert.equal(state.filePath, path.join(canonical, "nested", "child.md"));
-  console.log("Folder/code smoke passed: tree, protected open, dirty-buffer moves, save, duplicate/create, trash recovery, raw code/BOM/CRLF save, text editing, code review/search, plain text, binary rejection, Markdown round trip, and close.");
+  await evaluate("document.querySelector('[aria-label=\"Switch to Rich text\"]').click()");
+  window.webContents.send("menu:action", "find");
+  await until(() => evaluate("document.querySelector('.nexus-find-panel') !== null"));
+  await searchInput("Find text", "Child");
+  await until(() => evaluate("document.querySelector('.nexus-find-count').textContent === '1 of 1'"));
+  await toolbar("Close find");
+  console.log("Folder/code smoke passed: tree, protected open, dirty-buffer moves, save, duplicate/create, trash recovery, raw code/BOM/CRLF save, text editing, code review/search, plain text, zoom alignment including wrapping/scrolling/review, binary rejection, Markdown round trip, and close.");
 }).catch(error => { console.error(error); exitCode = 1; }).finally(async () => {
   clearTimeout(deadline);
   if (window && !window.isDestroyed()) { integration?.close(window.webContents.id); window.destroy(); }

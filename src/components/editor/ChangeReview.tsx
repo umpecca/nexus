@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { markdown } from "@codemirror/lang-markdown";
 import { MergeView } from "@codemirror/merge";
-import { EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { Button } from "../ui/button";
@@ -16,6 +16,7 @@ type ChangeReviewProps = {
   originalLabel?: string;
   proposedLabel?: string;
   extensions?: Extension[];
+  fontSize?: string;
 };
 
 /** One read-only viewer for editor comparisons and proposals; folding never changes its inputs. */
@@ -25,10 +26,14 @@ export default function ChangeReview({
   proposed,
   originalLabel = "Original",
   proposedLabel = "Proposed",
-  extensions = defaultExtensions
+  extensions = defaultExtensions,
+  fontSize
 }: ChangeReviewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mergeRef = useRef<MergeView | null>(null);
+  const font = useMemo(() => new Compartment(), []);
+  const fontSizeRef = useRef(fontSize);
+  fontSizeRef.current = fontSize;
   const [changeCount, setChangeCount] = useState(0);
   const [activeChange, setActiveChange] = useState(-1);
   const [hideUnchanged, setHideUnchanged] = useState(false);
@@ -39,6 +44,7 @@ export default function ChangeReview({
     const shared = [
       ...extensions,
       basicSetup,
+      font.of(EditorView.theme({ "&": { fontSize: fontSizeRef.current ?? "inherit" } })),
       ...(markdownDocument ? [markdown(), sourceImageFoldingExtension()] : []),
       EditorView.lineWrapping,
       EditorState.readOnly.of(true),
@@ -63,7 +69,14 @@ export default function ChangeReview({
       mergeRef.current = null;
       merge.destroy();
     };
-  }, [original, proposed, originalLabel, proposedLabel, extensions, markdownDocument]);
+  }, [original, proposed, originalLabel, proposedLabel, extensions, markdownDocument, font]);
+
+  useEffect(() => {
+    const merge = mergeRef.current;
+    if (!merge) return;
+    const theme = EditorView.theme({ "&": { fontSize: fontSize ?? "inherit" } });
+    for (const view of [merge.a, merge.b]) view.dispatch({ effects: font.reconfigure(theme) });
+  }, [fontSize, font]);
 
   useEffect(() => {
     mergeRef.current?.reconfigure({

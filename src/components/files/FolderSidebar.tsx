@@ -249,7 +249,6 @@ export default function FolderSidebar({ root, filePath, onOpen, onClose, onRootC
       {Object.entries(directories).filter(([path, dir]) => dir.error && (path === "" || expanded.has(path))).map(([path, dir]) => <p role="alert" key={path}>{path || root.name}: {dir.error} <button onClick={() => void load(path)}>Retry</button></p>)}
     </div>
     {error && !form ? <p className="nexus-files-error" role="alert">{error}</p> : null}
-    <footer className="nexus-files-footer" title={root.path}>{busy ? "Working…" : clipboard ? `${clipboard.cut ? "Cut" : "Copied"}: ${clipboard.entry.name}` : "Right-click for file actions"}</footer>
     <div className="nexus-files-resizer" role="separator" aria-label="Resize folder browser" aria-orientation="vertical" aria-valuenow={width} aria-valuemin={180} aria-valuemax={480} tabIndex={0}
       onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); setWidth(current => event.key === "Home" ? 180 : event.key === "End" ? 480 : Math.max(180, Math.min(480, current + (event.key === "ArrowRight" ? 16 : -16)))); } }}
       onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); }}

@@ -598,7 +598,6 @@ button:active {
 .nexus-file-row.is-cut { opacity: 0.5; }
 .nexus-file-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .nexus-files-tree > p, .nexus-files-error { font-size: 12px; overflow-wrap: anywhere; padding: 8px 12px; }
-.nexus-files-footer { border-top: 1px solid var(--line); font-size: 11px; overflow: hidden; padding: 8px 12px; text-overflow: ellipsis; white-space: nowrap; }
 .nexus-files-resizer { bottom: 0; cursor: col-resize; position: absolute; right: -3px; top: 0; touch-action: none; width: 6px; z-index: 3; }
 .nexus-files-resizer:focus-visible, .nexus-files-resizer:hover { background: var(--accent); }
 .nexus-file-form { display: grid; gap: 12px; }

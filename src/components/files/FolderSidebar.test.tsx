@@ -89,7 +89,8 @@ describe("folder sidebar", () => {
     mutate.mockRejectedValueOnce(new Error("Destination already exists"));
     await key("note.md", "x", true); await key("nested", "v", true);
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("Destination already exists");
-    expect(host.textContent).toContain("Cut: note.md");
+    expect(row("note.md").classList.contains("is-cut")).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Paste into selected folder"]')!.disabled).toBe(false);
   });
 
   it("keeps newly created folders selected even before their directory refresh finishes", async () => {

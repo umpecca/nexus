@@ -65,7 +65,8 @@ Markdown is effective for structured writing, but many users still need a calm e
   while keeping their unsaved text; deleting it retains the buffer for Save As recovery.
 - Code, configuration, and plain text reference files in knowledge bases use a dedicated CodeMirror
   editor with line numbers, automatic or selected syntax highlighting, folding, undo, find/replace,
-  and optional wrapping. Markdown retains its visual editor. Code/text opens and saves bypass
+  and optional wrapping. These files share Nexus's find/replace panel with Markdown, including
+  literal search, match counts, navigation, and replace-current/all. Markdown retains its visual editor. Code/text opens and saves bypass
   Markdown serialization and diagram conversion, preserving indentation, literal markup, BOM,
   and line endings. Binary/non-UTF-8 files are rejected; code/text files are limited to 8 MB.
 - Save and Save As preserve edits made while a write is running and execute in order per window.

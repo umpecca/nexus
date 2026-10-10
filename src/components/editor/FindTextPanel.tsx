@@ -7,21 +7,42 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export type FindTextSearch = {
+  closeSearch: () => void;
+  cursor: number;
+  currentRange?: Range;
+  isSearchOpen: boolean;
+  next: () => void;
+  openSearch: () => void;
+  prev: () => void;
+  replace: (replacement: string) => void;
+  replaceAll: (replacement: string) => void;
+  setSearch: (query: string) => void;
+  total: number;
+};
+
 type FindTextPanelProps = {
-  onActiveMatchChange: (range: Range) => void;
+  onActiveMatchChange?: (range: Range) => void;
   openRequest: number;
   replaceRequest: number;
 };
 
-export default function FindTextPanel({
+export default function FindTextPanel(props: FindTextPanelProps) {
+  const search = useEditorSearch();
+  return <FindReplacePanel {...props} search={{ ...search, setSearch: query => search.setSearch(escapeRegExp(query)) }} />;
+}
+
+export function FindReplacePanel({
   onActiveMatchChange,
   openRequest,
-  replaceRequest
-}: FindTextPanelProps) {
+  replaceRequest,
+  search
+}: FindTextPanelProps & { search: FindTextSearch }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const handledOpenRequestRef = useRef(0);
   const handledReplaceRequestRef = useRef(0);
+  const wasOpenRef = useRef(false);
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
   const [showReplace, setShowReplace] = useState(false);
@@ -37,7 +58,16 @@ export default function FindTextPanel({
     replaceAll,
     setSearch,
     total
-  } = useEditorSearch();
+  } = search;
+
+  useEffect(() => {
+    if (wasOpenRef.current && !isSearchOpen) {
+      setQuery("");
+      setReplacement("");
+      setShowReplace(false);
+    }
+    wasOpenRef.current = isSearchOpen;
+  }, [isSearchOpen]);
 
   useEffect(() => {
     if (openRequest <= handledOpenRequestRef.current) {
@@ -84,7 +114,7 @@ export default function FindTextPanel({
     }
 
     const frame = requestAnimationFrame(() => {
-      onActiveMatchChange(currentRange);
+      onActiveMatchChange?.(currentRange);
     });
 
     return () => cancelAnimationFrame(frame);
@@ -92,7 +122,7 @@ export default function FindTextPanel({
 
   function updateQuery(nextQuery: string) {
     setQuery(nextQuery);
-    setSearch(escapeRegExp(nextQuery));
+    setSearch(nextQuery);
   }
 
   function closePanel() {

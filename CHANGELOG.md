@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- T_159: Use Nexus's shared find/replace panel for code, configuration, and plain text files,
+  with literal search, match counts, navigation, and undoable replace-current/all.
+
 ### Fixed
 
 - T_151: Recognize the exact content saved by Nexus instead of suppressing file-watcher events for
