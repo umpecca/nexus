@@ -43,6 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- T_162: Open local Markdown links in Nexus through the link popover or Ctrl/Cmd-click. Resolve
+  relative/absolute paths and file URLs, navigate heading fragments, preserve same-document edits
+  and folder navigation, and protect file switches with Save/Discard/Cancel. Web links stay external.
+
+- T_161: YAML-backed Document Properties form for title, type, tags, status, owner, and review date,
+  available from Edit and the status bar. Apply preserves unrelated metadata/body content and stays
+  unsaved until normal Save, with rich/source undo support, date validation, and stale-form protection.
+
+- T_160: Folder workspace home opens a designated README.md/index.md (defaulting to top-level
+  README.md, then index.md), protecting unsaved edits. Folder-only navigation remembers pinned
+  documents, recent items, and named browser views locally per folder/profile. Managed moves,
+  renames, and deletions update references; empty folders offer to create README.md.
+
 - T_156: Images & Assets sidebar in Markdown rich-text/source/diff views, with previews, natural
   dimensions, byte sizes, missing-file states, and embedded-source contribution to document size.
   Explicit Embed, Extract to file, Replace and Locate file actions preserve destination syntax,

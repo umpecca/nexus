@@ -86,6 +86,9 @@ contextBridge.exposeInMainWorld("nexus", {
   openRecentFile(filePath) {
     return ipcRenderer.invoke("recent:open", filePath);
   },
+  resolveDocumentLink(documentPath, href) {
+    return ipcRenderer.invoke("link:resolve", { documentPath, href });
+  },
   listRecentFiles() {
     return ipcRenderer.invoke("recent:list");
   },

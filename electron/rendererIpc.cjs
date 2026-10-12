@@ -34,6 +34,9 @@ function isValidRendererPayload(channel, args) {
   if (args.length > 1) return false;
   const payload = args[0];
   switch (channel) {
+    case "link:resolve":
+      return isRecord(payload) && optionalString(payload.documentPath) && isString(payload.href) &&
+        payload.href.length > 0 && payload.href.length <= 32768;
     case "asset:inspect": case "asset:action":
       return isRecord(payload) && optionalString(payload.documentPath) && isString(payload.source) && payload.source.length > 0 &&
         payload.source.length <= 60 * 1024 * 1024 && (channel === "asset:inspect" || ["embed", "extract", "replace", "locate"].includes(payload.action));

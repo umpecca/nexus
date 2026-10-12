@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { extractOutline, getActiveHeadingIndex } from "./outline";
 
 describe("extractOutline", () => {
+  it("skips leading frontmatter headings/comments and preserves body source lines", () => {
+    expect(extractOutline("\uFEFF---\n# metadata\nnotes: |\n  ## not a section\n---\n\n# Body"))
+      .toEqual([{ level: 1, text: "Body", index: 0, line: 6 }]);
+    expect(extractOutline("---\n# an unclosed thematic section"))
+      .toEqual([{ level: 1, text: "an unclosed thematic section", index: 0, line: 1 }]);
+  });
   it("returns an empty list for a document with no headings", () => {
     expect(extractOutline("Just a paragraph.\n\nAnother line.")).toEqual([]);
   });

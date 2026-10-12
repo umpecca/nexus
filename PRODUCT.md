@@ -58,6 +58,33 @@ Markdown is effective for structured writing, but many users still need a calm e
 - File/Open Folder opens a local folder in a resizable sidebar available in rich-text, source,
   diff, and code/text views. Folders load on demand; clicking supported documents uses the normal
   unsaved-change protection. Other files can be shown for asset management.
+- An opened folder has a workspace home beside the editor. Opening the folder opens its designated
+  README.md or index.md through the normal unsaved-change protection; without a designation it
+  prefers a top-level README.md, then index.md (case-insensitive names). Without an entry document,
+  the current buffer stays open and the sidebar offers to create README.md. The file context menu
+  can designate a README.md or index.md in any subfolder, and home navigation can return to automatic
+  selection. Workspace controls disappear when the folder closes, leaving its document open.
+- Folder/profile-scoped workspace navigation remembers pinned documents, the eight most recent
+  active documents within the folder, and up to twenty named file-browser views. Views restore
+  expanded folders and other-file visibility. Pins and views can be removed and recents cleared.
+  Preferences stay locally in app storage without adding files to the repository. Nexus-managed
+  moves, renames, and deletions update workspace references; missing shortcuts can be removed.
+- Local Markdown links open in the current Nexus editor through the link popover's Open action
+  or Ctrl/Cmd-click in rich text. Relative links resolve beside the current document, including
+  parent paths; absolute paths and file URLs also work. Heading fragments use Nexus's TOC slugs,
+  and links to the current document preserve its unsaved buffer. Switching files uses normal
+  Save/Discard/Cancel protection and keeps the folder sidebar open. Broken or unsupported links
+  show an error without replacing the document; web/mail links open in the default browser.
+  Relative file links in untitled documents require saving first.
+- Edit/Document Properties and the status-bar Properties button open a small Markdown-only form
+  for title, type, tags, status, owner, and review date. Type/status accept custom values with optional
+  suggestions; tags use one tag per line and are saved as a YAML sequence, and review_date uses a
+  validated YYYY-MM-DD calendar date. Applying edits changes the unsaved buffer with undo/redo;
+  normal Save persists them. Unrelated metadata and the document body remain intact. Malformed,
+  incompatible, or anchored managed properties are left unchanged with a Source-editing message;
+  a stale form cannot overwrite a replacement or changed document. Properties work in rich-text and
+  source modes for both standalone and folder documents; code/text and read-only diff views disable
+  the action. The existing raw frontmatter editor remains available.
 - The folder sidebar creates documents and folders, renames, duplicates, copies, cuts/pastes,
   moves, copies paths, and reveals items in the system file manager. Confirmed deletion uses
   the system Trash/Recycle Bin. Operations stay inside the opened folder and reject collisions;

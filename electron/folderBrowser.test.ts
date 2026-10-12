@@ -110,7 +110,8 @@ describe("folder browser filesystem", () => {
   it("invalidates old sessions and remaps another window's nested root on move", async () => {
     const nested = await browser.open(2, path.join(root.path, "nested"));
     await browser.mutate(1, payload("rename", "nested", { name: "moved" }));
-    expect(change).toHaveBeenCalledWith(2, { rootId: nested.id, path: null, root: { ...nested, path: path.join(root.path, "moved"), name: "moved" } });
+    expect(change).toHaveBeenCalledWith(2, expect.objectContaining({ rootId: nested.id, path: null, root: { ...nested, path: path.join(root.path, "moved"), name: "moved" },
+      relocation: { source: path.join(root.path, "nested"), destination: path.join(root.path, "moved") } }));
     expect((await browser.list(2, { rootId: nested.id, path: "" }))[0].name).toBe("child.mdx");
     await browser.open(1, root.path);
     await expect(browser.list(1, { rootId: root.id, path: "" })).rejects.toThrow("no longer open");

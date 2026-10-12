@@ -23,8 +23,14 @@ export function extractOutline(markdown: string): OutlineHeading[] {
   const lines = String(markdown ?? "").split(/\r?\n/);
   const headings: OutlineHeading[] = [];
   let isInFence = false;
+  let firstBodyLine = 0;
+  // Frontmatter comments and multiline YAML values are not rendered headings.
+  if (/^\uFEFF?---[ \t]*$/.test(lines[0] ?? "")) {
+    const end = lines.findIndex((line, index) => index > 0 && /^(?:---|\.\.\.)[ \t]*$/.test(line));
+    if (end > 0) firstBodyLine = end + 1;
+  }
 
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+  for (let lineIndex = firstBodyLine; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
 
     if (FENCE_BOUNDARY_PATTERN.test(line)) {

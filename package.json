@@ -15,6 +15,8 @@
     "test:document-save": "electron scripts/document-save-smoke.cjs",
     "test:folder-browser": "electron scripts/folder-browser-smoke.cjs",
     "test:assets": "electron scripts/asset-panel-smoke.cjs",
+    "test:properties": "electron scripts/document-properties-smoke.cjs",
+    "test:links": "electron scripts/document-links-smoke.cjs",
     "fetch:drawio": "node scripts/fetch-drawio.mjs",
     "generate:mac-icon": "node scripts/generate-mac-icon.mjs",
     "dist:win": "electron-builder --win --x64 --publish never",

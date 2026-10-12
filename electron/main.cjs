@@ -11,6 +11,7 @@ const { saveDocumentFile, stageDiagramAsset, releaseStagedDiagramAssets } = requ
 const { createDocumentWatcher } = require("./documentWatch.cjs");
 const { registerFolderBrowser } = require("./folderBrowserIpc.cjs");
 const { isTextDocument, readDocumentText } = require("./documentFiles.cjs");
+const { resolveDocumentLink } = require("./documentLinks.cjs");
 const SftpClient = require("ssh2-sftp-client");
 
 const mcpServer = require("./mcp-server.cjs");
@@ -3911,6 +3912,11 @@ function buildMenu() {
           click: () => sendMenuAction("comparePreviousVersion")
         },
         {
+          label: "Document Properties…",
+          enabled: menuState.editorViewMode !== "diff",
+          click: () => sendMenuAction("documentProperties")
+        },
+        {
           label: "Edit Frontmatter…",
           click: () => sendMenuAction("editFrontmatter")
         },
@@ -4055,7 +4061,7 @@ function buildMenu() {
     for (const menu of template) {
       if (menu.label === "AI") menu.enabled = false;
       for (const item of Array.isArray(menu.submenu) ? menu.submenu : []) {
-        if (/^(Export|Print Preview|Publish|Copy as HTML|Edit Frontmatter|Insert Table of Contents)/.test(item.label ?? "")) item.enabled = false;
+        if (/^(Export|Print Preview|Publish|Copy as HTML|Document Properties|Edit Frontmatter|Insert Table of Contents)/.test(item.label ?? "")) item.enabled = false;
       }
     }
   }
@@ -4232,6 +4238,12 @@ rendererIpc.handle("file:get-initial-open-file", async (event) => {
 
     return { canceled: true };
   }
+});
+
+rendererIpc.handle("link:resolve", async (_event, { documentPath, href }) => {
+  const target = resolveDocumentLink(documentPath, href);
+  if (target.kind === "external") await shell.openExternal(target.url);
+  return target;
 });
 
 rendererIpc.handle("file:read", async (event, filePath) => {

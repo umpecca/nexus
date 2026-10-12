@@ -192,7 +192,9 @@ function createFolderBrowser({ trash, onChange = () => {}, beforeMutation = () =
           current.info.name = path.basename(current.info.path);
           rootChange = { ...current.info };
         }
-        onChange(sessionOwner, { rootId: current.info.id, path: null, ...(rootChange ? { root: rootChange } : {}) });
+        onChange(sessionOwner, { rootId: current.info.id, path: null, ...(rootChange ? { root: rootChange } : {}),
+          ...(["move", "rename", "trash"].includes(action) && (rootChange || containsPath(current.info.path, source))
+            ? { relocation: { source, destination: destination ?? null } } : {}) });
       }
       return { canceled: false, path: destination ? path.relative(root, destination).split(path.sep).join("/") : null };
     } finally {

@@ -8,7 +8,7 @@ export type FolderMutation = FolderTarget & {
   name?: string;
   destination?: string;
 };
-export type FolderChange = { rootId: string; path: string | null; root?: FolderRoot | null };
+export type FolderChange = { rootId: string; path: string | null; root?: FolderRoot | null; relocation?: { source: string; destination: string | null } };
 
 import type {
   AiAgentChatPayload,
@@ -67,6 +67,7 @@ export type NexusMenuAction =
   | "about"
   | "copyHtml"
   | "editFrontmatter"
+  | "documentProperties"
   | "insertTableOfContents"
   | "publishWeb"
   | "publishQuickConnect"
@@ -371,6 +372,10 @@ declare global {
       onFolderChange(callback: (event: FolderChange) => void): () => void;
       onFileRelocated(callback: (event: { oldPath: string; nextPath: string | null }) => void): () => void;
       openRecentFile(filePath: string): Promise<OpenMarkdownResult>;
+      resolveDocumentLink(documentPath: string | undefined, href: string): Promise<
+        { kind: "document"; filePath: string; fragment: string } |
+        { kind: "heading"; fragment: string } | { kind: "external"; url: string }
+      >;
       listRecentFiles(): Promise<string[]>;
       clearRecentFiles(): Promise<string[]>;
       getPathForFile(file: File): string;

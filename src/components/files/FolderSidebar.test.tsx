@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FolderChange, FolderEntry, FolderMutation } from "../../electron";
 import FolderSidebar from "./FolderSidebar";
+import { loadWorkspaceHome, saveWorkspaceHome, workspaceStorageKey } from "../../lib/workspaceHome";
 
 describe("folder sidebar", () => {
   let host: HTMLDivElement;
@@ -18,6 +19,7 @@ describe("folder sidebar", () => {
   const onClose = vi.fn();
   const item = (name: string, path = name, kind: FolderEntry["kind"] = "file", openable = true): FolderEntry => ({ name, path, kind, openable });
   beforeEach(async () => {
+    localStorage.clear();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     entries = { "": [item("nested", "nested", "folder", false), item("asset.png", "asset.png", "file", false), item("note.md")], nested: [item("child.md", "nested/child.md")] };
     list = vi.fn(async ({ path }) => entries[path] ?? []);
@@ -118,5 +120,80 @@ describe("folder sidebar", () => {
     expect(resize.getAttribute("aria-valuenow")).toBe("276");
     await toolbar("Close folder"); expect(onClose).toHaveBeenCalled();
     expect(opened).not.toHaveBeenCalled(); expect(mutate).not.toHaveBeenCalled();
+  });
+  it("shows an actionable home empty state, opens README ahead of index, and records only the actual active file", async () => {
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Open workspace home"]')!.disabled).toBe(true);
+    expect(host.textContent).toContain("Create README.md");
+    entries[""].push(item("index.md"), item("README.md"));
+    await act(async () => changed({ rootId: root.id, path: "" }));
+    await toolbar("Open workspace home");
+    expect(opened).toHaveBeenLastCalledWith("README.md");
+    // A request can be cancelled by App; recents follow filePath rather than clicks.
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).recent).toEqual(["note.md"]);
+    await act(async () => renderer.render(<FolderSidebar root={root} filePath="C:/docs/README.md" onOpen={opened} onClose={onClose} onRootChange={onRootChange} />));
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).recent).toEqual(["README.md", "note.md"]);
+  });
+  it("persists pins, supports removal, and restores a named view's folders and visibility", async () => {
+    await toolbar("Pin current document");
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).pinned).toEqual(["note.md"]);
+    await toolbar("Unpin note.md");
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).pinned).toEqual([]);
+    const workspace = loadWorkspaceHome(workspaceStorageKey(root.path));
+    saveWorkspaceHome(workspaceStorageKey(root.path), { ...workspace, views: [{ name: "References", expanded: ["nested"], showOther: true }] });
+    await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: workspaceStorageKey(root.path) })));
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent === "References")!.click());
+    expect(row("nested/child.md")).toBeTruthy(); expect(row("asset.png")).toBeTruthy();
+    await toolbar("Delete view References");
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).views).toEqual([]);
+  });
+  it("saves and replaces views by name and preserves folder preferences when reopening", async () => {
+    await clickRow("nested");
+    await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    async function saveView() {
+      await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent === "Save current view…")!.click());
+      const input = document.querySelector<HTMLInputElement>("#workspace-view input")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "References");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => document.querySelector<HTMLFormElement>("#workspace-view")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    }
+    await saveView();
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).views).toEqual([{ name: "References", expanded: ["nested"], showOther: true }]);
+    await clickRow("nested");
+    await saveView();
+    expect(loadWorkspaceHome(workspaceStorageKey(root.path)).views).toEqual([{ name: "References", expanded: [], showOther: true }]);
+    await toolbar("Pin current document");
+    await act(async () => renderer.render(<FolderSidebar key="reopened" root={{ ...root, id: "new-grant" }} onOpen={opened} onClose={onClose} onRootChange={onRootChange} />));
+    expect(host.querySelector('[aria-label="Unpin note.md"]')).toBeTruthy();
+    expect(host.textContent).toContain("References");
+    await act(async () => renderer.render(<FolderSidebar key="another-folder" root={{ id: "other", path: "C:/other", name: "other" }} onOpen={opened} onClose={onClose} onRootChange={onRootChange} />));
+    expect(host.querySelector('[aria-label="Unpin note.md"]')).toBeNull();
+    expect(host.textContent).not.toContain("References");
+  });
+  it("updates pinned/recent/home references on folder relocations and offers removal for missing files", async () => {
+    const key = workspaceStorageKey(root.path);
+    saveWorkspaceHome(key, { home: "nested/index.md", pinned: ["nested/child.md"], recent: ["nested/child.md"], views: [] });
+    await act(async () => window.dispatchEvent(new StorageEvent("storage", { key })));
+    entries.moved = entries.nested.map(entry => ({ ...entry, path: entry.path.replace("nested/", "moved/") }));
+    await act(async () => changed({ rootId: root.id, path: null, relocation: { source: "C:/docs/nested", destination: "C:/docs/moved" } }));
+    expect(loadWorkspaceHome(key)).toEqual({ home: "moved/index.md", pinned: ["moved/child.md"], recent: ["moved/child.md"], views: [] });
+    await act(async () => changed({ rootId: root.id, path: null, relocation: { source: "C:/docs/moved", destination: null } }));
+    expect(loadWorkspaceHome(key)).toEqual({ home: null, pinned: [], recent: [], views: [] });
+    await toolbar("Pin current document"); entries[""] = entries[""].filter(entry => entry.path !== "note.md");
+    await act(async () => changed({ rootId: root.id, path: "" }));
+    const shortcut = host.querySelector<HTMLButtonElement>('.nexus-workspace-shortcut .nexus-file-row')!;
+    expect(shortcut.disabled).toBe(true);
+    await toolbar("Unpin note.md");
+    expect(loadWorkspaceHome(key).pinned).toEqual([]);
+  });
+  it("migrates preferences when the opened root moves without copying them across profiles", async () => {
+    await toolbar("Pin current document");
+    const nextRoot = { ...root, path: "C:/moved-docs", name: "moved-docs" };
+    await act(async () => renderer.render(<FolderSidebar root={nextRoot} filePath="C:/moved-docs/note.md" onOpen={opened} onClose={onClose} onRootChange={onRootChange} />));
+    expect(loadWorkspaceHome(workspaceStorageKey(nextRoot.path)).pinned).toEqual(["note.md"]);
+    await act(async () => renderer.render(<FolderSidebar root={nextRoot} profileName="another-profile" onOpen={opened} onClose={onClose} onRootChange={onRootChange} />));
+    expect(host.querySelector('[aria-label="Unpin note.md"]')).toBeNull();
+    expect(loadWorkspaceHome(workspaceStorageKey(nextRoot.path, "another-profile")).pinned).toEqual([]);
   });
 });

@@ -5,6 +5,9 @@ import {
   codeMirrorPlugin,
   directivesPlugin,
   frontmatterPlugin,
+  $createFrontmatterNode,
+  $isFrontmatterNode,
+  rootEditor$,
   headingsPlugin,
   imagePlugin,
   insertFrontmatter$,
@@ -24,6 +27,10 @@ import {
 } from "@mdxeditor/editor";
 import type { ViewMode } from "@mdxeditor/editor";
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
+import { $getRoot, $getNearestNodeFromDOMNode, getNearestEditorFromDOMNode, HISTORY_PUSH_TAG, type LexicalEditor } from "lexical";
+import { $isLinkNode } from "@lexical/link";
+import { applyDocumentProperties, type DocumentProperties } from "./lib/documentProperties";
+import DocumentPropertiesDialog from "./components/editor/DocumentPropertiesDialog";
 import { areMarkdownBuffersEquivalent, createDefaultDraft, saveDraft } from "./lib/markdown";
 import { useDocumentSave, type DocumentSaveSnapshot } from "./lib/useDocumentSave";
 import { isMarkdownFilename, isOpenableDocumentFilename } from "./lib/fileDrop";
@@ -63,6 +70,7 @@ import ParseErrorPanel from "./components/editor/ParseErrorPanel";
 import type { ParseErrorInfo } from "./components/editor/ParseErrorPanel";
 import OutlineSidebar from "./components/editor/OutlineSidebar";
 import FolderSidebar from "./components/files/FolderSidebar";
+import { chooseWorkspaceHome, loadWorkspaceHome, workspaceStorageKey } from "./lib/workspaceHome";
 import AssetPanel, { type AssetAction } from "./components/assets/AssetPanel";
 import { assetReplacementChanges, replaceDocumentAsset, type DocumentAsset } from "./lib/documentAssets";
 import type { FolderRoot } from "./electron";
@@ -71,6 +79,7 @@ import { Titlebar } from "./components/titlebar/Titlebar";
 import { extractOutline, getActiveHeadingIndex, type OutlineHeading } from "./lib/outline";
 import { cleanupMarkdownFormatting } from "./lib/format";
 import { insertTableOfContentsIntoBuffer } from "./lib/toc";
+import { findLinkedHeading } from "./lib/documentLinks";
 import PublishWebDialog from "./components/publish/PublishWebDialog";
 import type {
   PendingHostKey,
@@ -246,6 +255,15 @@ function FrontmatterController({ request }: { request: number }) {
     insertFrontmatter();
   }, [request, insertFrontmatter]);
 
+  return null;
+}
+
+function DocumentPropertiesEditorTracker({ editorRef }: { editorRef: React.MutableRefObject<LexicalEditor | null> }) {
+  const [editor] = useCellValues(rootEditor$);
+  useEffect(() => {
+    editorRef.current = editor;
+    return () => { editorRef.current = null; };
+  }, [editor, editorRef]);
   return null;
 }
 
@@ -491,6 +509,8 @@ function App() {
   const folderOpenRequestRef = useRef(0);
   const folderPickerRequestRef = useRef(0);
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const linkNavigationRef = useRef<(href: string) => void>(() => {});
   const [assetsVisible, setAssetsVisible] = useState(false);
   const [lastSavedMarkdown, setLastSavedMarkdown] = useState(initialDraft.markdown);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -504,6 +524,9 @@ function App() {
   const [pendingFindRequest, setPendingFindRequest] = useState(0);
   const [pendingReplaceRequest, setPendingReplaceRequest] = useState(0);
   const [pendingEditFrontmatterRequest, setPendingEditFrontmatterRequest] = useState(0);
+  const [documentProperties, setDocumentProperties] = useState<{ markdown: string; documentId: number; request: number } | null>(null);
+  const documentPropertiesRequest = useRef(0);
+  const documentPropertiesEditorRef = useRef<LexicalEditor | null>(null);
   const [editorZoomPercent, setEditorZoomPercent] = useState(100);
   const [profileName, setProfileName] = useState("default");
   const [settings, setSettings] = useState(createDefaultSettings);
@@ -611,6 +634,7 @@ function App() {
     openFindPanel,
     openReplacePanel,
     openFrontmatterEditor,
+    openDocumentProperties,
     insertTableOfContents,
     zoomEditorIn,
     zoomEditorOut,
@@ -865,6 +889,7 @@ function App() {
     openFindPanel,
     openReplacePanel,
     openFrontmatterEditor,
+    openDocumentProperties,
     insertTableOfContents,
     zoomEditorIn,
     zoomEditorOut,
@@ -1677,6 +1702,43 @@ function App() {
 
   function openFrontmatterEditor() {
     setPendingEditFrontmatterRequest((current) => current + 1);
+  }
+
+  function openDocumentProperties() {
+    if (documentKindRef.current !== "markdown" || currentViewModeRef.current === "diff") return;
+    setDocumentProperties({ markdown: getCurrentMarkdown(), documentId: documentIdRef.current, request: ++documentPropertiesRequest.current });
+  }
+
+  function applyProperties(properties: DocumentProperties) {
+    if (!documentProperties || documentKindRef.current !== "markdown" || currentViewModeRef.current === "diff"
+      || documentProperties.documentId !== documentIdRef.current || documentProperties.markdown !== getCurrentMarkdown()) {
+      throw new Error("The document changed while properties were open. Close and reopen the form to review the latest document.");
+    }
+    const result = applyDocumentProperties(documentProperties.markdown, properties);
+    if (!result.change) return;
+    if (currentViewModeRef.current === "source") {
+      const sourceView = editorSurfaceRef.current ? getSourceEditorView(editorSurfaceRef.current) : null;
+      if (!sourceView || sourceView.state.doc.toString() !== documentProperties.markdown) throw new Error("The source editor changed. Close and reopen properties.");
+      sourceView.dispatch({ changes: result.change, userEvent: "input.properties" });
+      markdownRef.current = result.markdown;
+      setMarkdown(result.markdown);
+    } else {
+      const editor = documentPropertiesEditorRef.current;
+      if (!editor) throw new Error("The editor is not ready. Close and reopen properties.");
+      // Update the frontmatter node directly, keeping the body and rich-text undo history intact.
+      editor.update(() => {
+        const root = $getRoot();
+        const node = root.getChildren().find($isFrontmatterNode);
+        if (result.yaml === null) node?.remove();
+        else {
+          const yaml = result.yaml.replace(/\r?\n$/, "");
+          if (node) node.setYaml(yaml); else root.splice(0, 0, [$createFrontmatterNode(yaml)]);
+        }
+      }, { tag: HISTORY_PUSH_TAG, discrete: true });
+      const next = editorRef.current?.getMarkdown() ?? result.markdown;
+      markdownRef.current = next;
+      setMarkdown(next);
+    }
   }
 
   function insertTableOfContents() {
@@ -2539,8 +2601,12 @@ function App() {
     try {
       const selected = await window.nexus?.openFolder();
       if (selected && request === folderPickerRequestRef.current) {
-        folderOpenRequestRef.current++;
+        const generation = ++folderOpenRequestRef.current;
         setFolderRoot(selected);
+        const entries = await window.nexus!.listFolder({ rootId: selected.id, path: "" });
+        if (request !== folderPickerRequestRef.current || generation !== folderOpenRequestRef.current) return;
+        const home = chooseWorkspaceHome(loadWorkspaceHome(workspaceStorageKey(selected.path, profileName)), entries);
+        if (home) await openFolderDocument(home, selected);
       }
     } catch (error) {
       setFolderError(error instanceof Error ? error.message : String(error));
@@ -2554,10 +2620,42 @@ function App() {
     void window.nexus?.closeFolder().catch(error => setFolderError(String(error)));
   }
 
-  async function openFolderDocument(path: string) {
-    if (!folderRoot) return;
+  async function openDocumentLink(href: string) {
+    const documentId = documentIdRef.current;
     const request = ++folderOpenRequestRef.current;
-    const result = await window.nexus?.readFolderDocument({ rootId: folderRoot.id, path });
+    try {
+      const target = await window.nexus?.resolveDocumentLink(filePathRef.current, href);
+      if (!target || target.kind === "external" || request !== folderOpenRequestRef.current || documentId !== documentIdRef.current) return;
+      if (target.kind === "document" && !areFilePathsEquivalent(filePathRef.current, target.filePath)) {
+        // Read before prompting so broken links leave the current buffer and its edits intact.
+        const result = await window.nexus!.readWatchedMarkdownFile(target.filePath);
+        if (result.canceled || request !== folderOpenRequestRef.current || documentId !== documentIdRef.current) return;
+        if (!(await confirmDirtyBufferAction()) || request !== folderOpenRequestRef.current || documentId !== documentIdRef.current) return;
+        await loadDocument(result.markdown, result.filePath);
+        if (request !== folderOpenRequestRef.current || !areFilePathsEquivalent(filePathRef.current, target.filePath)) return;
+      }
+      if (target.fragment) {
+        const loadedId = documentIdRef.current;
+        // Let the source/rich editor mount and lay out the newly loaded document first.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (loadedId !== documentIdRef.current || request !== folderOpenRequestRef.current) return;
+          const heading = findLinkedHeading(getCurrentMarkdown(), target.fragment);
+          if (heading) scrollOutlineHeadingIntoView(heading);
+        }));
+      }
+    } catch (error) {
+      if (request === folderOpenRequestRef.current && documentId === documentIdRef.current) {
+        setLinkError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+  // MDXEditor's link callbacks are installed on mount; always use the current document handler.
+  linkNavigationRef.current = href => { void openDocumentLink(href); };
+
+  async function openFolderDocument(path: string, root = folderRoot) {
+    if (!root) return;
+    const request = ++folderOpenRequestRef.current;
+    const result = await window.nexus?.readFolderDocument({ rootId: root.id, path });
     if (!result || result.canceled || request !== folderOpenRequestRef.current) return;
     if (areFilePathsEquivalent(filePathRef.current, result.filePath)) return;
     if (!(await confirmDirtyBufferAction()) || request !== folderOpenRequestRef.current) return;
@@ -2837,7 +2935,7 @@ function App() {
 
   const dispatchMenuAction = useCallback((action: NexusMenuAction, payload?: AiSelectionMenuPayload) => {
     const h = menuHandlersRef.current;
-    if (documentKindRef.current === "text" && ["editFrontmatter", "insertTableOfContents", "contentOrganization", "documentImport", "aiSelection", "exportHtml", "exportWord", "exportPdf", "printPreview", "publishWeb", "publishQuickConnect", "copyHtml"].includes(action)) return;
+    if (documentKindRef.current === "text" && ["documentProperties", "editFrontmatter", "insertTableOfContents", "contentOrganization", "documentImport", "aiSelection", "exportHtml", "exportWord", "exportPdf", "printPreview", "publishWeb", "publishQuickConnect", "copyHtml"].includes(action)) return;
     switch (action) {
       case "new":
         void h.createNewDocument();
@@ -2886,6 +2984,9 @@ function App() {
         break;
       case "editFrontmatter":
         h.openFrontmatterEditor();
+        break;
+      case "documentProperties":
+        h.openDocumentProperties();
         break;
       case "insertTableOfContents":
         h.insertTableOfContents();
@@ -3045,6 +3146,7 @@ function App() {
   return (
     <main className={appShellClassName} data-theme={resolvedTheme}>
       <Titlebar
+        canEditDocumentProperties={documentKind === "markdown" && editorViewMode !== "diff"}
         canEditFrontmatter={documentKind === "markdown" && editorViewMode === "rich-text"}
         canToggleOutline={canToggleOutline}
         folderOpen={folderRoot !== null}
@@ -3067,7 +3169,7 @@ function App() {
       />
       <section className="workspace">
         {folderRoot ? <FolderSidebar key={folderRoot.id} root={folderRoot} filePath={filePath}
-          onOpen={openFolderDocument} onClose={closeFolder} onRootChange={changeFolderRoot} /> : null}
+          profileName={profileName} onOpen={openFolderDocument} onClose={closeFolder} onRootChange={changeFolderRoot} /> : null}
         <div className="editor-column">
           <div
             className={
@@ -3076,6 +3178,20 @@ function App() {
                 : editorSurfaceClassName
             }
             ref={editorSurfaceRef}
+            onClickCapture={event => {
+              if (!(event.ctrlKey || event.metaKey) || currentViewModeRef.current !== "rich-text") return;
+              const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+              if (!anchor || !anchor.closest(".mdxeditor-rich-text-editor")) return;
+              event.preventDefault();
+              event.stopPropagation();
+              // Lexical's rendered href adds https:// to bare paths and hides file URLs.
+              // Read the original Markdown URL from the link node, including in table editors.
+              const editor = getNearestEditorFromDOMNode(anchor);
+              editor?.read(() => {
+                const node = $getNearestNodeFromDOMNode(anchor);
+                if ($isLinkNode(node)) linkNavigationRef.current(node.getURL());
+              });
+            }}
             style={editorStyle}
           >
             {showOutlineSidebar ? (
@@ -3109,7 +3225,7 @@ function App() {
                   quotePlugin(),
                   thematicBreakPlugin(),
                   linkPlugin(),
-                  linkDialogPlugin(),
+                  linkDialogPlugin({ onClickLinkCallback: href => linkNavigationRef.current(href) }),
                   pasteLinkPlugin(),
                   imagePlugin({
                     imagePreviewHandler,
@@ -3170,6 +3286,7 @@ function App() {
                       <>
                         <DiffViewController request={pendingDiffViewRequest} />
                         <FrontmatterController request={pendingEditFrontmatterRequest} />
+                        <DocumentPropertiesEditorTracker editorRef={documentPropertiesEditorRef} />
                         <FindTextPanel
                           onActiveMatchChange={scrollFindMatchIntoView}
                           openRequest={pendingFindRequest}
@@ -3237,6 +3354,8 @@ function App() {
         />
       ) : null}
       <StatusBar
+        canEditDocumentProperties={documentKind === "markdown" && editorViewMode !== "diff"}
+        onDocumentProperties={() => dispatchMenuAction("documentProperties")}
         aiBusy={aiBusy}
         aiChatVisible={settings.aiChatVisible}
         canToggleOutline={canToggleOutline}
@@ -3256,6 +3375,8 @@ function App() {
         wordCount={wordCount}
         zoomPercent={editorZoomPercent}
       />
+      {documentProperties ? <DocumentPropertiesDialog key={documentProperties.request} markdown={documentProperties.markdown}
+        onApply={applyProperties} onClose={() => setDocumentProperties(null)} /> : null}
       {externalFileChangePrompt ? (
         <FileChangedDialog
           filePath={externalFileChangePrompt.filePath}
@@ -3375,6 +3496,12 @@ function App() {
         />
       ) : null}
       <AboutDialog onOpenChange={setAboutOpen} open={aboutOpen} />
+      <Dialog open={linkError !== null} onOpenChange={open => { if (!open) setLinkError(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>Could not open link</DialogTitle>
+          <DialogDescription>The current document is still open.</DialogDescription></DialogHeader>
+          <p role="alert">{linkError}</p>
+        </DialogContent>
+      </Dialog>
       <Dialog open={folderError !== null} onOpenChange={open => { if (!open) setFolderError(null); }}>
         <DialogContent><DialogHeader><DialogTitle>Could not open file or folder</DialogTitle>
           <DialogDescription>The current document is still open.</DialogDescription></DialogHeader>

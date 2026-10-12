@@ -99,6 +99,8 @@ app.whenReady().then(async () => {
   const canonical = await fs.realpath(work);
   const original = path.join(canonical, "note.md");
   await fs.writeFile(original, "Folder demo\n\nSaved document.\n");
+  await fs.writeFile(path.join(work, "README.md"), "# Workspace home\n\nStart here.\n");
+  await fs.writeFile(path.join(work, "index.md"), "# Alternate home\n");
   await fs.mkdir(path.join(work, "nested"));
   await fs.writeFile(path.join(work, "nested", "child.md"), "# Child\n");
   await fs.writeFile(path.join(work, "image.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
@@ -123,7 +125,8 @@ app.whenReady().then(async () => {
     BrowserWindow, readDocument: async filePath => ({ canceled: false, filePath, markdown: await readDocumentText(filePath) }),
     documents, watcher: { stop: () => {} }, addRecent: () => {}, removeRecent: () => {}
   });
-  ipcMain.handle("dialog:confirmSaveChanges", () => confirmChoice);
+  let dirtyPrompts = 0;
+  ipcMain.handle("dialog:confirmSaveChanges", () => { dirtyPrompts++; return confirmChoice; });
   ipcMain.handle("image:resolve-preview", (_event, payload) => payload.imageSource);
   ipcMain.handle("file:choose-save-path", () => ({ filePath: path.join(canonical, "recovered.md") }));
   rendererIpc.handle("file:save", async (event, payload) => {
@@ -146,12 +149,43 @@ app.whenReady().then(async () => {
   window.webContents.on("console-message", event => { if (event.level === "error") console.error(event.message); });
   await window.loadFile(html);
   await until(() => state?.filePath === original);
+  assert(await evaluate("document.querySelector('[aria-label=\"Workspace home\"]') === null"));
+  await edit("Unsaved before opening workspace");
   window.webContents.send("menu:action", "openFolder");
   await until(() => evaluate("document.querySelector('.nexus-files') !== null"));
+  await until(() => dirtyPrompts > 0);
+  assert.equal(state.filePath, original);
+  assert.equal(state.markdown.trim(), "Unsaved before opening workspace");
+  assert(await evaluate("document.querySelector('[aria-label=\"Workspace home\"]') !== null"));
+  confirmChoice = "discard";
+  await toolbar("Open workspace home");
+  await until(() => state?.filePath === path.join(canonical, "README.md"));
+  await toolbar("Pin current document");
+  await until(() => evaluate("document.querySelector('[aria-label=\"Unpin README.md\"]') !== null"));
+  await context("index.md", "Use as workspace home");
+  await until(() => evaluate("document.querySelector('.nexus-workspace-hint').textContent === 'index.md'"));
+  await toolbar("Close folder");
+  assert.equal(state.filePath, path.join(canonical, "README.md"));
+  assert(await evaluate("document.querySelector('[aria-label=\"Workspace home\"]') === null"));
+  window.webContents.send("menu:action", "openFolder");
+  await until(() => state?.filePath === path.join(canonical, "index.md"));
+  assert(await evaluate("document.querySelector('[aria-label=\"Unpin README.md\"]') !== null"));
+  await row("note.md"); await until(() => state?.filePath === original);
   await row("nested");
   await until(() => evaluate(`${item("nested/child.md")} !== null`));
+  await evaluate("[...document.querySelectorAll('button')].find(node => node.textContent === 'Save current view…').click()");
+  await until(() => evaluate("document.querySelector('#workspace-view input') !== null"));
+  await evaluate(`(() => { const input = document.querySelector('#workspace-view input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'References');
+    input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await evaluate("document.querySelector('#workspace-view').requestSubmit()");
+  await until(() => evaluate("document.querySelector('[role=dialog]') === null"));
+  await toolbar("Open workspace home"); await until(() => state?.filePath === path.join(canonical, "index.md"));
+  await screenshot("workspace-home");
+  await row("note.md"); await until(() => state?.filePath === original);
   await screenshot("folder-browser");
   // Unsaved-change cancellation on sidebar opens, and successful switching after discard.
+  confirmChoice = "cancel";
   await edit("Keep this unsaved text");
   await row("nested/child.md"); await pause();
   assert.equal(state.filePath, original); assert.equal(state.markdown.trim(), "Keep this unsaved text");
@@ -287,7 +321,7 @@ app.whenReady().then(async () => {
   await searchInput("Find text", "Child");
   await until(() => evaluate("document.querySelector('.nexus-find-count').textContent === '1 of 1'"));
   await toolbar("Close find");
-  console.log("Folder/code smoke passed: tree, protected open, dirty-buffer moves, save, duplicate/create, trash recovery, raw code/BOM/CRLF save, text editing, code review/search, plain text, zoom alignment including wrapping/scrolling/review, binary rejection, Markdown round trip, and close.");
+  console.log("Folder/workspace/code smoke passed: protected automatic home, designated home reopening, persistent pins, saved views, folder-only controls, tree, protected open, dirty-buffer moves, save, duplicate/create, trash recovery, raw code/BOM/CRLF save, text editing, code review/search, plain text, zoom alignment including wrapping/scrolling/review, binary rejection, Markdown round trip, and close.");
 }).catch(error => { console.error(error); exitCode = 1; }).finally(async () => {
   clearTimeout(deadline);
   if (window && !window.isDestroyed()) { integration?.close(window.webContents.id); window.destroy(); }

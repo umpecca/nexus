@@ -1,6 +1,8 @@
-import { Images, MessageSquare, Minus, PanelLeft, Plus, Sparkles } from "lucide-react";
+import { Images, MessageSquare, Minus, PanelLeft, Plus, Sparkles, Tags } from "lucide-react";
 
 export type StatusBarProps = {
+  canEditDocumentProperties?: boolean;
+  onDocumentProperties?: () => void;
   assetsVisible?: boolean;
   canToggleAssets?: boolean;
   onToggleAssets?: () => void;
@@ -23,6 +25,8 @@ export type StatusBarProps = {
 
 /** Word 2010-style status bar: outline toggle + word count on the left, zoom slider on the right. */
 function StatusBar({
+  canEditDocumentProperties,
+  onDocumentProperties,
   assetsVisible,
   canToggleAssets,
   onToggleAssets,
@@ -81,6 +85,10 @@ function StatusBar({
         ) : null}
       </div>
       <div className="nexus-statusbar-right">
+        {onDocumentProperties ? <button type="button" className="nexus-statusbar-button nexus-statusbar-toggle" aria-label="Document properties"
+          disabled={!canEditDocumentProperties} onClick={onDocumentProperties} title="Edit document properties">
+          <Tags aria-hidden="true" /><span>Properties</span>
+        </button> : null}
         {onToggleAssets ? <button type="button" className="nexus-statusbar-button nexus-statusbar-toggle"
           aria-pressed={assetsVisible} disabled={!canToggleAssets} onClick={onToggleAssets}
           title={assetsVisible ? "Hide images and assets" : "Show images and assets"}>

@@ -30,6 +30,7 @@ export type TitlebarProps = {
   filePath: string | null;
   isDirty: boolean;
   canEditFrontmatter: boolean;
+  canEditDocumentProperties?: boolean;
   canToggleOutline: boolean;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
@@ -49,6 +50,7 @@ type AppMenuBarProps = {
   markdownDocument?: boolean;
   folderOpen?: boolean;
   canEditFrontmatter: boolean;
+  canEditDocumentProperties?: boolean;
   canToggleOutline: boolean;
   showInvisibleCharacters: boolean;
   spellCheckEnabled: boolean;
@@ -99,6 +101,7 @@ function AppMenuBar({
   markdownDocument = true,
   folderOpen,
   canEditFrontmatter,
+  canEditDocumentProperties = true,
   canToggleOutline,
   showInvisibleCharacters,
   spellCheckEnabled,
@@ -216,6 +219,9 @@ function AppMenuBar({
           <MenubarItem onSelect={() => dispatchMenuAction("refresh")}>Refresh</MenubarItem>
           <MenubarItem onSelect={() => dispatchMenuAction("comparePreviousVersion")}>
             Compare with Previous Version
+          </MenubarItem>
+          <MenubarItem disabled={!markdownDocument || !canEditDocumentProperties} onSelect={() => dispatchMenuAction("documentProperties")}>
+            Document Properties…
           </MenubarItem>
           <MenubarItem
             disabled={!canEditFrontmatter}
@@ -442,6 +448,7 @@ export function Titlebar({
   filePath,
   isDirty,
   canEditFrontmatter,
+  canEditDocumentProperties,
   canToggleOutline,
   showInvisibleCharacters,
   spellCheckEnabled,
@@ -468,6 +475,7 @@ export function Titlebar({
             folderOpen={folderOpen}
             aiChatVisible={aiChatVisible}
             canEditFrontmatter={canEditFrontmatter}
+            canEditDocumentProperties={canEditDocumentProperties}
             canToggleOutline={canToggleOutline}
             dispatchMenuAction={dispatchMenuAction}
             onAiSelectionAction={onAiSelectionAction}

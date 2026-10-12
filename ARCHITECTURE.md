@@ -39,6 +39,36 @@ This document serves as a living overview of the Nexus codebase. Update it as th
   menus provide create, rename, duplicate, copy/cut/paste, move, Trash, path-copy, and reveal actions.
   File operations surface errors; directory events invalidate loaded branches. Folder roots are
   per-window, with no automatic restore at launch.
+- `src/lib/workspaceHome.ts`: Validates and persists folder/profile-scoped home designation,
+  pinned relative document paths, eight recent paths, and named file-browser views in localStorage.
+  Root keys use canonical picked paths and Windows case normalization. Chooses README.md before
+  index.md by default, excluding links/directories, and remaps references on managed relocations.
+  FolderSidebar shows home navigation, pins, recents, and views only with an open folder; storage
+  events synchronize editor windows and root moves migrate preferences. App's folder picker opens
+  home through the same generation-guarded unsaved-change boundary as file-tree navigation.
+- `electron/documentLinks.cjs`: Resolves local Markdown paths and decoded fragments against the
+  current document directory. Trusted, validated link:resolve IPC returns a document/heading
+  target or opens HTTP(S)/mailto in the default browser. File loading reuses file:read and the
+  normal document loader; errors leave the buffer intact. App's popover callback and Ctrl/Cmd-click
+  read original Lexical link URLs (rendered hrefs may be rewritten), protect unsaved edits, reject
+  stale reads, and retain the folder. src/lib/documentLinks.ts shares the TOC slugger for headings.
+  Outline extraction skips YAML frontmatter while keeping body source line offsets intact.
+  Run the actual editor/preload workflow after building with npm run test:links.
+- `src/lib/documentProperties.ts`: Parses leading YAML mappings with the existing yaml library,
+  reads six managed properties without expanding aliases, validates review dates, and edits changed
+  fields using original node offsets. Ordinary block mappings preserve unrelated YAML bytes and
+  comments; flow mappings use the YAML library to preserve structure and values. Keeps body bytes,
+  BOM, and newline style intact; malformed/incompatible/anchored managed properties fail closed.
+- `src/components/editor/DocumentPropertiesDialog.tsx`: Small modal form with custom type/status
+  suggestions, line-separated tags, a YYYY-MM-DD date field, explicit Apply/Cancel, and inline errors.
+  App captures document identity and exact buffer on open, rejects stale applications, and applies
+  one source CodeMirror edit or a direct Lexical frontmatter-node update with a history boundary.
+  Edit-menu and status-bar actions are disabled for code/text and read-only comparisons. Normal
+  dirty tracking and document Save handle persistence; no new filesystem IPC is added.
+- `scripts/document-properties-smoke.cjs`: Isolated real Electron/preload workflow covering form
+  cancellation/validation, metadata/body preservation, rich/source undo/redo, unsaved application,
+  saving/reopening, stale snapshots, untitled creation, and code/text restrictions. Run after build
+  with `npm run test:properties`; optional NEXUS_PROPERTIES_SCREENSHOTS captures the modal for QA.
 - `electron/folderBrowser.cjs`: Main-process folder grants keyed by renderer ID and root token.
   Every path resolves within the native-picked canonical root and rejects link traversal. Copies
   stage regular files/assets in a private temporary directory; collisions fail. Loaded directories
@@ -49,6 +79,7 @@ This document serves as a living overview of the Nexus codebase. Update it as th
   Moves/renames remap open document records (including aliases) and notify affected renderers;
   deleted documents detach their path while retaining text. Old-path saves are blocked until the
   renderer acknowledges its new path; preparation also rechecks the document generation before saving.
+  Managed relocation events include source/destination paths for updating workspace navigation.
 - `scripts/folder-browser-smoke.cjs`: Hidden real Electron renderer/preload with real folder IPC
   and fixture-only filesystem operations. Covers protected opens, dirty-buffer rename/move and save,
   duplicate/create, trash cancellation/recovery, source mode, and closing the sidebar. Trash is
